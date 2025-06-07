@@ -4,7 +4,7 @@
 # - and the code should be modified accordingly.
 
 # Load package manager
-if (!require("pacman", quietly = TRUE)) install.packages("pacman")
+if (!require("pacman", quietly = T)) install.packages("pacman")
 library(pacman)
 
 # Load required packages
@@ -13,71 +13,80 @@ pacman::p_load(tidyverse)
 # Set working directory
 setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
 
-# Get all CSV file names
+# Get all CSV files
 data_files <- list.files(pattern = "\\.CSV$", full.names = T, recursive = T)
 
-# Function to classify dataset according to type
-check_file <- function(file) {
+# Read all files and check grouping conditions
+read_and_check <- function(file) {
   tryCatch({
-    # Read only column names
-    first_row <- readr::read_csv2(file, n_max = 1, show_col_types = F, 
-                                  locale = locale(encoding = "UTF-8"))
-    col_names <- colnames(first_row)
+    # Read entire file
+    data <- readr::read_delim(file, delim = ";", show_col_types = F, 
+                              locale = locale(encoding = "UTF-8", decimal_mark = ",", grouping_mark = "."))
+    col_names <- colnames(data)
     
     # Conditions
-    is_countries_first <- col_names[1] %in% c("Countries", "Continents")
+    is_region_first <- col_names[1] %in% c("Countries", "Continents")
     no_year_col <- !any(grepl("20", col_names, fixed = T))
     
-    return(list(is_countries_first = is_countries_first, no_year_col = no_year_col))
+    return(list(file = file, data = data, is_region_first = is_region_first, no_year_col = no_year_col))
   }, error = function(e) {
     message("Skipping '", basename(file), "': ", e$message)
-    return(list(is_countries_first = F, no_year_col = F))
+    return(list(file = file, data = NULL, is_region_first = F, no_year_col = F))
   })
 }
 
-# Filter files for each condition combination
-map_names <- data_files[vapply(data_files, function(x) {
-  cond <- check_file(x)
-  cond$is_countries_first && cond$no_year_col
-}, logical(1))]
+# Process all files
+all_tables <- lapply(data_files, read_and_check)
 
-map_ts_names <- data_files[vapply(data_files, function(x) {
-  cond <- check_file(x)
-  cond$is_countries_first && !cond$no_year_col
-}, logical(1))]
+# Post-process all tables with replacements in specified order
+process_table <- function(table) {
+  # Clean first column for invalid UTF-8 and keep as character
+  table[[1]] <- iconv(table[[1]], to = "UTF-8", sub = "")
+  
+  # Process other columns in specified order
+  table <- dplyr::mutate(table, dplyr::across(-1, ~{
+    . <- iconv(., to = "UTF-8", sub = "") # Clean UTF-8
+    . <- dplyr::case_when(
+      . == "..." ~ NA_character_, # Replace "..." with NA
+      TRUE ~ .
+    )
+    . <- dplyr::case_when(
+      . == ".." ~ "0", # Replace ".." with 0
+      TRUE ~ .
+    )
+    . <- gsub("\\.(?=\\d)", "", ., perl = T) # Remove individual dots between digits
+    . <- gsub(",", ".", .) # Replace commas with dots
+    . <- dplyr::case_when(
+      . == "-" ~ "0", # Replace "-" with 0
+      TRUE ~ .
+    )
+    as.numeric(.) # Convert to numeric
+  }))
+  
+  table
+}
 
-ts_names <- data_files[vapply(data_files, function(x) {
-  cond <- check_file(x)
-  !cond$is_countries_first && cond$no_year_col
-}, logical(1))]
+# Apply post-processing to all tables
+all_tables <- lapply(all_tables, function(x) {
+  if (!is.null(x$data)) {
+    x$data <- process_table(x$data)
+  }
+  x
+})
 
-other_names <- data_files[vapply(data_files, function(x) {
-  cond <- check_file(x)
-  !cond$is_countries_first && !cond$no_year_col
-}, logical(1))]
+# Split data into four lists based on conditions
+map_list <- lapply(all_tables[ vapply(all_tables, function(x) x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "data")
+names(map_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
-# Read files into named lists
-map_list <- lapply(map_names, readr::read_csv2, show_col_types = F, 
-                   locale = locale(encoding = "UTF-8"))
-names(map_list) <- basename(map_names)
+map_ts_list <- lapply(all_tables[ vapply(all_tables, function(x) x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "data")
+names(map_ts_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
-map_ts_list <- lapply(map_ts_names, readr::read_csv2, show_col_types = F, 
-                      locale = locale(encoding = "UTF-8"))
-names(map_ts_list) <- basename(map_ts_names)
+ts_list <- lapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "data")
+names(ts_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
-ts_list <- lapply(ts_names, readr::read_csv2, show_col_types = F, 
-                  locale = locale(encoding = "UTF-8"))
-names(ts_list) <- basename(ts_names)
+other_list <- lapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "data")
+names(other_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
-other_list <- lapply(other_names, readr::read_csv2, show_col_types = F, 
-                     locale = locale(encoding = "UTF-8"))
-names(other_list) <- basename(other_names)
-
-# Print loaded files
-cat("map_list (Countries first, no '20' in cols):", paste(basename(map_names), collapse = ", "), "\n")
-cat("map_ts_list (Countries first, some '20' in cols):", paste(basename(map_ts_names), collapse = ", "), "\n")
-cat("ts_list (Not Countries first, no '20' in cols):", paste(basename(ts_names), collapse = ", "), "\n")
-cat("other_list (Not Countries first, some '20' in cols):", paste(basename(other_names), collapse = ", "), "\n")
 
 ## DATA WRANGLING STEPS:
 
