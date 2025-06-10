@@ -11,7 +11,7 @@ library(pacman)
 pacman::p_load(tidyverse)
 
 # Set working directory
-setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
+setwd("C:/Users/schia/Documents/LMU/Consulting/Tables")
 
 # Get all CSV files
 data_files <- list.files(pattern = "\\.CSV$", full.names = T, recursive = T)
@@ -95,5 +95,178 @@ names(other_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) 
 # then, a "Year" column with value="2022" should be added to all non-TS files
 
 # finally, make sure all colnames are unique (be careful: do not change "Year")
+
+# PART 1: MERGE map_list tables
+
+# Function to merge map_list tables (same rows, different columns, add Year=2022)
+merge_map_list <- function(map_data_list) {
+  cat("Processing map_list tables...\n")
+  
+  # Start with the first table
+  if (length(map_data_list) == 0) {
+    cat("No tables in map_list\n")
+    return(NULL)
+  }
+  
+  # Initialize with first table
+  merged_map <- map_data_list[[1]]
+  if (!is.null(merged_map)) {
+    # Add Year column
+    merged_map$Year <- "2022"
+    cat("Starting with table:", names(map_data_list)[1], "- Rows:", nrow(merged_map), "Cols:", ncol(merged_map), "\n")
+  }
+  
+  # Merge remaining tables
+  if (length(map_data_list) > 1) {
+    for (i in 2:length(map_data_list)) {
+      current_table <- map_data_list[[i]]
+      table_name <- names(map_data_list)[i]
+      
+      if (!is.null(current_table) && nrow(current_table) > 0) {
+        cat("Merging table:", table_name, "- Rows:", nrow(current_table), "Cols:", ncol(current_table), "\n")
+        
+        # Add Year column to current table
+        current_table$Year <- "2022"
+        
+        # Get the first column name (should be the same across tables - Countries/Regions)
+        join_col <- colnames(current_table)[1]
+        
+        # Merge by the first column (Countries/Regions)
+        merged_map <- dplyr::full_join(merged_map, current_table, by = c(join_col, "Year"))
+        
+        cat("After merge - Rows:", nrow(merged_map), "Cols:", ncol(merged_map), "\n")
+      }
+    }
+  }
+  
+  return(merged_map)
+}
+
+
+# PART 2: MERGE map_ts_list tables  
+
+# Function to merge map_ts_list tables (same rows, different years, one table per variable)
+merge_map_ts_list <- function(map_ts_data_list) {
+  cat("\nProcessing map_ts_list tables...\n")
+  
+  if (length(map_ts_data_list) == 0) {
+    cat("No tables in map_ts_list\n")
+    return(NULL)
+  }
+  
+  # Convert each table to long format first, then merge
+  long_tables <- list()
+  
+  for (i in seq_along(map_ts_data_list)) {
+    table_name <- names(map_ts_data_list)[i]
+    current_table <- map_ts_data_list[[i]]
+    
+    if (!is.null(current_table) && nrow(current_table) > 0) {
+      cat("Processing table:", table_name, "- Rows:", nrow(current_table), "Cols:", ncol(current_table), "\n")
+      
+      # Get the first column name (Countries/Regions identifier)
+      region_col <- colnames(current_table)[1]
+      
+      # Find year columns (columns that look like years)
+      year_cols <- grep("^(19|20)\\d{2}$", colnames(current_table), value = TRUE)
+      
+      if (length(year_cols) > 0) {
+        # Convert to long format
+        long_table <- current_table %>%
+          tidyr::pivot_longer(
+            cols = all_of(year_cols),
+            names_to = "Year",
+            values_to = table_name  # Use table name as the variable name
+          ) %>%
+          dplyr::select(all_of(region_col), Year, all_of(table_name))
+        
+        long_tables[[table_name]] <- long_table
+        cat("Converted to long format - Variable:", table_name, "Years:", paste(year_cols, collapse = ", "), "\n")
+      } else {
+        cat("No year columns found in table:", table_name, "\n")
+      }
+    }
+  }
+  
+  # Merge all long tables
+  if (length(long_tables) > 0) {
+    merged_map_ts <- long_tables[[1]]
+    region_col <- colnames(merged_map_ts)[1]
+    
+    if (length(long_tables) > 1) {
+      for (i in 2:length(long_tables)) {
+        current_long <- long_tables[[i]]
+        variable_name <- names(long_tables)[i]
+        
+        # Merge by region and year
+        merged_map_ts <- dplyr::full_join(
+          merged_map_ts, 
+          current_long, 
+          by = c(region_col, "Year")
+        )
+        
+        cat("Merged variable:", variable_name, "- Total rows:", nrow(merged_map_ts), "Cols:", ncol(merged_map_ts), "\n")
+      }
+    }
+    
+    return(merged_map_ts)
+  }
+  
+  return(NULL)
+}
+
+# EXECUTE THE MERGING
+
+# Merge map_list tables
+merged_map_table <- merge_map_list(map_list)
+
+# Merge map_ts_list tables  
+merged_map_ts_table <- merge_map_ts_list(map_ts_list)
+
+# PART 3: MERGE THE TWO TABLES TOGETHER
+
+final_merged_table <- NULL
+
+if (!is.null(merged_map_table) && !is.null(merged_map_ts_table)) {
+  # Get the region column name (should be the same in both)
+  region_col_map <- colnames(merged_map_table)[1]
+  region_col_ts <- colnames(merged_map_ts_table)[1]
+  
+  cat("Region columns - map_table:", region_col_map, "| map_ts_table:", region_col_ts, "\n")
+  
+  # Check if we need to align column names
+  if (region_col_map != region_col_ts) {
+    cat("Warning: Region column names don't match. Renaming", region_col_ts, "to", region_col_map, "\n")
+    colnames(merged_map_ts_table)[1] <- region_col_map
+  }
+  
+  # Merge by region and year
+  final_merged_table <- dplyr::full_join(
+    merged_map_table, 
+    merged_map_ts_table, 
+    by = c(region_col_map, "Year")
+  )
+  
+  cat("Successfully merged both tables!\n")
+  
+} else if (!is.null(merged_map_table)) {
+  cat("Only map_table available, using as final result\n")
+  final_merged_table <- merged_map_table
+} else if (!is.null(merged_map_ts_table)) {
+  cat("Only map_ts_table available, using as final result\n") 
+  final_merged_table <- merged_map_ts_table
+} else {
+  cat("No tables to merge\n")
+}
+
+# Optional: Save the final merged table
+# write.csv(final_merged_table, "final_merged_map_table.csv", row.names = FALSE)
+# save(final_merged_table, file = "final_merged_table.RData")
+
+#To do: 
+
+# Find a way to fix the titles of the variables efficiently 
+# Do the merging for ts_list (and eventually also other list- not a priority)
+# Improve the code to get the tables from a github repo (also not a priority)
 
 
