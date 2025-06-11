@@ -11,7 +11,7 @@ library(pacman)
 pacman::p_load(tidyverse)
 
 # Set working directory
-setwd("C:/Users/schia/Documents/LMU/Consulting/Tables")
+setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
 
 # Get all CSV files
 data_files <- list.files(pattern = "\\.CSV$", full.names = T, recursive = T)
@@ -35,10 +35,10 @@ read_and_check <- function(file) {
   })
 }
 
-# Process all files
+# Process all files -- CHECK FOR ERRORS
 all_tables <- lapply(data_files, read_and_check)
 
-# Post-process all tables with replacements in specified order
+# Post-process all tables with replacements in specified order -- CHECK FOR ERRORS
 process_table <- function(table) {
   # Clean first column for invalid UTF-8 and keep as character
   table[[1]] <- iconv(table[[1]], to = "UTF-8", sub = "")
@@ -66,7 +66,7 @@ process_table <- function(table) {
   table
 }
 
-# Apply post-processing to all tables
+# Apply post-processing to all tables -- CHECK FOR ERRORS
 all_tables <- lapply(all_tables, function(x) {
   if (!is.null(x$data)) {
     x$data <- process_table(x$data)
@@ -87,12 +87,25 @@ names(ts_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) !x$
 other_list <- lapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "data")
 names(other_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
+#print.data.frame(map_list[[1]])
+
+# Rename the first colnames "Countries" and "Continents" as "Region" in data
+# with spatial resolution/geographic scope
+map_list <- lapply(map_list, function(x) {
+  colnames(x)[1] <- "Region"
+  x
+})
+
+map_ts_list <- lapply(map_ts_list, function(x) {
+  colnames(x)[1] <- "Region"
+  x
+})
 
 ## DATA WRANGLING STEPS:
 
-# first, TS files should be pivoted longer (take colnames from "tables overview")
+# first, TS files should be pivoted longer (take colnames from "data overview")
 
-# then, a "Year" column with value="2022" should be added to all non-TS files
+# then, a "Year" col with value="2022" should be added to files except those in map_list and other_list
 
 # finally, make sure all colnames are unique (be careful: do not change "Year")
 
