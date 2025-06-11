@@ -8,7 +8,7 @@ if (!require("pacman", quietly = T)) install.packages("pacman")
 library(pacman)
 
 # Load required packages
-pacman::p_load(tidyverse)
+pacman::p_load(tidyverse, readxl, stringdist)
 
 # Set working directory
 setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
@@ -100,6 +100,39 @@ map_ts_list <- lapply(map_ts_list, function(x) {
   colnames(x)[1] <- "Region"
   x
 })
+
+##### STANDARDIZE REGION NAMES
+
+# Your list of final region names
+# Read final_regions from the first column (excluding first cell) of the first sheet in Rownames.xlsx
+final_regions <- readxl::read_excel("Rownames.xlsx", sheet = 1, range = "A1:A253", col_types = "text")[[1]]
+
+# Function to find the closest matching region name
+match_region <- function(name, final_regions) {
+  if (is.na(name)) return(NA_character_)
+  distances <- stringdist(name, final_regions, method = "jw") # Jaro-Winkler distance
+  best_match <- final_regions[which.min(distances)]
+  # Return NA if the match is poor (e.g., distance > 0.2)
+  if (min(distances) > 0.8) NA_character_ else best_match
+}
+
+# Consolidate each tibble in map_list
+map_list <- map(map_list, ~ {
+  .x %>%
+    mutate(Region = sapply(Region, match_region, final_regions = final_regions)) %>%
+    group_by(Region) %>%
+    summarise(across(.cols = everything(), .fns = ~ first(na.omit(.x))))
+})
+
+# Consolidate each tibble in map_ts_list
+map_ts_list <- map(map_ts_list, ~ {
+  .x %>%
+    mutate(Region = sapply(Region, match_region, final_regions = final_regions)) %>%
+    group_by(Region) %>%
+    summarise(across(.cols = everything(), .fns = ~ first(na.omit(.x))))
+})
+
+#####
 
 ## DATA WRANGLING STEPS:
 
