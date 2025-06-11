@@ -11,7 +11,7 @@ library(pacman)
 pacman::p_load(tidyverse, readxl, stringdist)
 
 # Set working directory
-setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
+#setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
 
 # Get all CSV files
 data_files <- list.files(pattern = "\\.CSV$", full.names = T, recursive = T)
@@ -81,11 +81,11 @@ names(map_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) x$
 map_ts_list <- lapply(all_tables[ vapply(all_tables, function(x) x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "data")
 names(map_ts_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
-ts_list <- lapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "data")
-names(ts_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
+ts_list <- lapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "data")
+names(ts_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
-other_list <- lapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "data")
-names(other_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
+other_list <- lapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "data")
+names(other_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
 #print.data.frame(map_list[[1]])
 
@@ -312,7 +312,52 @@ if (!is.null(merged_map_table) && !is.null(merged_map_ts_table)) {
 #To do: 
 
 # Find a way to fix the titles of the variables efficiently 
-# Do the merging for ts_list (and eventually also other list- not a priority)
 # Improve the code to get the tables from a github repo (also not a priority)
 
+# PART 4: MERGE ts_list tables 
 
+# NEW FUNCTION: Process ts_list tables without merging them into one final table
+process_ts_list <- function(ts_data_list) {
+  cat("\nProcessing ts_list tables into a long-format dataset (wide by table)...\n")
+  
+  if (length(ts_data_list) == 0) {
+    cat("No tables in ts_list\n")
+    return(NULL)
+  }
+  
+  long_ts_tables <- list()
+  
+  for (i in seq_along(ts_data_list)) {
+    file_name <- names(ts_data_list)[i]
+    table_col <- gsub("\\.CSV$", "", basename(file_name))  # e.g., "Table_43-2"
+    current_table <- ts_data_list[[i]]
+    
+    if (!is.null(current_table) && nrow(current_table) > 0) {
+      cat("Processing", table_col, "- Rows:", nrow(current_table), "Cols:", ncol(current_table), "\n")
+      
+      entity_col <- colnames(current_table)[1]
+      year_cols <- grep("^(19|20)\\d{2}$", colnames(current_table), value = TRUE)
+      
+      if (length(year_cols) > 0) {
+        long_table <- current_table %>%
+          tidyr::pivot_longer(
+            cols = all_of(year_cols),
+            names_to = "Year",
+            values_to = table_col
+          ) %>%
+          dplyr::select(all_of(entity_col), Year, all_of(table_col))
+        
+        colnames(long_table)[1] <- "Entity"  # Standardize first column name
+        long_ts_tables[[table_col]] <- long_table
+      }
+    }
+  }
+  
+  # Merge all tables by Entity and Year
+  final_dataset <- Reduce(function(x, y) dplyr::full_join(x, y, by = c("Entity", "Year")), long_ts_tables)
+  
+  return(final_dataset)
+}
+
+# EXECUTE
+merged_ts_table <- process_ts_list(ts_list)
