@@ -1,24 +1,23 @@
 # ============================================================================
 # DATA PROCESSING SCRIPT
 # ============================================================================
-# ============================================================================
 
+# Data needs to be downloaded and locally stored first. We download from the ASE
+# private repository (owned by F.H.). Alternatively, files can be directly 
+# downloaded from the repository, but access to it must be granted by the owner 
+# - and the code should be modified accordingly.
+
+# ============================================================================
 # SETUP AND DEPENDENCIES
 # ============================================================================
-
-# Load required libraries
-library(readxl)
-library(dplyr)
-library(stringr)
-library(writexl)
 
 # Load package manager and additional packages
 if (!require("pacman", quietly = T)) install.packages("pacman")
 library(pacman)
-pacman::p_load(tidyverse, readxl, stringdist)
+pacman::p_load(tidyverse, readxl, writexl, stringdist)
 
 # Set working directory
-#setwd("")
+setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
 
 # ============================================================================
 # STEP 1: DATA DISCOVERY AND INITIAL PROCESSING
@@ -27,60 +26,68 @@ pacman::p_load(tidyverse, readxl, stringdist)
 # Find all CSV files in the directory and subdirectories
 data_files <- list.files(pattern = "\\.CSV$", full.names = T, recursive = T)
 
-# Function to read CSV files and categorize them based on structure
+# Function to read CSV files and label them based on structure
 read_and_check <- function(file) {
   tryCatch({
-    # Read CSV file with specific formatting (UTF-8, semicolon delimiter, comma as decimal)
+    # Read file with ad-hoc formatting (UTF-8, semicolon delimiter, comma as decimal)
     data <- readr::read_delim(file, delim = ";", show_col_types = F, 
-                              locale = locale(encoding = "UTF-8", decimal_mark = ",", grouping_mark = "."))
+                              locale = locale(encoding = "UTF-8", 
+                                              decimal_mark = ",", 
+                                              grouping_mark = "."))
     col_names <- iconv(colnames(data), to = "UTF-8", sub = "")
     
     # Categorization conditions:
-    # - is_region_first: First column contains geographic regions (Countries/Continents)
-    # - no_year_col: Table has no year columns (cross-sectional data)
+    # - is_region_first: first column contains geographic regions (Countries/Continents)
+    # - no_year_col: table has no Year columns (cross-sectional/snapshot data)
     is_region_first <- col_names[1] %in% c("Countries", "Continents")
     no_year_col <- !any(grepl("20", col_names, fixed = T))
     
-    return(list(file = file, data = data, is_region_first = is_region_first, no_year_col = no_year_col))
+    return(list(file = file, data = data, is_region_first = is_region_first, 
+                no_year_col = no_year_col))
   }, error = function(e) {
     message("Skipping '", basename(file), "': ", e$message)
     return(list(file = file, data = NULL, is_region_first = F, no_year_col = F))
   })
 }
 
-# Read and categorize all CSV files
+# Read and label CSV files
 all_tables <- lapply(data_files, read_and_check)
 
 # ============================================================================
-# STEP 2: DATA CLEANING AND STANDARDIZATION
+# STEP 2: DATA CLEANING AND TRANSFORMATION
 # ============================================================================
 
-# Function to clean and standardize data formats
+# Note: data transformation is performed based on the data notation employed by
+# the Annuarium, which can be found in the "Observations" section.
+
+# Function to clean and transform datasets
 process_table <- function(table) {
   # Clean first column (region names) for invalid UTF-8 characters
   table[[1]] <- iconv(table[[1]], to = "UTF-8", sub = "")
   
   # Process all other columns with standardized replacements
   table <- dplyr::mutate(table, dplyr::across(-1, ~{
-    . <- iconv(., to = "UTF-8", sub = "")           # Clean UTF-8 encoding
-    . <- dplyr::case_when(. == "..." ~ NA_character_, TRUE ~ .)  # Replace "..." with NA
-    . <- dplyr::case_when(. == ".." ~ "0", TRUE ~ .)            # Replace ".." with 0
-    . <- gsub("\\.(?=\\d)", "", ., perl = T)                    # Remove dots between digits (thousands separator)
-    . <- gsub(",", ".", .)                                      # Replace comma with dot (decimal separator)
-    . <- dplyr::case_when(. == "-" ~ "0", TRUE ~ .)             # Replace "-" with 0
-    as.numeric(.)                                               # Convert to numeric
+    . <- iconv(., to = "UTF-8", sub = "")                         # Clean UTF-8 encoding
+    . <- dplyr::case_when(. == "..." ~ NA_character_, TRUE ~ .)   # Replace "..." with NA
+    . <- dplyr::case_when(. == ".." ~ "0", TRUE ~ .)              # Replace ".." with 0
+    . <- gsub("\\.(?=\\d)", "", ., perl = T)                      # Remove dots between digits (thousands separator)
+    . <- gsub(",", ".", .)                                        # Replace comma with dot (as decimal separator)
+    . <- dplyr::case_when(. == "-" ~ "0", TRUE ~ .)               # Replace "-" with 0
+    as.numeric(.)                                                 # Convert to numeric
   }))
   
   return(table)
 }
 
-# Apply data cleaning to all successfully loaded tables
+# Apply function to all successfully loaded tables
 all_tables <- lapply(all_tables, function(x) {
   if (!is.null(x$data)) {
     x$data <- process_table(x$data)
   }
   x
 })
+
+#print.data.frame(all_tables[[1]]$data)
 
 # ============================================================================
 # STEP 3: DATA QUALITY ASSESSMENT
@@ -114,28 +121,36 @@ na_summary_df <- do.call(rbind, na_summary_list)
 # ============================================================================
 
 # Categorize tables into 4 types based on structure:
-# 1. map_list: Geographic regions + cross-sectional data (no years)
-# 2. map_ts_list: Geographic regions + time series data (with years)
-# 3. ts_list: Non-geographic entities + time series data
-# 4. other_list: Non-geographic entities + cross-sectional data
+# 1. map_list: geographic regions + cross-sectional data (no years)
+# 2. map_ts_list: geographic regions + time series data (with years)
+# 3. ts_list: global entities + time series data
+# 4. other_list: global entities + cross-sectional data
 
-map_list <- lapply(all_tables[ vapply(all_tables, function(x) x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "data")
-names(map_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
+map_list <- lapply(all_tables[ vapply(all_tables, 
+                                      function(x) x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "data")
+names(map_list) <- basename(vapply(all_tables[ vapply(all_tables, 
+                                                      function(x) x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
-map_ts_list <- lapply(all_tables[ vapply(all_tables, function(x) x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "data")
-names(map_ts_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
+map_ts_list <- lapply(all_tables[ vapply(all_tables, 
+                                         function(x) x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "data")
+names(map_ts_list) <- basename(vapply(all_tables[ vapply(all_tables, 
+                                                         function(x) x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
-ts_list <- lapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "data")
-names(ts_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
+ts_list <- lapply(all_tables[ vapply(all_tables, 
+                                     function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "data")
+names(ts_list) <- basename(vapply(all_tables[ vapply(all_tables, 
+                                                     function(x) !x$is_region_first && !x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
-other_list <- lapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "data")
-names(other_list) <- basename(vapply(all_tables[ vapply(all_tables, function(x) !x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
+other_list <- lapply(all_tables[ vapply(all_tables, 
+                                        function(x) !x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "data")
+names(other_list) <- basename(vapply(all_tables[ vapply(all_tables, 
+                                                        function(x) !x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
 # ============================================================================
-# STEP 5: REGION NAME STANDARDIZATION
+# STEP 5: REGION NAME HARMONIZATION
 # ============================================================================
 
-# Standardize first column names for geographic tables
+# Harmonize first column names for geographic tables
 map_list <- lapply(map_list, function(x) {
   colnames(x)[1] <- "Region"
   x
@@ -146,9 +161,9 @@ map_ts_list <- lapply(map_ts_list, function(x) {
   x
 })
 
-# Load standardized region names from reference file
-final_regions <- readxl::read_excel("C:/Users/schia/Documents/LMU/Consulting/ASE-main/ASE-main/Rownames.xlsx", 
-                                    sheet = 1, range = "A1:A253", col_types = "text")[[1]]
+# Load harmonized region names from reference file
+final_regions <- readxl::read_excel("Rownames.xlsx", sheet = 1, 
+                                    range = "A1:A253", col_types = "text")[[1]]
 
 # Function to match region names using string similarity
 match_region <- function(name, final_regions) {
@@ -160,45 +175,52 @@ match_region <- function(name, final_regions) {
 }
 
 # Apply region name standardization to map_list tables
-map_list <- map(map_list, ~ {
+map_list <- purrr::map(map_list, ~ {
   .x %>%
-    {
-      # Ensure column names are valid and unique
-      names(.) <- make.names(iconv(names(.), to = "UTF-8", sub = ""), unique = TRUE)
-      .
-    } %>%
-    filter(!grepl("^Anm", Region)) %>%  # Remove annotation rows
-    mutate(Region = sapply(Region, match_region, final_regions = final_regions)) %>%
+    mutate(Region = sapply(Region, match_region, 
+                           final_regions = final_regions)) %>%
     group_by(Region) %>%
     # Take first non-NA value for each region (consolidate duplicates)
-    summarise(across(.cols = everything(), .fns = ~ first(na.omit(.x))), .groups = "drop")
+    summarise(across(.cols = everything(), .fns = ~ first(na.omit(.x))), 
+              .groups = "drop")
 })
 
 # Apply region name standardization to map_ts_list tables
-map_ts_list <- map(map_ts_list, ~ {
+map_ts_list <- purrr::map(map_ts_list, ~ {
   .x %>%
-    mutate(Region = sapply(Region, match_region, final_regions = final_regions)) %>%
+    mutate(Region = sapply(Region, match_region, 
+                           final_regions = final_regions)) %>%
     group_by(Region) %>%
+    # Take first non-NA value for each region (consolidate duplicates)
     summarise(across(.cols = everything(), .fns = ~ first(na.omit(.x))))
 })
+
+#print.data.frame(map_ts_list[[1]])
 
 # ============================================================================
 # STEP 6: TABLE DESCRIPTIONS SETUP
 # ============================================================================
 
-# Load table descriptions from overview files
-overview_roman <- read_excel("ASE-main/data overview.xlsx", sheet = "summary tables (Roman#)", col_types = "text") %>%
-  filter(!is.na(`TABLE #`)) %>%
-  mutate(table_number = str_replace(`TABLE #`, "\\.0$", ""))
+# Set working directory
+setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\")
 
-overview_arabic <- read_excel("ASE-main/data overview.xlsx", sheet = "analytical tables (Arabic#)", col_types = "text") %>%
-  filter(!is.na(`TABLE #`)) %>%
-  mutate(table_number = str_replace(`TABLE #`, "\\.0$", ""))
+# Load table descriptions from overview files
+overview_roman <- readxl::read_excel("data overview.xlsx", 
+                             sheet = "summary tables (Roman#)", 
+                             col_types = "text") %>%
+  dplyr::filter(!is.na(`TABLE #`)) %>%
+  dplyr::mutate(table_number = str_replace(`TABLE #`, "\\.0$", ""))
+
+overview_arabic <- readxl::read_excel("data overview.xlsx", 
+                              sheet = "analytical tables (Arabic#)", 
+                              col_types = "text") %>%
+  dplyr::filter(!is.na(`TABLE #`)) %>%
+  dplyr::mutate(table_number = str_replace(`TABLE #`, "\\.0$", ""))
 
 # Combine descriptions into single reference dataframe
-table_description_df <- bind_rows(overview_roman, overview_arabic) %>%
-  select(table_number, DESCRIPTION) %>%
-  distinct()
+table_description_df <- dplyr::bind_rows(overview_roman, overview_arabic) %>%
+  dplyr::select(table_number, DESCRIPTION) %>%
+  dplyr::distinct()
 
 # Helper function to extract table number from filename
 get_table_number <- function(filename) {
@@ -222,7 +244,7 @@ add_descriptions <- function(table_list) {
     
     attr(tbl, "description") <- desc
     tbl
-  }, table_list, names(table_list), SIMPLIFY = FALSE)
+  }, table_list, names(table_list), SIMPLIFY = F)
 }
 
 # ============================================================================
@@ -249,7 +271,8 @@ merge_map_list <- function(map_data_list) {
       desc <- attr(current_table, "description")
       if (is.null(desc)) desc <- paste0("Unknown description ", i)
       
-      cat("Processing table:", table_name, "- Rows:", nrow(current_table), "Cols:", ncol(current_table), "\n")
+      cat("Processing table:", table_name, "- Rows:", nrow(current_table), 
+          "Cols:", ncol(current_table), "\n")
       
       # Add Year column (2022 for cross-sectional data)
       current_table$Year <- "2022"
@@ -266,10 +289,12 @@ merge_map_list <- function(map_data_list) {
       if (is.null(merged_map)) {
         merged_map <- current_table
       } else {
-        merged_map <- dplyr::full_join(merged_map, current_table, by = c(id_col, "Year"))
+        merged_map <- dplyr::full_join(merged_map, current_table, 
+                                       by = c(id_col, "Year"))
       }
       
-      cat("After merge - Rows:", nrow(merged_map), "Cols:", ncol(merged_map), "\n")
+      cat("After merge - Rows:", nrow(merged_map), "Cols:", 
+          ncol(merged_map), "\n")
     }
   }
   
@@ -302,7 +327,8 @@ merge_map_ts_list <- function(map_ts_data_list) {
     current_table <- map_ts_data_list[[i]]
     
     if (!is.null(current_table) && nrow(current_table) > 0) {
-      cat("Processing table:", table_name, "- Rows:", nrow(current_table), "Cols:", ncol(current_table), "\n")
+      cat("Processing table:", table_name, "- Rows:", nrow(current_table), 
+          "Cols:", ncol(current_table), "\n")
       
       region_col <- colnames(current_table)[1]
       
@@ -311,11 +337,11 @@ merge_map_ts_list <- function(map_ts_data_list) {
       
       if (length(year_cols) > 0) {
         # Get table description for variable naming
-        table_id <- str_match(table_name, "Table_([^.]+)\\.CSV")[,2]
+        table_id <- stringr::str_match(table_name, "Table_([^.]+)\\.CSV")[,2]
         desc <- table_description_df %>% 
-          filter(table_number == table_id) %>% 
-          pull(DESCRIPTION) %>% 
-          first()
+          dplyr::filter(table_number == table_id) %>% 
+          dplyr::pull(DESCRIPTION) %>% 
+          dplyr::first()
         
         variable_name <- if (!is.null(desc) && !is.na(desc)) desc else table_name
         
@@ -330,7 +356,8 @@ merge_map_ts_list <- function(map_ts_data_list) {
         
         long_tables[[variable_name]] <- long_table
         
-        cat("Converted to long format - Variable:", variable_name, "Years:", paste(year_cols, collapse = ", "), "\n")
+        cat("Converted to long format - Variable:", variable_name, "Years:", 
+            paste(year_cols, collapse = ", "), "\n")
         
       } else {
         cat("No year columns found in table:", table_name, "\n")
@@ -354,7 +381,8 @@ merge_map_ts_list <- function(map_ts_data_list) {
           by = c(region_col, "Year")
         )
         
-        cat("Merged variable:", variable_name, "- Total rows:", nrow(merged_map_ts), "Cols:", ncol(merged_map_ts), "\n")
+        cat("Merged variable:", variable_name, "- Total rows:", 
+            nrow(merged_map_ts), "Cols:", ncol(merged_map_ts), "\n")
       }
     }
     
@@ -373,7 +401,7 @@ merged_map_ts_table <- merge_map_ts_list(map_ts_list)
 # ============================================================================
 
 # Merge cross-sectional and time series geographic data
-final_merged_table <- NULL
+final_geo_table <- NULL
 
 if (!is.null(merged_map_table) && !is.null(merged_map_ts_table)) {
   # Ensure region column names match
@@ -388,7 +416,7 @@ if (!is.null(merged_map_table) && !is.null(merged_map_ts_table)) {
   }
   
   # Merge by region and year
-  final_merged_table <- dplyr::full_join(
+  final_geo_table <- dplyr::full_join(
     merged_map_table, 
     merged_map_ts_table, 
     by = c(region_col_map, "Year")
@@ -398,23 +426,23 @@ if (!is.null(merged_map_table) && !is.null(merged_map_ts_table)) {
   
 } else if (!is.null(merged_map_table)) {
   cat("Only cross-sectional geographic table available\n")
-  final_merged_table <- merged_map_table
+  final_geo_table <- merged_map_table
 } else if (!is.null(merged_map_ts_table)) {
   cat("Only time series geographic table available\n") 
-  final_merged_table <- merged_map_ts_table
+  final_geo_table <- merged_map_ts_table
 } else {
   cat("No geographic tables to merge\n")
 }
 
 # Clean UTF-8 encoding in final table
-if (!is.null(final_merged_table)) {
-  final_merged_table[] <- lapply(final_merged_table, function(col) {
+if (!is.null(final_geo_table)) {
+  final_geo_table[] <- lapply(final_geo_table, function(col) {
     if (is.character(col)) iconv(col, from = "", to = "UTF-8", sub = "")
     else col
   })
   
   # Export final geographic table
-  write_xlsx(final_merged_table, "final_merged_map_table.xlsx")
+  readr::write_csv(final_geo_table, "final_geo_table.csv")
 }
 
 # ============================================================================
@@ -490,5 +518,6 @@ merged_ts_table <- process_ts_list(ts_list)
 
 # Export non-geographic time series table
 if (!is.null(merged_ts_table)) {
-  write_xlsx(merged_ts_table, "merged_ts_table.xlsx")
+  readr::write_csv(merged_ts_table, "merged_ts_table.csv")
 }
+
