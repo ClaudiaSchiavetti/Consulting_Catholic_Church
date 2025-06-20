@@ -156,6 +156,20 @@ map_list <- lapply(map_list, function(x) {
   x
 })
 
+# List of subtotal region names to remove
+regions_to_remove <- c(
+  "Europe Total", "Oceania Total", "Africa Total", "North America Total", 
+  "Cental America Mainland Total", "Central America Antilles Total", 
+  "South America Total", "America Total", "Asia Middle East Total", 
+  "Asia South East Far East Total", "Asia Total"
+)
+
+# Function to remove subtotal rows from map_list tables
+remove_total_regions <- function(map_list, regions_to_remove) {
+  map_list %>%
+    purrr::map(~ dplyr::filter(.x, !tolower(Region) %in% tolower(regions_to_remove)))
+}
+map_list <- remove_total_regions(map_list, regions_to_remove)
 map_ts_list <- lapply(map_ts_list, function(x) {
   colnames(x)[1] <- "Region"
   x
@@ -195,7 +209,28 @@ map_ts_list <- purrr::map(map_ts_list, ~ {
     summarise(across(.cols = everything(), .fns = ~ first(na.omit(.x))))
 })
 
-#print.data.frame(map_ts_list[[1]])
+# ============================================================================
+# STEP 5.1: REGION CLASSIFICATION SETUP
+# ============================================================================
+
+# Define macroregions and subregions based on common geographic classifications
+# You may need to adjust these lists based on your specific data
+
+macroregions <- c("Africa", "America North", "Central America Mainland", "Central America Antilles", "America South",
+                  "America", "Asia Middle East", "Asia South East Far East","Asia", "Europe", "Oceania","World")
+
+# Function to classify regions as macroregion or country-level
+classify_region_type <- function(region_names) {
+  sapply(region_names, function(region_name) {
+    if (is.na(region_name)) return(NA_character_)
+    if (tolower(region_name) %in% tolower(macroregions)) {
+      return("Macroregion")
+    } else {
+      return("Country")
+    }
+  })
+}
+
 
 # ============================================================================
 # STEP 6: TABLE DESCRIPTIONS SETUP
@@ -275,7 +310,9 @@ merge_map_list <- function(map_data_list) {
           "Cols:", ncol(current_table), "\n")
       
       # Add Year column (2022 for cross-sectional data)
-      current_table$Year <- "2022"
+      current_table <- current_table %>%
+        mutate(Year = "2022") %>%
+        relocate(Year, .after = 1)
       id_col <- colnames(current_table)[1]
       
       data_cols <- setdiff(colnames(current_table), c(id_col, "Year"))
@@ -304,6 +341,11 @@ merge_map_list <- function(map_data_list) {
 
 # Apply descriptions and merge map_list tables
 map_list <- add_descriptions(map_list)
+
+# Classify region types
+map_list <- purrr::map(map_list, ~ dplyr::mutate(.x, Region_Type = classify_region_type(Region)))
+
+# Merge map tables
 merged_map_table <- merge_map_list(map_list)
 
 # ============================================================================
@@ -394,6 +436,9 @@ merge_map_ts_list <- function(map_ts_data_list) {
 
 # Apply descriptions and merge map_ts_list tables
 map_ts_list <- add_descriptions(map_ts_list)
+
+map_ts_list <- purrr::map(map_ts_list, ~ dplyr::mutate(.x, Region_Type = classify_region_type(Region)))
+
 merged_map_ts_table <- merge_map_ts_list(map_ts_list)
 
 # ============================================================================
