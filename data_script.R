@@ -174,7 +174,7 @@ map_ts_list <- lapply(map_ts_list, function(x) {
   colnames(x)[1] <- "Region"
   x
 })
-
+map_ts_list <- remove_total_regions(map_ts_list, regions_to_remove)
 # Load harmonized region names from reference file
 final_regions <- readxl::read_excel("Rownames.xlsx", sheet = 1, 
                                     range = "A1:A253", col_types = "text")[[1]]
