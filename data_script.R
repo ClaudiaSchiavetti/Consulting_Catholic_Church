@@ -245,13 +245,13 @@ classify_region_type <- function(region_names) {
 
 # Apply classify_region_type to map_list
 map_list <- lapply(map_list, function(df) {
-  df$Region_Type <- classify_region_type(df$Region)
+  df$`Region type` <- as.factor(classify_region_type(df$Region))
   return(df)
 })
 
 # Apply classify_region_type to map_ts_list
 map_ts_list <- lapply(map_ts_list, function(df) {
-  df$Region_Type <- classify_region_type(df$Region)
+  df$`Region type` <- as.factor(classify_region_type(df$Region))
   return(df)
 })
 
@@ -260,7 +260,7 @@ map_ts_list <- lapply(map_ts_list, function(df) {
 
 
 # ============================================================================
-# STEP 6: TABLE DESCRIPTIONS SETUP
+# STEP 6: TABLE NAMES SETUP
 # ============================================================================
 
 # Set working directory
