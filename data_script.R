@@ -7,6 +7,7 @@
 # downloaded from the repository, but access to it must be granted by the owner 
 # - and the code should be modified accordingly.
 
+
 # ============================================================================
 # SETUP AND DEPENDENCIES
 # ============================================================================
@@ -16,12 +17,13 @@ if (!require("pacman", quietly = T)) install.packages("pacman")
 library(pacman)
 pacman::p_load(tidyverse, readxl, stringdist)
 
-# Set working directory
-setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
 
 # ============================================================================
 # STEP 1: DATA DISCOVERY AND INITIAL PROCESSING
 # ============================================================================
+
+# Set working directory
+setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
 
 # Find all CSV files in the directory and subdirectories
 data_files <- list.files(pattern = "\\.CSV$", full.names = T, recursive = T)
@@ -52,6 +54,7 @@ read_and_check <- function(file) {
 
 # Read and label CSV files
 all_tables <- lapply(data_files, read_and_check)
+
 
 # ============================================================================
 # STEP 2: DATA CLEANING AND TRANSFORMATION
@@ -89,6 +92,7 @@ all_tables <- lapply(all_tables, function(x) {
 
 #print.data.frame(all_tables[[1]]$data)
 
+
 # ============================================================================
 # STEP 3: DATA QUALITY ASSESSMENT
 # ============================================================================
@@ -115,6 +119,7 @@ na_summary_list <- lapply(all_tables, function(x) {
 
 # Combine all missing value summaries into one dataframe
 na_summary_df <- do.call(rbind, na_summary_list)
+
 
 # ============================================================================
 # STEP 4: TABLE CATEGORIZATION
@@ -146,12 +151,18 @@ other_list <- lapply(all_tables[ vapply(all_tables,
 names(other_list) <- basename(vapply(all_tables[ vapply(all_tables, 
                                                         function(x) !x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "file", FUN.VALUE = character(1)))
 
+
 # ============================================================================
-# STEP 5: REGION NAME HARMONIZATION
+# STEP 5: REGION FLAGGING NAMES AND HARMONIZATION FLAGGING
 # ============================================================================
 
-# Harmonize first column names for geographic tables
+# Change first column names to "Region" for geographic tables
 map_list <- lapply(map_list, function(x) {
+  colnames(x)[1] <- "Region"
+  x
+})
+
+map_ts_list <- lapply(map_ts_list, function(x) {
   colnames(x)[1] <- "Region"
   x
 })
@@ -169,15 +180,18 @@ remove_total_regions <- function(map_list, regions_to_remove) {
   map_list %>%
     purrr::map(~ dplyr::filter(.x, !tolower(Region) %in% tolower(regions_to_remove)))
 }
+
+# Remove superfluous rows
 map_list <- remove_total_regions(map_list, regions_to_remove)
-map_ts_list <- lapply(map_ts_list, function(x) {
-  colnames(x)[1] <- "Region"
-  x
-})
+
 map_ts_list <- remove_total_regions(map_ts_list, regions_to_remove)
+
+# Set working directory
+setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\")
+
 # Load harmonized region names from reference file
-final_regions <- readxl::read_excel("Rownames.xlsx", sheet = 1, 
-                                    range = "A1:A253", col_types = "text")[[1]]
+final_regions <- readxl::read_excel("rownames adjusted.xlsx", sheet = 1, 
+                                    range = "A1:A242", col_types = "text")[[1]]
 
 # Function to match region names using string similarity
 match_region <- function(name, final_regions) {
@@ -209,15 +223,13 @@ map_ts_list <- purrr::map(map_ts_list, ~ {
     summarise(across(.cols = everything(), .fns = ~ first(na.omit(.x))))
 })
 
-# ============================================================================
-# STEP 5.1: REGION CLASSIFICATION SETUP
-# ============================================================================
-
 # Define macroregions and subregions based on common geographic classifications
 # You may need to adjust these lists based on your specific data
 
-macroregions <- c("Africa", "America North", "Central America Mainland", "Central America Antilles", "America South",
-                  "America", "Asia Middle East", "Asia South East Far East","Asia", "Europe", "Oceania","World")
+macroregions <- c("Africa", "North America", "Central America (Mainland)", 
+                  "Central America (Antilles)", "South America", "America", 
+                  "Middle East Asia", "South East and Far East Asia", "Asia", 
+                  "Europe", "Oceania", "World")
 
 # Function to classify regions as macroregion or country-level
 classify_region_type <- function(region_names) {
@@ -230,6 +242,21 @@ classify_region_type <- function(region_names) {
     }
   })
 }
+
+# Apply classify_region_type to map_list
+map_list <- lapply(map_list, function(df) {
+  df$Region_Type <- classify_region_type(df$Region)
+  return(df)
+})
+
+# Apply classify_region_type to map_ts_list
+map_ts_list <- lapply(map_ts_list, function(df) {
+  df$Region_Type <- classify_region_type(df$Region)
+  return(df)
+})
+
+#print.data.frame(map_list[[10]])
+#print.data.frame(map_ts_list[[10]])
 
 
 # ============================================================================
@@ -281,6 +308,7 @@ add_descriptions <- function(table_list) {
     tbl
   }, table_list, names(table_list), SIMPLIFY = F)
 }
+
 
 # ============================================================================
 # STEP 7: MERGE MAP_LIST TABLES (Cross-sectional geographic data)
@@ -347,6 +375,7 @@ map_list <- purrr::map(map_list, ~ dplyr::mutate(.x, Region_Type = classify_regi
 
 # Merge map tables
 merged_map_table <- merge_map_list(map_list)
+
 
 # ============================================================================
 # STEP 8: MERGE MAP_TS_LIST TABLES (Time series geographic data)
@@ -441,6 +470,7 @@ map_ts_list <- purrr::map(map_ts_list, ~ dplyr::mutate(.x, Region_Type = classif
 
 merged_map_ts_table <- merge_map_ts_list(map_ts_list)
 
+
 # ============================================================================
 # STEP 9: COMBINE GEOGRAPHIC TABLES (map_list + map_ts_list)
 # ============================================================================
@@ -489,6 +519,7 @@ if (!is.null(final_geo_table)) {
   # Export final geographic table
   readr::write_csv(final_geo_table, "final_geo_table.csv")
 }
+
 
 # ============================================================================
 # STEP 10: PROCESS TS_LIST TABLES (Non-geographic time series data)
