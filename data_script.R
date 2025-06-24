@@ -266,48 +266,49 @@ map_ts_list <- lapply(map_ts_list, function(df) {
 # Set working directory
 setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\")
 
-# Load table descriptions from overview files
-overview_roman <- readxl::read_excel("data overview.xlsx", 
-                                     sheet = "summary tables (Roman#)", 
-                                     col_types = "text") %>%
-  dplyr::filter(!is.na(`TABLE #`)) %>%
-  dplyr::mutate(table_number = str_replace(`TABLE #`, "\\.0$", ""))
+# Load the Excel file with data overview
+data_overview_arabic <- readxl::read_excel("data overview.xlsx", sheet = 1, col_types = "text")
 
-overview_arabic <- readxl::read_excel("data overview.xlsx", 
-                                      sheet = "analytical tables (Arabic#)", 
-                                      col_types = "text") %>%
-  dplyr::filter(!is.na(`TABLE #`)) %>%
-  dplyr::mutate(table_number = str_replace(`TABLE #`, "\\.0$", ""))
+data_overview_roman <- readxl::read_excel("data overview.xlsx", sheet = 2, col_types = "text")
 
-# Combine descriptions into single reference dataframe
-table_description_df <- dplyr::bind_rows(overview_roman, overview_arabic) %>%
-  dplyr::select(table_number, DESCRIPTION) %>%
-  dplyr::distinct()
+# Backup tibble names
+map_list_names <- names(map_list)
 
-# Helper function to extract table number from filename
-get_table_number <- function(filename) {
-  stringr::str_match(basename(filename), "Table_([^.]+)\\.CSV")[,2]
+# Function to extract column names from data overview based on table number
+get_new_colnames <- function(table_num, sheet_data) {
+  # Find the row where the table number matches
+  row_idx <- which(sheet_data[[2]] == table_num)
+  if (length(row_idx) == 0) return(NULL)
+  # Extract column names from row D onwards (column 4 and beyond)
+  new_cols <- unlist(sheet_data[row_idx, 4:ncol(sheet_data)], use.names = FALSE)
+  #  # Remove any NA values and trim whitespace
+  #  new_cols <- new_cols[!is.na(new_cols)]
+  #  new_cols <- trimws(new_cols)
+  return(new_cols)
 }
 
-# Function to attach descriptions to tables
-add_descriptions <- function(table_list) {
-  mapply(function(tbl, filename) {
-    table_id <- get_table_number(filename)
-    
-    desc <- table_description_df %>%
-      filter(table_number == table_id) %>%
-      pull(DESCRIPTION) %>%
-      first()
-    
-    if (is.null(desc)) {
-      warning("No description found for: ", filename, " (id: ", table_id, ")")
-      desc <- NA_character_
-    }
-    
-    attr(tbl, "description") <- desc
-    tbl
-  }, table_list, names(table_list), SIMPLIFY = F)
-}
+# Update column names for each tibble in map_list
+map_list <- lapply(names(map_list), function(file_name) {
+  # Extract table number from file name (e.g., "Table_01.CSV" -> "01")
+  table_num <- sub("Table_([0-9I]+[-]?[0-9a-zA-Z]*).CSV", "\\1", file_name)
+  
+  # Select the right sheet
+  if (grepl("^[0-9]+$", table_num)) sheet_data <- data_overview_arabic
+  else sheet_data <- data_overview_roman
+  
+  # Get new column names
+  new_cols <- get_new_colnames(table_num, sheet_data)
+  
+  if (!is.null(new_cols) && length(new_cols) > 1) {  # Ensure we have enough columns to update
+    # Keep the first column as "Region", update the rest
+    colnames(map_list[[file_name]])[2:(length(colnames(map_list[[file_name]]))-1)] <- new_cols
+  }
+  
+  return(map_list[[file_name]])
+})
+
+# Restore tibble names
+names(map_list) <- map_list_names
 
 
 # ============================================================================
