@@ -15,7 +15,7 @@
 # Load package manager and additional packages
 if (!require("pacman", quietly = T)) install.packages("pacman")
 library(pacman)
-pacman::p_load(tidyverse, readxl, stringdist)
+pacman::p_load(tidyverse, readxl, stringdist, stringi)
 
 
 # ============================================================================
@@ -94,7 +94,7 @@ all_tables <- lapply(all_tables, function(x) {
 
 
 # ============================================================================
-# STEP 3: DATA QUALITY ASSESSMENT
+# STEP 3: MISSING VALUES ASSESSMENT
 # ============================================================================
 
 # Function to analyze missing values in each table
@@ -167,61 +167,59 @@ map_ts_list <- lapply(map_ts_list, function(x) {
   x
 })
 
-# List of subtotal region names to remove
-regions_to_remove <- c(
-  "Europe Total", "Oceania Total", "Africa Total", "North America Total", 
-  "Cental America Mainland Total", "Central America Antilles Total", 
-  "South America Total", "America Total", "Asia Middle East Total", 
-  "Asia South East Far East Total", "Asia Total"
-)
-
-# Function to remove subtotal rows from map_list tables
-remove_total_regions <- function(map_list, regions_to_remove) {
-  map_list %>%
-    purrr::map(~ dplyr::filter(.x, !tolower(Region) %in% tolower(regions_to_remove)))
-}
-
-# Remove superfluous rows
-map_list <- remove_total_regions(map_list, regions_to_remove)
-
-map_ts_list <- remove_total_regions(map_ts_list, regions_to_remove)
-
 # Set working directory
 setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\")
 
-# Load harmonized region names from reference file
-final_regions <- readxl::read_excel("rownames adjusted.xlsx", sheet = 1, 
-                                    range = "A1:A242", col_types = "text")[[1]]
+# Load harmonized region names
+final_regions <- readxl::read_excel("rownames adjusted.xlsx", sheet = 1, range = "A1:A242", col_types = "text")[[1]]
 
-# Function to match region names using string similarity
-match_region <- function(name, final_regions) {
-  if (is.na(name)) return(NA_character_)
-  distances <- stringdist(name, final_regions, method = "jw") # Jaro-Winkler distance
-  best_match <- final_regions[which.min(distances)]
-  # Return NA if match quality is poor (distance > 0.8)
-  if (min(distances) > 0.8) NA_character_ else best_match
+# Function to filter out rows with "Total" in Region
+filter_totals <- function(data_list) {
+  map(data_list, ~ .x %>% filter(!grepl("Total", Region, ignore.case = TRUE)))
 }
 
-# Apply region name standardization to map_list tables
-map_list <- purrr::map(map_list, ~ {
-  .x %>%
-    mutate(Region = sapply(Region, match_region, 
-                           final_regions = final_regions)) %>%
-    group_by(Region) %>%
-    # Take first non-NA value for each region (consolidate duplicates)
-    summarise(across(.cols = everything(), .fns = ~ first(na.omit(.x))), 
-              .groups = "drop")
-})
+# Function to preprocess strings
+preprocess <- function(x) {
+  x <- stringi::stri_trans_general(tolower(gsub("[[:punct:]]", "", x)), "Latin-ASCII")
+  if (is.na(x) || nchar(trimws(x)) == 0) return("")
+  paste(sort(unlist(strsplit(trimws(x), "\\s+"))), collapse = " ")
+}
 
-# Apply region name standardization to map_ts_list tables
-map_ts_list <- purrr::map(map_ts_list, ~ {
-  .x %>%
-    mutate(Region = sapply(Region, match_region, 
-                           final_regions = final_regions)) %>%
-    group_by(Region) %>%
-    # Take first non-NA value for each region (consolidate duplicates)
-    summarise(across(.cols = everything(), .fns = ~ first(na.omit(.x))))
-})
+# Function to replace Region with one-to-one matching
+replace_regions <- function(data_list, final_regions) {
+  map(data_list, function(tbl) {
+    proc_regions <- map_chr(tbl$Region, preprocess)
+    proc_final <- map_chr(final_regions, preprocess)
+    matches <- rep(NA_character_, nrow(tbl))
+    available <- seq_along(final_regions)
+    for (i in seq_along(proc_regions)) {
+      if (is.na(proc_regions[i]) || nchar(proc_regions[i]) == 0) {
+        matches[i] <- tbl$Region[i]
+        next
+      }
+      dists <- stringdist(proc_regions[i], proc_final[available], method = "jaccard", q = 2)
+      if (length(available) == 0 || all(is.na(dists))) {
+        matches[i] <- tbl$Region[i]
+        next
+      }
+      if (min(dists, na.rm = TRUE) <= 0.5) {
+        j <- available[which.min(dists)]
+        matches[i] <- final_regions[j]
+        available <- setdiff(available, j)
+      } else {
+        matches[i] <- tbl$Region[i]
+      }
+    }
+    mutate(tbl, Region = matches)
+  })
+}
+
+# Apply to map_list and map_ts_list
+map_list <- filter_totals(map_list) %>% replace_regions(final_regions)
+map_ts_list <- filter_totals(map_ts_list) %>% replace_regions(final_regions)
+
+#print(map_list)
+#print(map_ts_list)
 
 # Define macroregions and subregions based on common geographic classifications
 # You may need to adjust these lists based on your specific data
