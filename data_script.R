@@ -120,6 +120,44 @@ na_summary_list <- lapply(all_tables, function(x) {
 # Combine all missing value summaries into one dataframe
 na_summary_df <- do.call(rbind, na_summary_list)
 
+#### AD-HOC TABLE ADJUSTMENTS? (like: split 32, modify 50, remove I-e)
+
+# Find index of list with file == "./Chapter04/Table_32.CSV"
+#idx <- which(map_lgl(all_tables, ~ .x$file == "./Chapter04/Table_32.CSV"))
+
+# Check if found
+#if (length(idx) == 0) stop("Table_32.CSV not found in all_tables")
+
+# Extract original list and tibble
+#orig_list <- all_tables[[idx]]
+#orig_data <- orig_list$data
+
+# Verify tibble has enough columns
+#if (ncol(orig_data) < 7) stop("Table_32.CSV data has fewer than 7 columns")
+
+# Split tibble
+#table_32_1 <- orig_data[, 1:7]
+#table_32_2 <- orig_data[, c(1, (ncol(orig_data)-5):ncol(orig_data))]
+
+# Rename columns
+#colnames(table_32_1) <- c("Countries", "2017", "2018", "2019", "2020", "2021", "2022")
+#colnames(table_32_2) <- c("Countries", "2017", "2018", "2019", "2020", "2021", "2022")
+
+# Create new lists
+#new_list_1 <- orig_list
+#new_list_1$file <- "./Chapter04/Table_32-1.CSV"
+#new_list_1$data <- table_32_1
+
+#new_list_2 <- orig_list
+#new_list_2$file <- "./Chapter04/Table_32-2.CSV"
+#new_list_2$data <- table_32_2
+
+# Replace original list with two new lists
+#all_tables <- append(all_tables[-idx], list(new_list_1, new_list_2), after = idx - 1)
+
+# Optional: Verify result
+#print(map(all_tables, ~ .x$file))
+
 
 # ============================================================================
 # STEP 4: TABLE CATEGORIZATION
@@ -153,7 +191,7 @@ names(other_list) <- basename(vapply(all_tables[ vapply(all_tables,
 
 
 # ============================================================================
-# STEP 5: REGION AND NAMES HARMONIZATION
+# STEP 5: REGION NAMES HARMONIZATION
 # ============================================================================
 
 # Change first column names to "Region" for geographic tables
@@ -340,6 +378,35 @@ merged_map_table <- bind_rows(map_list) %>%
 # STEP 8: MERGE MAP_TS_LIST TABLES (Time series geographic data)
 # ============================================================================
 
+# Function to extract value column name from data overview
+get_descriptions <- function(table_num, sheet_data) {
+  row_idx <- which(sheet_data[[2]] == table_num)
+  if (length(row_idx) == 0) return("Value")  # Default if no match
+  col_name <- sheet_data[row_idx, 4][[1]]  # First column after "Table" (column D)
+  if (is.na(col_name) || nchar(trimws(col_name)) == 0) return("Value")
+  trimws(col_name)
+}
+
+# Pivot each tibble in map_ts_list
+map_ts_list <- map(names(map_ts_list), function(file_name) {
+  # Extract table number (e.g., "Table_01.CSV" -> "01", "Table_I.CSV" -> "I")
+  table_num <- sub("Table_([0-9I]+[-]?[0-9a-zA-Z]*).CSV", "\\1", file_name)
+  
+  # Select sheet based on table number format
+  sheet_data <- if (grepl("^[0-9]+$", table_num)) data_overview_arabic else data_overview_roman
+  
+  # Get table descriptions
+  value_col <- get_descriptions(table_num, sheet_data)
+  
+  # Pivot tibble
+  map_ts_list[[file_name]] %>%
+    pivot_longer(cols = matches("^20[1-2][0-9]$"), names_to = "Year", values_to = value_col)
+}) %>% set_names(names(map_ts_list))
+
+#print(map_ts_list)
+
+#####
+
 # Function to merge time series geographic tables
 merge_map_ts_list <- function(map_ts_data_list) {
   cat("\nProcessing map_ts_list tables...\n")
@@ -433,6 +500,8 @@ merged_map_ts_table <- merge_map_ts_list(map_ts_list)
 # ============================================================================
 # STEP 9: COMBINE GEOGRAPHIC TABLES (map_list + map_ts_list)
 # ============================================================================
+
+# Add "Year"<-"2022" column for merged_map_table
 
 # Merge cross-sectional and time series geographic data
 final_geo_table <- NULL
