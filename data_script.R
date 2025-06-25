@@ -153,7 +153,7 @@ names(other_list) <- basename(vapply(all_tables[ vapply(all_tables,
 
 
 # ============================================================================
-# STEP 5: REGION FLAGGING NAMES AND HARMONIZATION FLAGGING
+# STEP 5: REGION AND NAMES HARMONIZATION
 # ============================================================================
 
 # Change first column names to "Region" for geographic tables
@@ -258,7 +258,7 @@ map_ts_list <- lapply(map_ts_list, function(df) {
 
 
 # ============================================================================
-# STEP 6: TABLE NAMES SETUP
+# STEP 6: LONG COLUMN NAMES SETUP
 # ============================================================================
 
 # Set working directory
@@ -313,67 +313,27 @@ names(map_list) <- map_list_names
 # STEP 7: MERGE MAP_LIST TABLES (Cross-sectional geographic data)
 # ============================================================================
 
-# Function to merge cross-sectional geographic tables
-merge_map_list <- function(map_data_list) {
-  cat("Processing map_list tables...\n")
-  
-  if (length(map_data_list) == 0) {
-    cat("No tables in map_list\n")
-    return(NULL)
+# Function to merge same-named columns for a Region
+merge_columns <- function(values, region, col_name) {
+  non_na <- values[!is.na(values)]
+  if (length(unique(non_na)) > 1) {
+    warning(sprintf("Conflict in Region '%s', Column '%s': Multiple non-NA values %s. Using first.", 
+                    region, col_name, paste(unique(non_na), collapse = ", ")))
+    return(unique(non_na)[1])
   }
-  
-  merged_map <- NULL
-  variable_descriptions <- list()
-  
-  for (i in seq_along(map_data_list)) {
-    table_name <- names(map_data_list)[i]
-    current_table <- map_data_list[[i]]
-    
-    if (!is.null(current_table) && nrow(current_table) > 0) {
-      desc <- attr(current_table, "description")
-      if (is.null(desc)) desc <- paste0("Unknown description ", i)
-      
-      cat("Processing table:", table_name, "- Rows:", nrow(current_table), 
-          "Cols:", ncol(current_table), "\n")
-      
-      # Add Year column (2022 for cross-sectional data)
-      current_table <- current_table %>%
-        mutate(Year = "2022") %>%
-        relocate(Year, .after = 1)
-      id_col <- colnames(current_table)[1]
-      
-      data_cols <- setdiff(colnames(current_table), c(id_col, "Year"))
-      
-      # Store description for each variable
-      for (col in data_cols) {
-        variable_descriptions[[col]] <- desc
-      }
-      
-      # Merge tables by Region and Year
-      if (is.null(merged_map)) {
-        merged_map <- current_table
-      } else {
-        merged_map <- dplyr::full_join(merged_map, current_table, 
-                                       by = c(id_col, "Year"))
-      }
-      
-      cat("After merge - Rows:", nrow(merged_map), "Cols:", 
-          ncol(merged_map), "\n")
-    }
-  }
-  
-  attr(merged_map, "variable_descriptions") <- variable_descriptions
-  return(merged_map)
+  if (length(non_na) > 0) return(non_na[1])
+  return(NA)
 }
 
-# Apply descriptions and merge map_list tables
-map_list <- add_descriptions(map_list)
+# Merge all tibbles in map_list
+merged_map_table <- bind_rows(map_list) %>%
+  group_by(Region) %>%
+  summarise(across(everything(), ~ merge_columns(.x, Region[1], cur_column()), .names = "{.col}"), .groups = "drop")
 
-# Classify region types
-map_list <- purrr::map(map_list, ~ dplyr::mutate(.x, Region_Type = classify_region_type(Region)))
+#last_dplyr_warnings()
+#last_dplyr_warnings(n=44)
 
-# Merge map tables
-merged_map_table <- merge_map_list(map_list)
+#print(merged_map_table)
 
 
 # ============================================================================
