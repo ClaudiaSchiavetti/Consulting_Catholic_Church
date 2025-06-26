@@ -426,8 +426,26 @@ map_ts_list <- lapply(names(map_ts_list), function(file_name) {
 # Restore tibble names
 names(map_ts_list) <- map_ts_list_names
 
+# Function to merge time series tables in map_ts_list
+merge_ts_tables <- function(data_list) {
+  # Combine all long-format tables
+  merged_ts_table <- bind_rows(data_list) %>%
+    # Group by Region, Year, and Region type to handle potential conflicts
+    group_by(Region, Year, `Region type`) %>%
+    summarise(
+      across(.cols = everything(), 
+             ~ merge_columns(.x, Region[1], cur_column()), 
+             .names = "{.col}"),
+      .groups = "drop"
+    )
+  
+  return(merged_ts_table)
+}
 
-merged_map_ts_table <- merge_map_ts_list(map_ts_list)
+# Apply the merge function
+merged_map_ts_table <- merge_ts_tables(map_ts_list)
+
+#last_dplyr_warnings()
 
 
 # ============================================================================
@@ -435,51 +453,19 @@ merged_map_ts_table <- merge_map_ts_list(map_ts_list)
 # ============================================================================
 
 # Add "Year"<-"2022" column for merged_map_table
+merged_map_table <- merged_map_table %>% 
+  mutate(Year = "2022")
 
-# Merge cross-sectional and time series geographic data
-final_geo_table <- NULL
+# Create a list with both tables
+final_geo_table_list <- list(merged_map_table, merged_map_ts_table)
 
-if (!is.null(merged_map_table) && !is.null(merged_map_ts_table)) {
-  # Ensure region column names match
-  region_col_map <- colnames(merged_map_table)[1]
-  region_col_ts <- colnames(merged_map_ts_table)[1]
-  
-  cat("Region columns - map_table:", region_col_map, "| map_ts_table:", region_col_ts, "\n")
-  
-  if (region_col_map != region_col_ts) {
-    cat("Warning: Region column names don't match. Renaming", region_col_ts, "to", region_col_map, "\n")
-    colnames(merged_map_ts_table)[1] <- region_col_map
-  }
-  
-  # Merge by region and year
-  final_geo_table <- dplyr::full_join(
-    merged_map_table, 
-    merged_map_ts_table, 
-    by = c(region_col_map, "Year")
-  )
-  
-  cat("Successfully merged both geographic tables!\n")
-  
-} else if (!is.null(merged_map_table)) {
-  cat("Only cross-sectional geographic table available\n")
-  final_geo_table <- merged_map_table
-} else if (!is.null(merged_map_ts_table)) {
-  cat("Only time series geographic table available\n") 
-  final_geo_table <- merged_map_ts_table
-} else {
-  cat("No geographic tables to merge\n")
-}
+# Merge them with TS merging rules
+final_geo_table <- merge_ts_tables(final_geo_table_list)
 
-# Clean UTF-8 encoding in final table
-if (!is.null(final_geo_table)) {
-  final_geo_table[] <- lapply(final_geo_table, function(col) {
-    if (is.character(col)) iconv(col, from = "", to = "UTF-8", sub = "")
-    else col
-  })
-  
-  # Export final geographic table
-  readr::write_csv(final_geo_table, "final_geo_table.csv")
-}
+# Export final geographic table
+readr::write_csv(final_geo_table, "final_geo_table.csv")
+
+#last_dplyr_warnings()
 
 
 # ============================================================================
