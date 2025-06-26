@@ -322,10 +322,10 @@ get_new_colnames <- function(table_num, sheet_data) {
 # Update column names for each tibble in map_list
 map_list <- lapply(names(map_list), function(file_name) {
   # Extract table number from file name (e.g., "Table_01.CSV" -> "01")
-  table_num <- sub("Table_([0-9I]+[-]?[0-9a-zA-Z]*).CSV", "\\1", file_name)
+  table_num <- sub("Table_([^.]+).CSV", "\\1", file_name)
   
   # Select the right sheet
-  if (grepl("^[0-9]+$", table_num)) sheet_data <- data_overview_arabic
+  if (grepl("^[0-9]", table_num)) sheet_data <- data_overview_arabic
   else sheet_data <- data_overview_roman
   
   # Get new column names
@@ -373,121 +373,59 @@ merged_map_table <- bind_rows(map_list) %>%
 # STEP 8: MERGE MAP_TS_LIST TABLES (Time series geographic data)
 # ============================================================================
 
-# Function to extract value column name from data overview
-get_descriptions <- function(table_num, sheet_data) {
+# Backup tibble names
+map_ts_list_names <- names(map_ts_list)
+
+# Update column names for each tibble in map_ts_list and prepare for merging
+map_ts_list <- lapply(names(map_ts_list), function(file_name) {
+  # Extract table number from file name (e.g., "Table_01.CSV" -> "01", "Table_32-1.CSV" -> "32-1")
+  table_num <- sub("Table_([^.]+).CSV", "\\1", file_name)
+  
+  # Select the right sheet
+  if (grepl("^[0-9]", table_num)) {
+    sheet_data <- data_overview_arabic
+  } else {
+    sheet_data <- data_overview_roman
+  }
+  
+  # Get new column names for years (excluding Region and Region type)
+  new_cols <- get_new_colnames(table_num, sheet_data)
+  
+  # Update year column names if valid
+  if (!is.null(new_cols) && length(new_cols) > 1) {  # Ensure we have enough columns to update
+    # Keep the first column as "Region" and last as "Region type", update the rest
+    colnames(map_ts_list[[file_name]])[2:(length(colnames(map_ts_list[[file_name]]))-1)] <- new_cols
+  }
+  
+  # Get the new name for the Value column from the first column of sheet_data
   row_idx <- which(sheet_data[[2]] == table_num)
-  if (length(row_idx) == 0) return("Value")  # Default if no match
-  col_name <- sheet_data[row_idx, 4][[1]]  # First column after "Table" (column D)
-  if (is.na(col_name) || nchar(trimws(col_name)) == 0) return("Value")
-  trimws(col_name)
-}
-
-# Pivot each tibble in map_ts_list
-map_ts_list <- map(names(map_ts_list), function(file_name) {
-  # Extract table number (e.g., "Table_01.CSV" -> "01", "Table_I.CSV" -> "I")
-  table_num <- sub("Table_([0-9I]+[-]?[0-9a-zA-Z]*).CSV", "\\1", file_name)
-  
-  # Select sheet based on table number format
-  sheet_data <- if (grepl("^[0-9]+$", table_num)) data_overview_arabic else data_overview_roman
-  
-  # Get table descriptions
-  value_col <- get_descriptions(table_num, sheet_data)
-  
-  # Pivot tibble
-  map_ts_list[[file_name]] %>%
-    pivot_longer(cols = matches("^20[1-2][0-9]$"), names_to = "Year", values_to = value_col)
-}) %>% set_names(names(map_ts_list))
-
-#print(map_ts_list)
-
-#####
-
-# Function to merge time series geographic tables
-merge_map_ts_list <- function(map_ts_data_list) {
-  cat("\nProcessing map_ts_list tables...\n")
-  
-  if (length(map_ts_data_list) == 0) {
-    cat("No tables in map_ts_list\n")
-    return(NULL)
-  }
-  
-  long_tables <- list()
-  
-  # Convert each table from wide to long format
-  for (i in seq_along(map_ts_data_list)) {
-    table_name <- names(map_ts_data_list)[i]
-    current_table <- map_ts_data_list[[i]]
-    
-    if (!is.null(current_table) && nrow(current_table) > 0) {
-      cat("Processing table:", table_name, "- Rows:", nrow(current_table), 
-          "Cols:", ncol(current_table), "\n")
-      
-      region_col <- colnames(current_table)[1]
-      
-      # Identify year columns (columns that look like years: 19XX or 20XX)
-      year_cols <- grep("^(19|20)\\d{2}$", colnames(current_table), value = TRUE)
-      
-      if (length(year_cols) > 0) {
-        # Get table description for variable naming
-        table_id <- stringr::str_match(table_name, "Table_([^.]+)\\.CSV")[,2]
-        desc <- table_description_df %>% 
-          dplyr::filter(table_number == table_id) %>% 
-          dplyr::pull(DESCRIPTION) %>% 
-          dplyr::first()
-        
-        variable_name <- if (!is.null(desc) && !is.na(desc)) desc else table_name
-        
-        # Pivot from wide to long format
-        long_table <- current_table %>%
-          tidyr::pivot_longer(
-            cols = all_of(year_cols),
-            names_to = "Year",
-            values_to = variable_name
-          ) %>%
-          dplyr::select(all_of(region_col), Year, all_of(variable_name))
-        
-        long_tables[[variable_name]] <- long_table
-        
-        cat("Converted to long format - Variable:", variable_name, "Years:", 
-            paste(year_cols, collapse = ", "), "\n")
-        
-      } else {
-        cat("No year columns found in table:", table_name, "\n")
-      }
+  if (length(row_idx) == 0) {
+    warning(sprintf("No matching row found for table number '%s' in sheet_data. Keeping default 'Value' column name.", table_num))
+    value_col_name <- "Value"
+  } else {
+    value_col_name <- sheet_data[row_idx, 1][[1]]  # Extract value from first column
+    value_col_name <- trimws(value_col_name)  # Trim whitespace
+    if (is.na(value_col_name) || nchar(value_col_name) == 0) {
+      warning(sprintf("Value column name for table number '%s' is NA or empty. Using default 'Value'.", table_num))
+      value_col_name <- "Value"
     }
   }
   
-  # Merge all long-format tables by region and year
-  if (length(long_tables) > 0) {
-    merged_map_ts <- long_tables[[1]]
-    region_col <- colnames(merged_map_ts)[1]
-    
-    if (length(long_tables) > 1) {
-      for (i in 2:length(long_tables)) {
-        current_long <- long_tables[[i]]
-        variable_name <- names(long_tables)[i]
-        
-        merged_map_ts <- dplyr::full_join(
-          merged_map_ts, 
-          current_long, 
-          by = c(region_col, "Year")
-        )
-        
-        cat("Merged variable:", variable_name, "- Total rows:", 
-            nrow(merged_map_ts), "Cols:", ncol(merged_map_ts), "\n")
-      }
-    }
-    
-    return(merged_map_ts)
-  }
+  # Pivot the tibble to long format
+  tbl_long <- map_ts_list[[file_name]] %>%
+    pivot_longer(
+      cols = -c("Region", "Region type"),
+      names_to = "Year",
+      values_to = value_col_name,  # Use the new value column name
+      values_drop_na = FALSE
+    )
   
-  return(NULL)
-}
+  return(tbl_long)
+})
 
-# Apply descriptions and merge map_ts_list tables
-map_ts_list <- add_descriptions(map_ts_list)
+# Restore tibble names
+names(map_ts_list) <- map_ts_list_names
 
-map_ts_list <- purrr::map(map_ts_list, ~ dplyr::mutate(.x, Region_Type = classify_region_type(Region)))
 
 merged_map_ts_table <- merge_map_ts_list(map_ts_list)
 
