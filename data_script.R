@@ -73,8 +73,7 @@ process_table <- function(table) {
     . <- iconv(., to = "UTF-8", sub = "")                         # Clean UTF-8 encoding
     . <- dplyr::case_when(. == "..." ~ NA_character_, TRUE ~ .)   # Replace "..." with NA
     . <- dplyr::case_when(. == ".." ~ "0", TRUE ~ .)              # Replace ".." with 0
-    . <- gsub("\\.(?=\\d)", "", ., perl = T)                      # Remove dots between digits (thousands separator)
-    . <- gsub(",", ".", .)                                        # Replace comma with dot (as decimal separator)
+    . <- gsub("\\.(?=\\d)", "", ., perl = T)                      # Remove dots as thousands separators (some cols are read as char)
     . <- dplyr::case_when(. == "-" ~ "0", TRUE ~ .)               # Replace "-" with 0
     as.numeric(.)                                                 # Convert to numeric
   }))
@@ -123,39 +122,38 @@ na_summary_df <- do.call(rbind, na_summary_list)
 #### AD-HOC TABLE ADJUSTMENTS? (like: split 32, modify 50, remove I-e)
 
 # Find index of list with file == "./Chapter04/Table_32.CSV"
-#idx <- which(map_lgl(all_tables, ~ .x$file == "./Chapter04/Table_32.CSV"))
+idx <- which(map_lgl(all_tables, ~ .x$file == "./Chapter04/Table_32.CSV"))
 
 # Check if found
-#if (length(idx) == 0) stop("Table_32.CSV not found in all_tables")
+if (length(idx) == 0) stop("Table_32.CSV not found in all_tables")
 
 # Extract original list and tibble
-#orig_list <- all_tables[[idx]]
-#orig_data <- orig_list$data
+orig_list <- all_tables[[idx]]
+orig_data <- orig_list$data
 
 # Verify tibble has enough columns
-#if (ncol(orig_data) < 7) stop("Table_32.CSV data has fewer than 7 columns")
+if (ncol(orig_data) != 13) stop("Table_32.CSV data does not have 13 columns")
 
 # Split tibble
-#table_32_1 <- orig_data[, 1:7]
-#table_32_2 <- orig_data[, c(1, (ncol(orig_data)-5):ncol(orig_data))]
+table_32_1 <- orig_data[, 1:7]
+table_32_2 <- orig_data[, c(1, (ncol(orig_data)-5):ncol(orig_data))]
 
 # Rename columns
-#colnames(table_32_1) <- c("Countries", "2017", "2018", "2019", "2020", "2021", "2022")
-#colnames(table_32_2) <- c("Countries", "2017", "2018", "2019", "2020", "2021", "2022")
+colnames(table_32_1) <- c("Countries", "2017", "2018", "2019", "2020", "2021", "2022")
+colnames(table_32_2) <- c("Countries", "2017", "2018", "2019", "2020", "2021", "2022")
 
 # Create new lists
-#new_list_1 <- orig_list
-#new_list_1$file <- "./Chapter04/Table_32-1.CSV"
-#new_list_1$data <- table_32_1
+new_list_1 <- orig_list
+new_list_1$file <- "./Chapter04/Table_32-1.CSV"
+new_list_1$data <- table_32_1
 
-#new_list_2 <- orig_list
-#new_list_2$file <- "./Chapter04/Table_32-2.CSV"
-#new_list_2$data <- table_32_2
+new_list_2 <- orig_list
+new_list_2$file <- "./Chapter04/Table_32-2.CSV"
+new_list_2$data <- table_32_2
 
 # Replace original list with two new lists
-#all_tables <- append(all_tables[-idx], list(new_list_1, new_list_2), after = idx - 1)
+all_tables <- append(all_tables[-idx], list(new_list_1, new_list_2), after = idx - 1)
 
-# Optional: Verify result
 #print(map(all_tables, ~ .x$file))
 
 
@@ -259,9 +257,7 @@ map_ts_list <- filter_totals(map_ts_list) %>% replace_regions(final_regions)
 #print(map_list)
 #print(map_ts_list)
 
-# Define macroregions and subregions based on common geographic classifications
-# You may need to adjust these lists based on your specific data
-
+# Macroregions defined by the Holy See geoscheme
 macroregions <- c("Africa", "North America", "Central America (Mainland)", 
                   "Central America (Antilles)", "South America", "America", 
                   "Middle East Asia", "South East and Far East Asia", "Asia", 
@@ -369,7 +365,6 @@ merged_map_table <- bind_rows(map_list) %>%
   summarise(across(everything(), ~ merge_columns(.x, Region[1], cur_column()), .names = "{.col}"), .groups = "drop")
 
 #last_dplyr_warnings()
-#last_dplyr_warnings(n=44)
 
 #print(merged_map_table)
 
