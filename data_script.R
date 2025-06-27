@@ -119,7 +119,9 @@ na_summary_list <- lapply(all_tables, function(x) {
 # Combine all missing value summaries into one dataframe
 na_summary_df <- do.call(rbind, na_summary_list)
 
-#### AD-HOC TABLE ADJUSTMENTS? (like: split 32, modify 50, remove I-e)
+#### AD-HOC TABLE ADJUSTMENTS
+
+## Table 32
 
 # Find index of list with file == "./Chapter04/Table_32.CSV"
 idx <- which(map_lgl(all_tables, ~ .x$file == "./Chapter04/Table_32.CSV"))
@@ -472,75 +474,71 @@ readr::write_csv(final_geo_table, "final_geo_table.csv")
 # STEP 10: PROCESS TS_LIST TABLES (Non-geographic time series data)
 # ============================================================================
 
-# Function to process non-geographic time series tables
-process_ts_list <- function(ts_data_list) {
-  cat("\nProcessing ts_list tables into long-format dataset...\n")
-  
-  if (length(ts_data_list) == 0) {
-    cat("No tables in ts_list\n")
-    return(NULL)
+# Create table_50_list with tibbles containing "_50" in their names
+table_50_list <- ts_list[grep("_50", names(ts_list))]
+
+# Remove tibbles containing "_50" from ts_list
+ts_list <- ts_list[!grepl("_50", names(ts_list))]
+
+# Load the first column from the sixth sheet of "rownames adjusted.xlsx"
+setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\")
+new_row_names <- readxl::read_excel("rownames adjusted.xlsx", sheet = 6, 
+                                    range = "A1:A11", col_types = "text")[[1]]
+
+# Function to replace the first column of a tibble with new row names
+replace_first_column <- function(tbl, new_names) {
+  # Ensure the number of rows matches
+  if (nrow(tbl) != length(new_names)) {
+    warning(sprintf("Number of rows in tibble (%d) does not match number of new names (%d). Truncating/padding with NA.", 
+                    nrow(tbl), length(new_names)))
+    new_names <- new_names[seq_len(nrow(tbl))]
   }
+  # Replace the first column
+  tbl[[1]] <- new_names
+  return(tbl)
+}
+
+# Apply the first column replacement to all tibbles in ts_list
+ts_list <- lapply(ts_list, function(tbl) {
+  replace_first_column(tbl, new_row_names)
+})
+
+# Backup tibble names
+ts_list_names <- names(ts_list)
+
+# Update column names and pivot ts_list to long format
+ts_list <- lapply(names(ts_list), function(file_name) {
+  # Extract table number from file name (e.g., "Table_01.CSV" -> "01")
+  table_num <- sub("Table_([^.]+).CSV", "\\1", file_name)
   
-  long_ts_tables <- list()
+  # Load the first sheet of data overview for value column name
+  sheet_data <- data_overview_arabic
   
-  # Convert each table to long format
-  for (i in seq_along(ts_data_list)) {
-    file_name <- names(ts_data_list)[i]
-    current_table <- ts_data_list[[i]]
-    
-    if (!is.null(current_table) && nrow(current_table) > 0) {
-      table_id <- str_match(file_name, "Table_([^.]+)\\.CSV")[,2]
-      table_col <- gsub("\\.CSV$", "", basename(file_name))
-      
-      # Get description for variable naming
-      desc <- table_description_df %>% 
-        filter(table_number == table_id) %>% 
-        pull(DESCRIPTION) %>% 
-        first()
-      
-      variable_name <- if (!is.null(desc) && !is.na(desc)) desc else table_col
-      
-      cat("Processing", variable_name, "- Rows:", nrow(current_table), "Cols:", ncol(current_table), "\n")
-      
-      entity_col <- colnames(current_table)[1]
-      year_cols <- grep("^(19|20)\\d{2}$", colnames(current_table), value = TRUE)
-      
-      if (length(year_cols) > 0) {
-        # Pivot to long format
-        long_table <- current_table %>%
-          tidyr::pivot_longer(
-            cols = all_of(year_cols),
-            names_to = "Year",
-            values_to = variable_name
-          ) %>%
-          dplyr::select(all_of(entity_col), Year, all_of(variable_name))
-        
-        # Standardize entity column name
-        colnames(long_table)[1] <- "Entity"
-        long_ts_tables[[variable_name]] <- long_table
-        
-        cat("Converted to long format - Variable:", variable_name, "Years:", paste(year_cols, collapse = ", "), "\n")
-      } else {
-        cat("No year columns found in table:", file_name, "\n")
-      }
+  # Get the new name for the Value column from the first column of sheet_data
+  row_idx <- which(sheet_data[[2]] == table_num)
+  if (length(row_idx) == 0) {
+    warning(sprintf("No matching row found for table number '%s' in data_overview_arabic. Using default 'Value'.", table_num))
+    value_col_name <- "Value"
+  } else {
+    value_col_name <- sheet_data[row_idx, 1][[1]]  # Extract value from first column
+    value_col_name <- trimws(value_col_name)  # Trim whitespace
+    if (is.na(value_col_name) || nchar(value_col_name) == 0) {
+      warning(sprintf("Value column name for table number '%s' is NA or empty. Using default 'Value'.", table_num))
+      value_col_name <- "Value"
     }
   }
   
-  # Merge all long-format tables by Entity and Year
-  if (length(long_ts_tables) > 0) {
-    final_dataset <- Reduce(function(x, y) dplyr::full_join(x, y, by = c("Entity", "Year")), long_ts_tables)
-    return(final_dataset)
-  }
+  # Pivot the tibble to long format
+  tbl_long <- ts_list[[file_name]] %>%
+    pivot_longer(
+      cols = -1,  # Keep the first column
+      names_to = "Year",
+      values_to = value_col_name,  # Use the new value column name
+      values_drop_na = FALSE
+    )
   
-  return(NULL)
-}
+  return(tbl_long)
+})
 
-# Process and merge non-geographic time series tables
-ts_list <- add_descriptions(ts_list)
-merged_ts_table <- process_ts_list(ts_list)
-
-# Export non-geographic time series table
-if (!is.null(merged_ts_table)) {
-  readr::write_csv(merged_ts_table, "merged_ts_table.csv")
-}
-
+# Restore tibble names
+names(ts_list) <- ts_list_names
