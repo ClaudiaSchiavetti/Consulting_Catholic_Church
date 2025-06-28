@@ -19,8 +19,11 @@ pacman::p_load(tidyverse, readxl, stringdist, stringi)
 
 
 # ============================================================================
-# STEP 1: DATA DISCOVERY AND INITIAL PROCESSING
+# STEP 1: DATA CLEANING AND TRANSFORMATION
 # ============================================================================
+
+# Note: data transformation is performed based on the data notation employed by
+# the Annuarium, which can be found in the "Observations" section.
 
 # Set working directory
 setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
@@ -31,12 +34,14 @@ data_files <- list.files(pattern = "\\.CSV$", full.names = T, recursive = T)
 # Function to read CSV files and label them based on structure
 read_and_check <- function(file) {
   tryCatch({
-    # Read file with ad-hoc formatting (UTF-8, semicolon delimiter, comma as decimal)
-    data <- readr::read_delim(file, delim = ";", show_col_types = F, 
-                              locale = locale(encoding = "UTF-8", 
-                                              decimal_mark = ",", 
-                                              grouping_mark = "."))
-    col_names <- iconv(colnames(data), to = "UTF-8", sub = "")
+    # Read as character data to preserve all formatting
+    raw_data <- read_delim(file, delim = ";", 
+                           col_types = cols(.default = col_character()),
+                           na = character(0),  # Don't convert to NA yet
+                           locale = locale(encoding = "UTF-8"))
+    
+    # Get column names for later use
+    col_names <- iconv(colnames(raw_data), to = "UTF-8", sub = "")
     
     # Categorization conditions:
     # - is_region_first: first column contains geographic regions (Countries/Continents)
@@ -44,8 +49,21 @@ read_and_check <- function(file) {
     is_region_first <- col_names[1] %in% c("Countries", "Continents")
     no_year_col <- !any(grepl("20", col_names, fixed = T))
     
-    return(list(file = file, data = data, is_region_first = is_region_first, 
-                no_year_col = no_year_col))
+    raw_data[[1]] <- iconv(raw_data[[1]], to = "UTF-8", sub = "")
+    
+    # Process all other columns with standardized replacements
+    cleaned_data <- dplyr::mutate(raw_data, dplyr::across(-1, ~{
+      . <- iconv(., to = "UTF-8", sub = "")                         # Clean UTF-8 encoding
+      . <- dplyr::case_when(. == "-" ~ "0", TRUE ~ .)               # Replace "-" with 0
+      . <- dplyr::case_when(. %in% c("...", "…") ~ NA_character_, TRUE ~ .)   # Replace "..." with NA
+      . <- dplyr::case_when(. == ".." ~ "0", TRUE ~ .)              # Replace ".." with 0
+      . <- gsub("\\.(?=\\d)", "", ., perl = T)                      # Remove dots as thousands separators
+      . <- gsub(",", ".", .)                # Replace decimal separator (,) with (.)
+      as.numeric(.)                                                 # Convert to numeric
+    }))
+    
+    return(list(file = file, data = cleaned_data, 
+                is_region_first = is_region_first, no_year_col = no_year_col))
   }, error = function(e) {
     message("Skipping '", basename(file), "': ", e$message)
     return(list(file = file, data = NULL, is_region_first = F, no_year_col = F))
@@ -57,69 +75,8 @@ all_tables <- lapply(data_files, read_and_check)
 
 
 # ============================================================================
-# STEP 2: DATA CLEANING AND TRANSFORMATION
+# STEP 2: AD-HOC TABLE ADJUSTMENTS
 # ============================================================================
-
-# Note: data transformation is performed based on the data notation employed by
-# the Annuarium, which can be found in the "Observations" section.
-
-# Function to clean and transform datasets
-process_table <- function(table) {
-  # Clean first column (region names) for invalid UTF-8 characters
-  table[[1]] <- iconv(table[[1]], to = "UTF-8", sub = "")
-  
-  # Process all other columns with standardized replacements
-  table <- dplyr::mutate(table, dplyr::across(-1, ~{
-    . <- iconv(., to = "UTF-8", sub = "")                         # Clean UTF-8 encoding
-    . <- dplyr::case_when(. == "..." ~ NA_character_, TRUE ~ .)   # Replace "..." with NA
-    . <- dplyr::case_when(. == ".." ~ "0", TRUE ~ .)              # Replace ".." with 0
-    . <- gsub("\\.(?=\\d)", "", ., perl = T)                      # Remove dots as thousands separators (some cols are read as char)
-    . <- dplyr::case_when(. == "-" ~ "0", TRUE ~ .)               # Replace "-" with 0
-    as.numeric(.)                                                 # Convert to numeric
-  }))
-  
-  return(table)
-}
-
-# Apply function to all successfully loaded tables
-all_tables <- lapply(all_tables, function(x) {
-  if (!is.null(x$data)) {
-    x$data <- process_table(x$data)
-  }
-  x
-})
-
-#print.data.frame(all_tables[[1]]$data)
-
-
-# ============================================================================
-# STEP 3: MISSING VALUES ASSESSMENT
-# ============================================================================
-
-# Function to analyze missing values in each table
-check_na_summary <- function(df, file_name) {
-  na_counts <- colSums(is.na(df))
-  na_percent <- round(100 * na_counts / nrow(df), 1)
-  data.frame(
-    File = basename(file_name),
-    Column = names(na_counts),
-    NA_Count = na_counts,
-    NA_Percent = na_percent,
-    row.names = NULL
-  )
-}
-
-# Generate missing value summary for all tables
-na_summary_list <- lapply(all_tables, function(x) {
-  if (!is.null(x$data)) {
-    check_na_summary(x$data, x$file)
-  }
-})
-
-# Combine all missing value summaries into one dataframe
-na_summary_df <- do.call(rbind, na_summary_list)
-
-#### AD-HOC TABLE ADJUSTMENTS
 
 ## Table 32
 
@@ -157,6 +114,34 @@ new_list_2$data <- table_32_2
 all_tables <- append(all_tables[-idx], list(new_list_1, new_list_2), after = idx - 1)
 
 #print(map(all_tables, ~ .x$file))
+
+
+# ============================================================================
+# STEP 3: MISSING VALUES ASSESSMENT
+# ============================================================================
+
+# Function to analyze missing values in each table
+check_na_summary <- function(df, file_name) {
+  na_counts <- colSums(is.na(df))
+  na_percent <- round(100 * na_counts / nrow(df), 1)
+  data.frame(
+    File = basename(file_name),
+    Column = names(na_counts),
+    NA_Count = na_counts,
+    NA_Percent = na_percent,
+    row.names = NULL
+  )
+}
+
+# Generate missing value summary for all tables
+na_summary_list <- lapply(all_tables, function(x) {
+  if (!is.null(x$data)) {
+    check_na_summary(x$data, x$file)
+  }
+})
+
+# Combine all missing value summaries into one dataframe
+na_summary_df <- do.call(rbind, na_summary_list)
 
 
 # ============================================================================
@@ -429,9 +414,9 @@ map_ts_list <- lapply(names(map_ts_list), function(file_name) {
 names(map_ts_list) <- map_ts_list_names
 
 # Function to merge time series tables in map_ts_list
-merge_ts_tables <- function(data_list) {
+merge_geo_ts_tables <- function(data_list) {
   # Combine all long-format tables
-  merged_ts_table <- bind_rows(data_list) %>%
+  merged_geo_ts_table <- bind_rows(data_list) %>%
     # Group by Region, Year, and Region type to handle potential conflicts
     group_by(Region, Year, `Region type`) %>%
     summarise(
@@ -441,11 +426,11 @@ merge_ts_tables <- function(data_list) {
       .groups = "drop"
     )
   
-  return(merged_ts_table)
+  return(merged_geo_ts_table)
 }
 
 # Apply the merge function
-merged_map_ts_table <- merge_ts_tables(map_ts_list)
+merged_map_ts_table <- merge_geo_ts_tables(map_ts_list)
 
 #last_dplyr_warnings()
 
@@ -462,7 +447,7 @@ merged_map_table <- merged_map_table %>%
 final_geo_table_list <- list(merged_map_table, merged_map_ts_table)
 
 # Merge them with TS merging rules
-final_geo_table <- merge_ts_tables(final_geo_table_list)
+final_geo_table <- merge_geo_ts_tables(final_geo_table_list)
 
 # Export final geographic table
 readr::write_csv(final_geo_table, "final_geo_table.csv")
@@ -542,3 +527,23 @@ ts_list <- lapply(names(ts_list), function(file_name) {
 
 # Restore tibble names
 names(ts_list) <- ts_list_names
+
+# Function to merge time series tables in map_ts_list
+merge_ts_tables <- function(data_list) {
+  # Combine all long-format tables
+  merged_ts_table <- bind_rows(data_list) %>%
+    # Group by Region, Year, and Region type to handle potential conflicts
+    group_by(`Categories of Institutes`, Year) %>%
+    summarise(
+      across(.cols = everything(), 
+             ~ merge_columns(.x, Region[1], cur_column()), 
+             .names = "{.col}"),
+      .groups = "drop"
+    )
+  
+  return(merged_ts_table)
+}
+
+# Apply the merge function
+final_ispr_men_table <- merge_ts_tables(ts_list)
+
