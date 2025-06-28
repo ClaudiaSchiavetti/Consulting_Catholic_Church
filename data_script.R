@@ -50,16 +50,17 @@ read_and_check <- function(file) {
     no_year_col <- !any(grepl("20", col_names, fixed = T))
     
     raw_data[[1]] <- iconv(raw_data[[1]], to = "UTF-8", sub = "")
+    small_constant <- "0.007297"
     
     # Process all other columns with standardized replacements
     cleaned_data <- dplyr::mutate(raw_data, dplyr::across(-1, ~{
-      . <- iconv(., to = "UTF-8", sub = "")                         # Clean UTF-8 encoding
-      . <- dplyr::case_when(. == "-" ~ "0", TRUE ~ .)               # Replace "-" with 0
+      . <- iconv(., to = "UTF-8", sub = "")                                   # Clean UTF-8 encoding
+      . <- dplyr::case_when(. == "-" ~ "0", TRUE ~ .)                         # Replace "-" with 0
       . <- dplyr::case_when(. %in% c("...", "…") ~ NA_character_, TRUE ~ .)   # Replace "..." with NA
-      . <- dplyr::case_when(. == ".." ~ "0", TRUE ~ .)              # Replace ".." with 0
-      . <- gsub("\\.(?=\\d)", "", ., perl = T)                      # Remove dots as thousands separators
-      . <- gsub(",", ".", .)                # Replace decimal separator (,) with (.)
-      as.numeric(.)                                                 # Convert to numeric
+      . <- dplyr::case_when(. == ".." ~ small_constant, TRUE ~ .)             # Replace ".." with a small constant
+      . <- gsub("\\.(?=\\d)", "", ., perl = T)                                # Remove dots as thousands separators
+      . <- gsub(",", ".", .)                                                  # Replace decimal separator (,) with (.)
+      as.numeric(.)                                                           # Convert to numeric
     }))
     
     return(list(file = file, data = cleaned_data, 
@@ -78,7 +79,7 @@ all_tables <- lapply(data_files, read_and_check)
 # STEP 2: AD-HOC TABLE ADJUSTMENTS
 # ============================================================================
 
-## Table 32
+# Table 32
 
 # Find index of list with file == "./Chapter04/Table_32.CSV"
 idx <- which(map_lgl(all_tables, ~ .x$file == "./Chapter04/Table_32.CSV"))
@@ -149,10 +150,10 @@ na_summary_df <- do.call(rbind, na_summary_list)
 # ============================================================================
 
 # Categorize tables into 4 types based on structure:
-# 1. map_list: geographic regions + cross-sectional data (no years)
-# 2. map_ts_list: geographic regions + time series data (with years)
-# 3. ts_list: global entities + time series data
-# 4. other_list: global entities + cross-sectional data
+# 1. map_list: cross-sectional spatial data (regions, no years)
+# 2. map_ts_list: spatial time series data (regions, years)
+# 3. ts_list: non-spatial time series data (no regions, years)
+# 4. other_list: cross-sectional non-spatial data (no regions, no years)
 
 map_list <- lapply(all_tables[ vapply(all_tables, 
                                       function(x) x$is_region_first && x$no_year_col, logical(1)) ], `[[`, "data")
@@ -331,7 +332,7 @@ names(map_list) <- map_list_names
 
 
 # ============================================================================
-# STEP 7: MERGE MAP_LIST TABLES (Cross-sectional geographic data)
+# STEP 7: MERGE MAP_LIST TABLES (cross-sectional spatial data)
 # ============================================================================
 
 # Function to merge same-named columns for a Region
@@ -357,7 +358,7 @@ merged_map_table <- bind_rows(map_list) %>%
 
 
 # ============================================================================
-# STEP 8: MERGE MAP_TS_LIST TABLES (Time series geographic data)
+# STEP 8: MERGE MAP_TS_LIST TABLES (spatial time series data)
 # ============================================================================
 
 # Backup tibble names
@@ -436,7 +437,7 @@ merged_map_ts_table <- merge_geo_ts_tables(map_ts_list)
 
 
 # ============================================================================
-# STEP 9: COMBINE GEOGRAPHIC TABLES (map_list + map_ts_list)
+# STEP 9: MERGE SPATIAL DATA (map_list + map_ts_list)
 # ============================================================================
 
 # Add "Year"<-"2022" column for merged_map_table
@@ -456,7 +457,7 @@ readr::write_csv(final_geo_table, "final_geo_table.csv")
 
 
 # ============================================================================
-# STEP 10: PROCESS TS_LIST TABLES (Non-geographic time series data)
+# STEP 10: PROCESS AND MERGE TABLES ABOUT ISPR FOR MEN (non-spatial time series data)
 # ============================================================================
 
 # Create table_50_list with tibbles containing "_50" in their names
@@ -546,4 +547,9 @@ merge_ts_tables <- function(data_list) {
 
 # Apply the merge function
 final_ispr_men_table <- merge_ts_tables(ts_list)
+
+
+# ============================================================================
+# STEP 11: PROCESS AND MERGE TABLES ABOUT ISPR FOR WOMEN (non-spatial time series data)
+# ============================================================================
 
