@@ -212,6 +212,18 @@ preprocess <- function(x) {
 # Function to replace Region with one-to-one matching
 replace_regions <- function(data_list, final_regions) {
   map(data_list, function(tbl) {
+    
+    # Replace "Summa" with "World" and merge duplicate World rows
+    if ("Summa" %in% tbl$Region) {
+      tbl$Region[tbl$Region == "Summa"] <- "World"
+    }
+      
+    # Merge by taking first non-NA value for each column
+    merged_world <- tbl[tbl$Region == "World", ] %>%
+      summarise(across(everything(), ~ first(na.omit(.))))
+      
+    tbl <- bind_rows(tbl[tbl$Region != "World", ], merged_world)
+    
     proc_regions <- map_chr(tbl$Region, preprocess)
     proc_final <- map_chr(final_regions, preprocess)
     matches <- rep(NA_character_, nrow(tbl))
@@ -226,7 +238,7 @@ replace_regions <- function(data_list, final_regions) {
         matches[i] <- tbl$Region[i]
         next
       }
-      if (min(dists, na.rm = TRUE) <= 0.5) {
+      if (min(dists, na.rm = TRUE) <= 0.8) {
         j <- available[which.min(dists)]
         matches[i] <- final_regions[j]
         available <- setdiff(available, j)
@@ -352,7 +364,7 @@ merged_map_table <- bind_rows(map_list) %>%
   group_by(Region) %>%
   summarise(across(everything(), ~ merge_columns(.x, Region[1], cur_column()), .names = "{.col}"), .groups = "drop")
 
-#last_dplyr_warnings()
+#last_dplyr_warnings(n=10)
 
 #print(merged_map_table)
 
@@ -433,7 +445,7 @@ merge_geo_ts_tables <- function(data_list) {
 # Apply the merge function
 merged_map_ts_table <- merge_geo_ts_tables(map_ts_list)
 
-#last_dplyr_warnings()
+#last_dplyr_warnings(n=5)
 
 
 # ============================================================================
@@ -448,12 +460,27 @@ merged_map_table <- merged_map_table %>%
 final_geo_table_list <- list(merged_map_table, merged_map_ts_table)
 
 # Merge them with TS merging rules
-final_geo_table <- merge_geo_ts_tables(final_geo_table_list)
+final_geo_table <- merge_geo_ts_tables(final_geo_table_list) %>%
+  mutate(
+    Region = as.factor(Region),
+    Year = as.factor(Year),
+    `Region type` = as.factor(`Region type`)
+  ) %>%
+  mutate(Region = if_else(Region == "Asia South East Far East", 
+                          "South East and Far East Asia", 
+                          Region)) %>%
+  group_by(Region, Year, `Region type`) %>%
+  summarise(
+    across(.cols = everything(), 
+           ~ merge_columns(.x, Region[1], cur_column()), 
+           .names = "{.col}"),
+    .groups = "drop"
+  )
 
 # Export final geographic table
 readr::write_csv(final_geo_table, "final_geo_table.csv")
 
-#last_dplyr_warnings()
+#last_dplyr_warnings(n=7)
 
 
 # ============================================================================
@@ -546,10 +573,53 @@ merge_ts_tables <- function(data_list) {
 }
 
 # Apply the merge function
-final_ispr_men_table <- merge_ts_tables(ts_list)
+final_ispr_men_table <- merge_ts_tables(ts_list) %>%
+  mutate(
+    Year = as.factor(Year),
+    `Categories of Institutes` = as.factor(`Categories of Institutes`)
+  )
+
+# Export final geographic table
+readr::write_csv(final_ispr_men_table, "final_ispr_men_table.csv")
 
 
 # ============================================================================
 # STEP 11: PROCESS AND MERGE TABLES ABOUT ISPR FOR WOMEN (non-spatial time series data)
 # ============================================================================
+
+# Define table 50 column names
+t50_cols <- c("Postulants", "Professed religious with temporary vows", 
+              "Professed religious with perpetual vows", "Temporary professions",
+              "Perpetual professions", "Departures from religious life (temporary 
+              and perpetual vows)", "Deaths (temporary and perpetual vows)", 
+              "Candidates admitted to probation period", "Members incorporated 
+              temporarily", "Members incorporated definitively", "Lay people
+              associated with the Institute")
+
+# Transform table 50 subtables
+table_50_list <- map(table_50_list, function(df) {
+  category <- colnames(df)[1]
+  years <- colnames(df)[-1]
+  
+  # Transpose and convert
+  df_t <- t(df) %>% 
+    as.data.frame()
+  
+  # Set proper column names from first row
+  colnames(df_t) <- as.character(df_t[1, ])
+  
+  # Convert to tibble, remove first row, rename first column, add category column
+  df_final <- df_t %>%
+    as_tibble() %>%
+    slice(-1) %>%
+    mutate(Year = as.factor(years), .before = 1) %>%
+    mutate(`Categories of Institutes` = as.factor(category), .before = 1) %>%
+    mutate(across(-c(Year, `Categories of Institutes`), as.numeric))
+  
+  return(df_final)
+})
+
+# Bind rows and convert NA to NaN
+final_ispr_women_table <- bind_rows(table_50_list) %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), NaN, .)))
 
