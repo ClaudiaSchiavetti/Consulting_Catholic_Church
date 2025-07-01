@@ -366,6 +366,12 @@ merged_map_table <- bind_rows(map_list) %>%
 
 #last_dplyr_warnings(n=10)
 
+# Ad-hoc corrections
+merged_map_table <- merged_map_table %>%
+  mutate(`Incardinated diocesan priests` = if_else(Region == "Fed. S. Micronesia", 
+                                                   16, 
+                                                   `Incardinated diocesan priests`))
+
 #print(merged_map_table)
 
 
@@ -447,6 +453,12 @@ merged_map_ts_table <- merge_geo_ts_tables(map_ts_list)
 
 #last_dplyr_warnings(n=5)
 
+# Ad-hoc corrections
+merged_map_ts_table <- merged_map_ts_table %>%
+  mutate(
+    `Candidates for diocesan clergy in philosophy+theology centres` = 
+      if_else(Region == "World", 68609, `Candidates for diocesan clergy in philosophy+theology centres`))
+
 
 # ============================================================================
 # STEP 9: MERGE SPATIAL DATA (map_list + map_ts_list)
@@ -469,6 +481,14 @@ final_geo_table <- merge_geo_ts_tables(final_geo_table_list) %>%
   mutate(Region = if_else(Region == "Asia South East Far East", 
                           "South East and Far East Asia", 
                           Region)) %>%
+  mutate(
+    `Region type` = if_else(
+      Region == "South East and Far East Asia",
+      "Macroregion",
+      as.character(`Region type`)  # Preserve existing Region type
+    ),
+    `Region type` = as.factor(`Region type`)  # Ensure it remains a factor
+  ) %>%
   group_by(Region, Year, `Region type`) %>%
   summarise(
     across(.cols = everything(), 
@@ -477,10 +497,13 @@ final_geo_table <- merge_geo_ts_tables(final_geo_table_list) %>%
     .groups = "drop"
   )
 
-# Export final geographic table
-readr::write_csv(final_geo_table, "final_geo_table.csv")
+#last_dplyr_warnings(n=8)
 
-#last_dplyr_warnings(n=7)
+# Ad-hoc corrections
+final_geo_table <- final_geo_table %>%
+  mutate(
+    `Candidates for diocesan clergy in philosophy+theology centres` = 
+      if_else(Region == "World", 68609, `Candidates for diocesan clergy in philosophy+theology centres`))
 
 
 # ============================================================================
@@ -579,22 +602,10 @@ final_ispr_men_table <- merge_ts_tables(ts_list) %>%
     `Categories of Institutes` = as.factor(`Categories of Institutes`)
   )
 
-# Export final geographic table
-readr::write_csv(final_ispr_men_table, "final_ispr_men_table.csv")
-
 
 # ============================================================================
 # STEP 11: PROCESS AND MERGE TABLES ABOUT ISPR FOR WOMEN (non-spatial time series data)
 # ============================================================================
-
-# Define table 50 column names
-t50_cols <- c("Postulants", "Professed religious with temporary vows", 
-              "Professed religious with perpetual vows", "Temporary professions",
-              "Perpetual professions", "Departures from religious life (temporary 
-              and perpetual vows)", "Deaths (temporary and perpetual vows)", 
-              "Candidates admitted to probation period", "Members incorporated 
-              temporarily", "Members incorporated definitively", "Lay people
-              associated with the Institute")
 
 # Transform table 50 subtables
 table_50_list <- map(table_50_list, function(df) {
@@ -623,3 +634,85 @@ table_50_list <- map(table_50_list, function(df) {
 final_ispr_women_table <- bind_rows(table_50_list) %>%
   mutate(across(where(is.numeric), ~ ifelse(is.na(.), NaN, .)))
 
+# Export final table
+readr::write_csv(final_ispr_women_table, "final_ispr_women_table.csv")
+
+
+# ============================================================================
+# STEP 12: ADD TABLES THAT NEED ADJUSTMENT
+# ============================================================================
+
+# To be added to final_geo_table: I-b (-1 and -2), II-m
+
+Ib_regions <- c("Africa", "America", "Asia", "Europe", "Oceania", "World")
+
+Ib1_colnames <- c("Region", "Ecclesiastical territories of Latin rite", 
+               "Ecclesiastical territories of Eastern rites", 
+               "Ecclesiastical territories (total)", "Year")
+
+table_Ib1 <- as_tibble(t(other_list[["Table_I-b-1.CSV"]]))[-1, ] %>%    # 1. Remove first row
+  mutate(Region = Ib_regions,                                           # 2. Add Region column
+         Year = "2022") %>%                                             # 3. Add Year column with factor "2022"
+  select(Region, everything())  %>%                                     # 4. Move Region to first column (ID)
+  setNames(Ib1_colnames) %>%                                            # 5. Replace column names with Ib1_names
+  mutate(Region = as.factor(Region), Year = as.factor(Year),            # 6. Ensure Region is factor
+         across(-c(Region, Year), as.numeric))                          # 7. Convert all columns except Region and Year to numeric                                                # 5. Replace column names with Ib1_names    
+  
+Ib2_colnames <- c("Region", "Patriarchal Sees",	"Metropolitan Sees",	
+                  "Archiepiscopal Sees", "Episcopal Sees", "Territorial Prelatures",
+                  "Territorial Abbacies",	"Exarchates and Ordinariates", 
+                  "Military Ordinariates", "Apostolic Vicariates", "Apostolic Prefectures",
+                  "Apostolic Administrations", "Independent Missions", 
+                  "Patriarchal Exarchate", "Ecclesiastical territories (total)", "Year")
+
+table_Ib2 <- as_tibble(t(other_list[["Table_I-b-2.CSV"]]))[-1, ] %>%    # 1. Remove first row
+  mutate(Region = Ib_regions,                                           # 2. Add Region column
+         Year = "2022") %>%                                             # 3. Add Year column with factor "2022"
+  select(Region, everything())  %>%                                     # 4. Move Region to first column (ID)
+  setNames(Ib2_colnames) %>%                                            # 5. Replace column names with Ib1_names
+  mutate(Region = as.factor(Region), Year = as.factor(Year),            # 6. Ensure Region is factor
+         across(-c(Region, Year), as.numeric))                          # 7. Convert all columns except Region and Year to numeric                                                # 5. Replace column names with Ib1_names    
+
+IIm_colnames <- c("Region", "Year",	"Yearly ordinations of diocesan priests as share of those incardinated on January 1",
+                  "Yearly deaths of diocesan priests as share of those incardinated on January 1",
+                  "Yearly defections of diocesan priests as share of those incardinated on January 1",
+                  "Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1",
+                  "Region type")
+
+table_IIm <- other_list[["Table_II-m.CSV"]] %>%
+  mutate(Region = "World",
+         `Region type` = "Macroregion",    # 1. Add Region column with value "World"
+         Years = factor(2012:2022)) %>%               # 2. Add Year column as factor
+  select(Region, everything()) %>%                    # 3. Move Region to first column (ID)
+  setNames(IIm_colnames) %>%                          # 4. Replace column names with IIm_colnames
+  mutate(Region = as.factor(Region), 
+         `Region type` = as.factor(`Region type`),    # 5. Ensure Region is factor
+         across(-c(Region, Year, `Region type`), as.numeric))        # 6. Convert all columns except Region and Year to numeric
+
+# Merging with final_geo_table
+
+# Function to merge a new table into final_geo_table
+merge_geo_table <- function(final_table, new_table) {
+  # Combine tables using bind_rows
+  merged <- bind_rows(final_table, new_table) %>%
+    # Group by Region, Year, and Region type to handle conflicts
+    group_by(Region, Year) %>%
+    summarise(
+      across(.cols = everything(), 
+             ~ merge_columns(.x, Region[1], cur_column()), 
+             .names = "{.col}"),
+      .groups = "drop"
+    )
+  
+  return(merged)
+}
+
+# Merge table_Ib1, table_Ib2, and table_IIm into final_geo_table
+final_geo_table <- merge_geo_table(final_geo_table, table_Ib1)
+final_geo_table <- merge_geo_table(final_geo_table, table_Ib2)
+final_geo_table <- merge_geo_table(final_geo_table, table_IIm)
+
+# Export final table
+readr::write_csv(final_geo_table, "final_geo_table.csv")
+
+# To be added to final_ispr_men_table: 34-35, 37-38
