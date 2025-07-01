@@ -716,3 +716,80 @@ final_geo_table <- merge_geo_table(final_geo_table, table_IIm)
 readr::write_csv(final_geo_table, "final_geo_table.csv")
 
 # To be added to final_ispr_men_table: 34-35, 37-38
+
+new_row_names <- readxl::read_excel("rownames adjusted.xlsx", sheet = 6, 
+                                    range = "A1:A11", col_types = "text")[[1]]
+
+new_row_names2 <- readxl::read_excel("rownames adjusted.xlsx", sheet = 7, 
+                                    range = "A1:A15", col_types = "text")[[1]]
+
+# List of tables and their row names
+tables <- list(
+  "34-1" = list(data = other_list[["Table_34-1.CSV"]], row_names = new_row_names),
+  "34-2" = list(data = other_list[["Table_34-2.CSV"]], row_names = new_row_names),
+  "34-3" = list(data = other_list[["Table_34-3.CSV"]], row_names = new_row_names),
+  "34-4" = list(data = other_list[["Table_34-4.CSV"]], row_names = new_row_names),
+  "35-1" = list(data = other_list[["Table_35-1.CSV"]], row_names = new_row_names),
+  "35-2" = list(data = other_list[["Table_35-2.CSV"]], row_names = new_row_names),
+  "35-3" = list(data = other_list[["Table_35-3.CSV"]], row_names = new_row_names),
+  "35-4" = list(data = other_list[["Table_35-4.CSV"]], row_names = new_row_names),
+  "37" = list(data = other_list[["Table_37.CSV"]], row_names = new_row_names2),
+  "38" = list(data = other_list[["Table_38.CSV"]], row_names = new_row_names2)
+)
+
+# Preprocess tables
+for (table_num in names(tables)) {
+  tbl <- tables[[table_num]]$data
+  row_names <- tables[[table_num]]$row_names
+  if (nrow(tbl) != length(row_names)) {
+    warning(sprintf("Number of rows in Table_%s (%d) does not match number of new names (%d). Truncating/padding with NA.", 
+                    table_num, nrow(tbl), length(row_names)))
+    row_names <- row_names[seq_len(nrow(tbl))]
+  }
+  new_cols <- get_new_colnames(table_num, data_overview_arabic)
+  if (!is.null(new_cols) && length(new_cols) >= (ncol(tbl) - 1)) {
+    colnames(tbl)[-1] <- new_cols[1:(ncol(tbl) - 1)]
+  }
+  tables[[table_num]]$data <- tbl %>%
+    mutate(`Categories of Institutes` = as.factor(row_names)) %>%
+    mutate(Year = as.factor("2022"))
+}
+
+# Extract preprocessed tables
+table_34_1 <- tables[["34-1"]]$data
+table_34_2 <- tables[["34-2"]]$data
+table_34_3 <- tables[["34-3"]]$data
+table_34_4 <- tables[["34-4"]]$data
+table_35_1 <- tables[["35-1"]]$data
+table_35_2 <- tables[["35-2"]]$data
+table_35_3 <- tables[["35-3"]]$data
+table_35_4 <- tables[["35-4"]]$data
+table_37 <- tables[["37"]]$data
+table_38 <- tables[["38"]]$data
+
+# Merge into final_ispr_men_table
+merge_ispr_table <- function(final_table, new_table) {
+  bind_rows(final_table, new_table) %>%
+    group_by(`Categories of Institutes`, Year) %>%
+    summarise(across(everything(), ~ merge_columns(.x, `Categories of Institutes`[1], cur_column()), .names = "{.col}"), .groups = "drop")
+}
+
+# Merge all tables
+final_ispr_men_table <- merge_ispr_table(final_ispr_men_table, table_34_1)
+final_ispr_men_table <- merge_ispr_table(final_ispr_men_table, table_34_2)
+final_ispr_men_table <- merge_ispr_table(final_ispr_men_table, table_34_3)
+final_ispr_men_table <- merge_ispr_table(final_ispr_men_table, table_34_4)
+final_ispr_men_table <- merge_ispr_table(final_ispr_men_table, table_35_1)
+final_ispr_men_table <- merge_ispr_table(final_ispr_men_table, table_35_2)
+final_ispr_men_table <- merge_ispr_table(final_ispr_men_table, table_35_3)
+final_ispr_men_table <- merge_ispr_table(final_ispr_men_table, table_35_4)
+final_ispr_men_table <- merge_ispr_table(final_ispr_men_table, table_37)
+final_ispr_men_table <- merge_ispr_table(final_ispr_men_table, table_38)
+
+# Ensure factor columns
+final_ispr_men_table <- final_ispr_men_table %>%
+  mutate(`Categories of Institutes` = as.factor(`Categories of Institutes`), Year = as.factor(Year))
+
+# Export final table
+readr::write_csv(final_ispr_men_table, "final_ispr_men_table.csv")
+
