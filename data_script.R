@@ -31,6 +31,8 @@ setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
 # Find all CSV files in the directory and subdirectories
 data_files <- list.files(pattern = "\\.CSV$", full.names = T, recursive = T)
 
+small_constant <- "0.007297"
+
 # Function to read CSV files and label them based on structure
 read_and_check <- function(file) {
   tryCatch({
@@ -50,7 +52,6 @@ read_and_check <- function(file) {
     no_year_col <- !any(grepl("20", col_names, fixed = T))
     
     raw_data[[1]] <- iconv(raw_data[[1]], to = "UTF-8", sub = "")
-    small_constant <- "0.007297"
     
     # Process all other columns with standardized replacements
     cleaned_data <- dplyr::mutate(raw_data, dplyr::across(-1, ~{
@@ -634,7 +635,6 @@ table_50_list <- map(table_50_list, function(df) {
 final_ispr_women_table <- bind_rows(table_50_list) %>%
   mutate(across(where(is.numeric), ~ ifelse(is.na(.), NaN, .)))
 
-# Export final table
 readr::write_csv(final_ispr_women_table, "final_ispr_women_table.csv")
 
 
@@ -712,7 +712,6 @@ final_geo_table <- merge_geo_table(final_geo_table, table_Ib1)
 final_geo_table <- merge_geo_table(final_geo_table, table_Ib2)
 final_geo_table <- merge_geo_table(final_geo_table, table_IIm)
 
-# Export final table
 readr::write_csv(final_geo_table, "final_geo_table.csv")
 
 # To be added to final_ispr_men_table: 34-35, 37-38
@@ -790,6 +789,5 @@ final_ispr_men_table <- merge_ispr_table(final_ispr_men_table, table_38)
 final_ispr_men_table <- final_ispr_men_table %>%
   mutate(`Categories of Institutes` = as.factor(`Categories of Institutes`), Year = as.factor(Year))
 
-# Export final table
 readr::write_csv(final_ispr_men_table, "final_ispr_men_table.csv")
 
