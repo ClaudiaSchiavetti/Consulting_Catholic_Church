@@ -26,7 +26,7 @@ pacman::p_load(tidyverse, readxl, stringdist, stringi)
 # the Annuarium, which can be found in the "Observations" section.
 
 # Set working directory
-setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\")
+setwd("path/to/your/folder")
 
 # Find all CSV files in the directory and subdirectories
 data_files <- list.files(pattern = "\\.CSV$", full.names = T, recursive = T)
@@ -81,6 +81,10 @@ all_tables <- lapply(data_files, read_and_check)
 # ============================================================================
 
 # Table 32
+
+# Note: Table_32.CSV contains two separate variables split across columns. 
+# It was manually split into Table_32-1 and Table_32-2 for processing consistency.
+
 
 # Find index of list with file == "./Chapter04/Table_32.CSV"
 idx <- which(map_lgl(all_tables, ~ .x$file == "./Chapter04/Table_32.CSV"))
@@ -145,6 +149,9 @@ na_summary_list <- lapply(all_tables, function(x) {
 # Combine all missing value summaries into one dataframe
 na_summary_df <- do.call(rbind, na_summary_list)
 
+# Note: NA values were assessed across all tables.
+# Very few NAs were found, and their sparse occurrence does not introduce bias into the analysis.
+
 
 # ============================================================================
 # STEP 4: TABLE CATEGORIZATION
@@ -193,7 +200,7 @@ map_ts_list <- lapply(map_ts_list, function(x) {
 })
 
 # Set working directory
-setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\")
+setwd("path/to/your/folder")
 
 # Load harmonized region names
 final_regions <- readxl::read_excel("rownames adjusted.xlsx", sheet = 1, range = "A1:A242", col_types = "text")[[1]]
@@ -225,6 +232,7 @@ replace_regions <- function(data_list, final_regions) {
       
     tbl <- bind_rows(tbl[tbl$Region != "World", ], merged_world)
     
+    # Preprocess strings 
     proc_regions <- map_chr(tbl$Region, preprocess)
     proc_final <- map_chr(final_regions, preprocess)
     matches <- rep(NA_character_, nrow(tbl))
@@ -234,6 +242,7 @@ replace_regions <- function(data_list, final_regions) {
         matches[i] <- tbl$Region[i]
         next
       }
+      # Use Jaccard distance (q=2) to match each Region name to final_regions
       dists <- stringdist(proc_regions[i], proc_final[available], method = "jaccard", q = 2)
       if (length(available) == 0 || all(is.na(dists))) {
         matches[i] <- tbl$Region[i]
@@ -243,6 +252,7 @@ replace_regions <- function(data_list, final_regions) {
         j <- available[which.min(dists)]
         matches[i] <- final_regions[j]
         available <- setdiff(available, j)
+        # Keep unmatched names as-is if no good match is found
       } else {
         matches[i] <- tbl$Region[i]
       }
@@ -297,7 +307,7 @@ map_ts_list <- lapply(map_ts_list, function(df) {
 # ============================================================================
 
 # Set working directory
-setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\")
+setwd("path/to/your/folder")
 
 # Load the Excel file with data overview
 data_overview_arabic <- readxl::read_excel("data overview.xlsx", sheet = 1, col_types = "text")
@@ -340,6 +350,9 @@ map_list <- lapply(names(map_list), function(file_name) {
   return(map_list[[file_name]])
 })
 
+# Note: Receiving many NA-related warnings here is normal.
+# The matching tables contain more column slots than used — only matching variables get assigned.
+
 # Restore tibble names
 names(map_list) <- map_list_names
 
@@ -365,7 +378,12 @@ merged_map_table <- bind_rows(map_list) %>%
   group_by(Region) %>%
   summarise(across(everything(), ~ merge_columns(.x, Region[1], cur_column()), .names = "{.col}"), .groups = "drop")
 
-#last_dplyr_warnings(n=10)
+# Note: 10 warnings were observed during merging. 
+# These result from duplicate variables across multiple tables. 
+# After review, we decided to retain only the first occurrence.
+# Slight discrepancies in numbers were observed, but the chosen values were validated as correct.
+# Each was double-checked:
+# The code correctly selects the appropriate value when conflicts occur.
 
 # Ad-hoc corrections
 merged_map_table <- merged_map_table %>%
@@ -429,6 +447,8 @@ map_ts_list <- lapply(names(map_ts_list), function(file_name) {
   
   return(tbl_long)
 })
+# Note: Receiving many NA-related warnings here is normal.
+# The matching tables contain more column slots than used — only matching variables get assigned.
 
 # Restore tibble names
 names(map_ts_list) <- map_ts_list_names
@@ -452,7 +472,8 @@ merge_geo_ts_tables <- function(data_list) {
 # Apply the merge function
 merged_map_ts_table <- merge_geo_ts_tables(map_ts_list)
 
-#last_dplyr_warnings(n=5)
+# Note: 5 warnings appeared here. They were carefully reviewed, and the code
+# selects the correct numerical values. No changes required.
 
 # Ad-hoc corrections
 merged_map_ts_table <- merged_map_ts_table %>%
@@ -498,7 +519,9 @@ final_geo_table <- merge_geo_ts_tables(final_geo_table_list) %>%
     .groups = "drop"
   )
 
-#last_dplyr_warnings(n=8)
+# Note: 8 warnings occurred here as wellThey were carefully reviewed, and the code
+# selects the correct numerical values. No changes required.
+
 
 # Ad-hoc corrections
 final_geo_table <- final_geo_table %>%
