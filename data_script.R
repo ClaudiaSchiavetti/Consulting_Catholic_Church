@@ -15,7 +15,7 @@
 # Load package manager and additional packages
 if (!require("pacman", quietly = T)) install.packages("pacman")
 library(pacman)
-pacman::p_load(tidyverse, readxl, stringdist, stringi)
+pacman::p_load(tidyverse, readxl, stringdist, stringi, writexl)
 
 
 # ============================================================================
@@ -519,7 +519,7 @@ final_geo_table <- merge_geo_ts_tables(final_geo_table_list) %>%
     .groups = "drop"
   )
 
-# Note: 8 warnings occurred here as wellThey were carefully reviewed, and the code
+# Note: 8 warnings occurred here as well. They were carefully reviewed, and the code
 # selects the correct numerical values. No changes required.
 
 
@@ -659,6 +659,7 @@ final_ispr_women_table <- bind_rows(table_50_list) %>%
   mutate(across(where(is.numeric), ~ ifelse(is.na(.), NaN, .)))
 
 readr::write_csv(final_ispr_women_table, "final_ispr_women_table.csv")
+writexl::write_xlsx(final_ispr_women_table, "final_ispr_women_table.xlsx")
 
 
 # ============================================================================
@@ -736,6 +737,7 @@ final_geo_table <- merge_geo_table(final_geo_table, table_Ib2)
 final_geo_table <- merge_geo_table(final_geo_table, table_IIm)
 
 readr::write_csv(final_geo_table, "final_geo_table.csv")
+writexl::write_xlsx(final_geo_table, "final_geo_table.xlsx")
 
 # To be added to final_ispr_men_table: 34-35, 37-38
 
@@ -813,4 +815,4 @@ final_ispr_men_table <- final_ispr_men_table %>%
   mutate(`Categories of Institutes` = as.factor(`Categories of Institutes`), Year = as.factor(Year))
 
 readr::write_csv(final_ispr_men_table, "final_ispr_men_table.csv")
-
+writexl::write_xlsx(final_ispr_men_table, "final_ispr_men_table.xlsx")
