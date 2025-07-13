@@ -136,9 +136,12 @@ ui <- navbarPage("World Stats Explorer", theme = shinytheme("flatly"),
                  tabPanel("Map",
                           sidebarLayout(
                             sidebarPanel(
-                              # Drop-down to choose the numeric variable to display
+                              # Drop-down to choose the variable  and the year to display
+                              
                               selectInput("variable", "Select variable to display:",
-                                          choices = names(data_countries)[sapply(data_countries, is.numeric)])
+                                          choices = names(data_countries)[sapply(data_countries, is.numeric) & names(data_countries) != "Year"]),
+                              selectInput("year", "Select year:",
+                                          choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year))
                             ),
                             mainPanel(
                               # Output map
@@ -158,24 +161,39 @@ ui <- navbarPage("World Stats Explorer", theme = shinytheme("flatly"),
 
 server <- function(input, output, session) {
   
+  # Dynamically update year choices when variable changes
+  observeEvent(input$variable, {
+    available_years <- sort(unique(data_countries %>%
+                                     filter(!is.na(.data[[input$variable]])) %>%
+                                     pull(Year)))
+    
+    updateSelectInput(session, "year", 
+                      choices = available_years, 
+                      selected = max(available_years))
+  })
+  
   # Render the leaflet map
   output$map <- renderLeaflet({
-    req(input$variable)  # Wait until a variable is selected
+    req(input$variable, input$year)  # Ensure both inputs are available
     
-    # Define a color palette for the selected variable
-    pal <- colorNumeric("YlGnBu", domain = map_data[[input$variable]], na.color = "transparent")
+    # Filter data for selected year
+    filtered_data <- map_data %>%
+      filter(Year == input$year)
     
-    # Create leaflet map
-    leaflet(map_data) %>%
-      addTiles() %>%  # Add default base map tiles
+    # Define color palette
+    pal <- colorNumeric("YlGnBu", domain = filtered_data[[input$variable]], na.color = "transparent")
+    
+    # Build map
+    leaflet(filtered_data) %>%
+      addTiles() %>%
       addPolygons(
-        fillColor = ~pal(map_data[[input$variable]]),  # Fill color based on variable
+        fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
         opacity = 1,
-        color = "white",     # Border color
+        color = "white",
         dashArray = "3",
         fillOpacity = 0.7,
-        label = ~paste(name, "<br>", input$variable, ":", map_data[[input$variable]]),
+        label = ~paste(name, "<br>", input$variable, ":", filtered_data[[input$variable]]),
         highlight = highlightOptions(
           weight = 2,
           color = "#666",
@@ -185,17 +203,20 @@ server <- function(input, output, session) {
       ) %>%
       addLegend(
         pal = pal,
-        values = map_data[[input$variable]],
-        title = input$variable,
+        values = filtered_data[[input$variable]],
+        title = paste(input$variable, "(", input$year, ")"),
         position = "bottomright"
       )
   })
   
   # Render the raw data table
   output$table <- renderDT({
-    datatable(data_countries)
+    req(input$year)
+    datatable(filter(data_countries, Year == input$year))
   })
+  
 }
+
 
 
 # ---- Launch the app ----
