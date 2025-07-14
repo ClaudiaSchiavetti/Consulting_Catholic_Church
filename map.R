@@ -17,6 +17,8 @@ library(DT)
 library(shinythemes)
 library(rnaturalearth)
 library(rnaturalearthdata)
+library(viridisLite)
+library(ggplot2)
 
 # ---- Docker instructions ---- 
 
@@ -130,31 +132,66 @@ print(unique(unmatched_after_fix$country))
 
 # ---- UI layout ----
 
-ui <- navbarPage("World Stats Explorer", theme = shinytheme("flatly"),
-                 
-                 # First tab: Map
-                 tabPanel("Map",
-                          sidebarLayout(
-                            sidebarPanel(
-                              # Drop-down to choose the variable  and the year to display
-                              
-                              selectInput("variable", "Select variable to display:",
-                                          choices = names(data_countries)[sapply(data_countries, is.numeric) & names(data_countries) != "Year"]),
-                              selectInput("year", "Select year:",
-                                          choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year))
-                            ),
-                            mainPanel(
-                              # Output map
-                              leafletOutput("map", height = 600)
-                            )
-                          )
-                 ),
-                 
-                 # Second tab: Raw Data Table
-                 tabPanel("Data Table",
-                          DTOutput("table")
-                 )
+ui <- tagList(
+  tags$head(
+    tags$style(HTML("
+      .leaflet-container { background: #f7f7f7; }
+      .leaflet-control { font-size: 14px; }
+      .panel-default {
+        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+        border-radius: 10px;
+      }
+      .panel-default > .panel-heading {
+        background-color: #4e73df;
+        color: white;
+        font-weight: bold;
+      }
+      body {
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      }
+      .shiny-plot-output {
+        margin-top: 10px;
+      }
+      .panel-default .form-group {
+        margin-bottom: 15px;
+      }
+    "))
+  ),
+  
+  navbarPage("World Stats Explorer", theme = shinytheme("flatly"),
+             
+             # MAP TAB
+             tabPanel("Map",
+                      div(
+                        leafletOutput("map", height = "100vh"),
+                        absolutePanel(
+                          id = "controls", class = "panel panel-default", fixed = TRUE,
+                          draggable = TRUE, top = 60, left = 20, right = "auto", bottom = "auto",
+                          width = 300, height = "auto",
+                          style = "background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px;",
+                          
+                          h4("World Stats Explorer"),
+                          selectInput("variable", "Select variable to display:",
+                                      choices = names(data_countries)[sapply(data_countries, is.numeric) & names(data_countries) != "Year"]),
+                          selectInput("year", "Select year:",
+                                      choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
+                          selectizeInput("country_search", "Search for a country:", 
+                                         choices = sort(unique(data_countries$country)),
+                                         selected = NULL, multiple = FALSE, options = list(placeholder = 'Type to search...')), 
+                          plotOutput("varPlot", height = 150),
+                          hr(),
+                          htmlOutput("country_info"),
+                          actionButton("reset_map", "Reset Map View", icon = icon("undo"))
+                      
+                        )
+                      )
+             ),
+             
+             # DATA TABLE TAB
+             tabPanel("Data Explorer", DTOutput("table"))
+  )
 )
+
 
 
 # ---- Server logic ---- 
@@ -172,6 +209,7 @@ server <- function(input, output, session) {
                       selected = max(available_years))
   })
   
+  
   # Render the leaflet map
   output$map <- renderLeaflet({
     req(input$variable, input$year)  # Ensure both inputs are available
@@ -181,11 +219,13 @@ server <- function(input, output, session) {
       filter(Year == input$year)
     
     # Define color palette
-    pal <- colorNumeric("YlGnBu", domain = filtered_data[[input$variable]], na.color = "transparent")
+    library(viridisLite)  # at top if not yet loaded
+    pal <- colorNumeric(viridis(256), domain = filtered_data[[input$variable]], na.color = "transparent")
     
     # Build map
     leaflet(filtered_data) %>%
-      addTiles() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(lng = 10, lat = 20, zoom = 2) %>%
       addPolygons(
         fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
@@ -193,7 +233,10 @@ server <- function(input, output, session) {
         color = "white",
         dashArray = "3",
         fillOpacity = 0.7,
-        label = ~paste(name, "<br>", input$variable, ":", filtered_data[[input$variable]]),
+        layerId = ~name,
+        label = ~lapply(paste0("<strong>", name, "</strong><br/>", 
+                                input$variable, ": ", 
+                                formatC(filtered_data[[input$variable]], big.mark = ",")), htmltools::HTML),
         highlight = highlightOptions(
           weight = 2,
           color = "#666",
@@ -209,11 +252,81 @@ server <- function(input, output, session) {
       )
   })
   
-  # Render the raw data table
-  output$table <- renderDT({
-    req(input$year)
-    datatable(filter(data_countries, Year == input$year))
+  # Create a reactive value to store the selected country
+  selected_country <- reactiveVal(NULL)
+  
+  # When a country is clicked on the map
+  observeEvent(input$map_shape_click, {
+    selected_country(input$map_shape_click$id)
   })
+  observeEvent(input$country_search, {
+    if (!is.null(input$country_search)) {
+      selected_country(input$country_search)
+      
+      leafletProxy("map") %>%
+        clearGroup("highlight") %>%
+        addPolygons(
+          data = map_data %>% filter(name == input$country_search, Year == input$year),
+          fill = FALSE,
+          color = "red",
+          weight = 3,
+          opacity = 1,
+          group = "highlight"
+        ) %>%
+        setView(lng = st_coordinates(st_centroid(st_union(map_data %>%
+                                                            filter(name == input$country_search))))[1],
+                lat = st_coordinates(st_centroid(st_union(map_data %>%
+                                                            filter(name == input$country_search))))[2],
+                zoom = 4)
+    }
+  })
+  
+  
+  observeEvent(input$reset_map, {
+    leafletProxy("map") %>%
+      setView(lng = 10, lat = 45, zoom = 3)
+  })
+  
+  
+  
+  # Create an output that shows info about the selected country and variable
+  output$country_info <- renderUI({
+    req(selected_country())
+    
+    # Filter the data for the clicked country and selected year
+    info <- map_data %>%
+      filter(name == selected_country(), Year == input$year) %>%
+      select(name, all_of(input$variable))
+    
+    value <- info[[input$variable]]
+    country <- info$name
+    
+    # Handle missing values
+    if (is.na(value)) {
+      HTML(paste0("<strong>", country, "</strong><br/>No data available"))
+    } else {
+      HTML(paste0("<strong>", country, "</strong><br/>", 
+                  input$variable, ": ", formatC(value, big.mark = ",")))
+    }
+  })
+  
+  #Histogram of the variable displayed
+  output$varPlot <- renderPlot({
+    req(input$variable, input$year)
+    filtered <- data_countries %>% filter(Year == input$year)
+    values <- filtered[[input$variable]]
+    country_selected <- input$country_search
+    
+    ggplot(filtered, aes(x = "", y = values)) +  # dummy x = ""
+      geom_violin(fill = "#440154", alpha = 0.6, width = 0.6) +
+      geom_jitter(width = 0.1, alpha = 0.6, color = "black", size = 1.5) +
+      geom_point(data = filtered %>% filter(country == country_selected),
+                 aes(y = !!sym(input$variable)), color = "red", size = 3) +
+      labs(y = input$variable, x = NULL, title = paste("Distribution of", input$variable)) +
+      theme_minimal(base_size = 12)
+  })
+  
+  
   
 }
 
