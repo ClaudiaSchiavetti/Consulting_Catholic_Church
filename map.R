@@ -43,6 +43,16 @@ data_countries <- data %>%
 # Load world map from Natural Earth (returns an 'sf' object for mapping)
 world <- ne_countries(scale = "medium", returnclass = "sf")
 
+# Fix Somalia shape by merging Somalia and Somaliland
+somalia_unified <- world %>%
+  filter(admin %in% c("Somalia", "Somaliland")) %>%
+  summarise(admin = "Somalia", name = "Somalia", geometry = st_union(geometry))
+
+# Remove original entries and add unified Somalia
+world <- world %>%
+  filter(!admin %in% c("Somalia", "Somaliland")) %>%
+  bind_rows(somalia_unified)
+
 # Merge the data with the world map using country names
 map_data <- left_join(world, data_countries, by = c("name" = "Region"))
 
@@ -122,6 +132,13 @@ data_countries$country <- ifelse(
   data_countries$Region
 )
 
+# Aggregate numeric values for countries that have been merged
+data_countries <- data_countries %>%
+  group_by(country, Year) %>%
+  summarise(across(where(is.numeric) & !any_of("Year"), \(x) sum(x, na.rm = TRUE)), .groups = "drop")
+
+
+
 #Rematching
 map_data <- left_join(world, data_countries, by = c("name" = "country"))
 
@@ -134,6 +151,7 @@ print(unique(unmatched_after_fix$country))
 
 ui <- tagList(
   tags$head(
+    #css
     tags$style(HTML("
       .leaflet-container { background: #f7f7f7; }
       .leaflet-control { font-size: 14px; }
@@ -176,8 +194,10 @@ ui <- tagList(
                           selectInput("year", "Select year:",
                                       choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
                           selectizeInput("country_search", "Search for a country:", 
-                                         choices = sort(unique(data_countries$country)),
-                                         selected = NULL, multiple = FALSE, options = list(placeholder = 'Type to search...')), 
+                                         choices = c("" = "", sort(unique(data_countries$country))),
+                                         selected = "", multiple = FALSE, 
+                                         options = list(placeholder = 'Type to search...')),
+                          
                           plotOutput("varPlot", height = 150),
                           hr(),
                           htmlOutput("country_info"),
@@ -257,35 +277,67 @@ server <- function(input, output, session) {
   
   # When a country is clicked on the map
   observeEvent(input$map_shape_click, {
-    selected_country(input$map_shape_click$id)
-  })
-  observeEvent(input$country_search, {
-    if (!is.null(input$country_search)) {
-      selected_country(input$country_search)
+      selected_country(input$map_shape_click$id)
+    
+    # Update the dropdown with the clicked country
+    updateSelectInput(session, "country_search", selected = input$map_shape_click$id)
       
       leafletProxy("map") %>%
         clearGroup("highlight") %>%
         addPolygons(
-          data = map_data %>% filter(name == input$country_search, Year == input$year),
+          data = map_data %>% filter(name == input$map_shape_click$id, Year == input$year),
           fill = FALSE,
           color = "red",
           weight = 3,
           opacity = 1,
           group = "highlight"
         ) %>%
-        setView(lng = st_coordinates(st_centroid(st_union(map_data %>%
-                                                            filter(name == input$country_search))))[1],
-                lat = st_coordinates(st_centroid(st_union(map_data %>%
-                                                            filter(name == input$country_search))))[2],
-                zoom = 4)
-    }
+        setView(
+          lng = st_coordinates(st_centroid(st_union(map_data %>%
+                                                      filter(name == input$map_shape_click$id))))[1],
+          lat = st_coordinates(st_centroid(st_union(map_data %>%
+                                                      filter(name == input$map_shape_click$id))))[2],
+          zoom = 4
+        )
+    })
+    
+  # When a country is selected from the dropdown
+  observeEvent(input$country_search, {
+    req(input$country_search, input$year)
+    
+    selected_country(input$country_search)
+    
+    leafletProxy("map") %>%
+      clearGroup("highlight") %>%
+      addPolygons(
+        data = map_data %>% filter(name == input$country_search, Year == input$year),
+        fill = FALSE,
+        color = "red",
+        weight = 3,
+        opacity = 1,
+        group = "highlight"
+      ) %>%
+      setView(
+        lng = st_coordinates(st_centroid(st_union(map_data %>%
+                                                    filter(name == input$country_search))))[1],
+        lat = st_coordinates(st_centroid(st_union(map_data %>%
+                                                    filter(name == input$country_search))))[2],
+        zoom = 4
+      )
   })
+  
   
   
   observeEvent(input$reset_map, {
+    selected_country(NULL)
+    
     leafletProxy("map") %>%
+      clearGroup("highlight") %>%
       setView(lng = 10, lat = 45, zoom = 3)
+    
+    updateSelectInput(session, "country_search", selected = "")
   })
+  
   
   
   
@@ -293,43 +345,49 @@ server <- function(input, output, session) {
   output$country_info <- renderUI({
     req(selected_country())
     
-    # Filter the data for the clicked country and selected year
     info <- map_data %>%
       filter(name == selected_country(), Year == input$year) %>%
       select(name, all_of(input$variable))
     
-    value <- info[[input$variable]]
-    country <- info$name
-    
-    # Handle missing values
-    if (is.na(value)) {
-      HTML(paste0("<strong>", country, "</strong><br/>No data available"))
+    if (nrow(info) == 0 || is.na(info[[input$variable]][1])) {
+      HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
     } else {
-      HTML(paste0("<strong>", country, "</strong><br/>", 
+      value <- info[[input$variable]][1]
+      HTML(paste0("<strong>", selected_country(), "</strong><br/>", 
                   input$variable, ": ", formatC(value, big.mark = ",")))
     }
   })
   
+  
   #Histogram of the variable displayed
   output$varPlot <- renderPlot({
     req(input$variable, input$year)
+    
     filtered <- data_countries %>% filter(Year == input$year)
     values <- filtered[[input$variable]]
-    country_selected <- input$country_search
     
-    ggplot(filtered, aes(x = "", y = values)) +  # dummy x = ""
-      geom_violin(fill = "#440154", alpha = 0.6, width = 0.6) +
-      geom_jitter(width = 0.1, alpha = 0.6, color = "black", size = 1.5) +
-      geom_point(data = filtered %>% filter(country == country_selected),
-                 aes(y = !!sym(input$variable)), color = "red", size = 3) +
-      labs(y = input$variable, x = NULL, title = paste("Distribution of", input$variable)) +
+    country_selected <- selected_country()
+    selected_value <- NA
+    
+    if (!is.null(country_selected) && country_selected %in% filtered$country) {
+      selected_value <- filtered %>%
+        filter(country == country_selected) %>%
+        pull(input$variable)
+    }
+    
+    p <- ggplot(filtered, aes(x = values)) +
+      geom_density(fill = "#440154", alpha = 0.5) +
+      labs(x = input$variable, y = "Density", title = paste("Distribution of", input$variable)) +
       theme_minimal(base_size = 12)
+    
+    if (!is.na(selected_value)) {
+      p <- p + geom_vline(xintercept = selected_value, color = "red", size = 1.2)
+    }
+    
+    p
   })
   
-  
-  
 }
-
 
 
 # ---- Launch the app ----
