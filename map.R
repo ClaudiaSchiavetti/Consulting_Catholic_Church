@@ -148,6 +148,21 @@ print(unique(unmatched_after_fix$country))
 
 
 # ---- UI layout ----
+# 1. Get the list of unique, non-missing, non-empty country names from your data
+all_countries <- sort(unique(data_countries$country))
+
+# Remove any NA values or purely empty strings that might be in your country list
+all_countries <- all_countries[!is.na(all_countries) & all_countries != ""]
+
+# 2. Create a named list for selectizeInput choices
+# The 'names' of this list are what the user sees in the dropdown.
+# The 'values' of this list are what Shiny passes to your server logic.
+# For countries, it's common for them to be the same.
+country_choices_list <- as.list(all_countries)
+names(country_choices_list) <- all_countries # Assign each country name as its own list element's name
+
+# 3. Add the initial blank/placeholder option to the beginning of the list
+final_country_dropdown_choices <- c("Type to search..." = "", country_choices_list)
 
 ui <- tagList(
   tags$head(
@@ -193,16 +208,19 @@ ui <- tagList(
                                       choices = names(data_countries)[sapply(data_countries, is.numeric) & names(data_countries) != "Year"]),
                           selectInput("year", "Select year:",
                                       choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
-                          selectizeInput("country_search", "Search for a country:", 
-                                         choices = c("" = "", sort(unique(data_countries$country))),
-                                         selected = "", multiple = FALSE, 
+                          
+                          # --- THIS IS THE UPDATED LINE ---
+                          selectizeInput("country_search", "Search for a country:",
+                                         choices = final_country_dropdown_choices, # <-- USE THE NEW VARIABLE HERE
+                                         selected = "", multiple = FALSE,
                                          options = list(placeholder = 'Type to search...')),
+                          # --- END OF UPDATED LINE ---
                           
                           plotOutput("varPlot", height = 150),
                           hr(),
                           htmlOutput("country_info"),
                           actionButton("reset_map", "Reset Map View", icon = icon("undo"))
-                      
+                          
                         )
                       )
              ),
@@ -211,9 +229,6 @@ ui <- tagList(
              tabPanel("Data Explorer", DTOutput("table"))
   )
 )
-
-
-
 # ---- Server logic ---- 
 
 server <- function(input, output, session) {
@@ -392,3 +407,4 @@ server <- function(input, output, session) {
 
 # ---- Launch the app ----
 shinyApp(ui, server)
+
