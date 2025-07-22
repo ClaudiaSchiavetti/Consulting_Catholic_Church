@@ -59,8 +59,8 @@ read_and_check <- function(file) {
       . <- iconv(., to = "UTF-8", sub = "")                                   # Clean UTF-8 encoding
       . <- dplyr::case_when(. == "-" ~ "0", TRUE ~ .)                         # Replace "-" with 0
       . <- dplyr::case_when(. %in% c("...", "…") ~ NA_character_, TRUE ~ .)   # Replace "..." with NA
-      . <- dplyr::case_when(. == ".." ~ small_constant, TRUE ~ .)             # Replace ".." with a small constant
       . <- gsub("\\.(?=\\d)", "", ., perl = T)                                # Remove dots as thousands separators
+      . <- dplyr::case_when(. == ".." ~ small_constant, TRUE ~ .)             # Replace ".." with a small constant
       . <- gsub(",", ".", .)                                                  # Replace decimal separator (,) with (.)
       as.numeric(.)                                                           # Convert to numeric
     }))
