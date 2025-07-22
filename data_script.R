@@ -26,7 +26,8 @@ pacman::p_load(tidyverse, readxl, stringdist, stringi, writexl)
 # the Annuarium, which can be found in the "Observations" section.
 
 # Set working directory
-setwd("path/to/your/folder")
+path_files <- "C:\\Users\\soffi\\Desktop\\CONSULTING\\ASE-main\\" ## CHANGE WITH YOURS
+setwd(path_files)
 
 # Find all CSV files in the directory and subdirectories
 data_files <- list.files(pattern = "\\.CSV$", full.names = T, recursive = T)
@@ -200,7 +201,8 @@ map_ts_list <- lapply(map_ts_list, function(x) {
 })
 
 # Set working directory
-setwd("path/to/your/folder")
+path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING" ## CHANGE WITH YOURS
+setwd(path_outputs)
 
 # Load harmonized region names
 final_regions <- readxl::read_excel("rownames adjusted.xlsx", sheet = 1, range = "A1:A242", col_types = "text")[[1]]
@@ -305,9 +307,6 @@ map_ts_list <- lapply(map_ts_list, function(df) {
 # ============================================================================
 # STEP 6: LONG COLUMN NAMES SETUP
 # ============================================================================
-
-# Set working directory
-setwd("path/to/your/folder")
 
 # Load the Excel file with data overview
 data_overview_arabic <- readxl::read_excel("data overview.xlsx", sheet = 1, col_types = "text")
@@ -541,7 +540,6 @@ table_50_list <- ts_list[grep("_50", names(ts_list))]
 ts_list <- ts_list[!grepl("_50", names(ts_list))]
 
 # Load the first column from the sixth sheet of "rownames adjusted.xlsx"
-setwd("C:\\Users\\soffi\\Desktop\\CONSULTING\\")
 new_row_names <- readxl::read_excel("rownames adjusted.xlsx", sheet = 6, 
                                     range = "A1:A11", col_types = "text")[[1]]
 

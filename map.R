@@ -29,8 +29,9 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # tells Shiny which port to use
 
 # ---- Set the Working Directory ---- 
-
-setwd("C:/Users/schia/Documents/LMU/Consulting/App")
+#path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App")
+path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
+setwd(path_outputs)
 
 # ---- Load the data ---- 
 
