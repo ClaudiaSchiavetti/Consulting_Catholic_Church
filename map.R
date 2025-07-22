@@ -132,10 +132,14 @@ data_countries$country <- ifelse(
   data_countries$Region
 )
 
-# Aggregate numeric values for countries that have been merged
+# Aggregate numeric values for countries that have been merged but keeping NA when necessary
 data_countries <- data_countries %>%
   group_by(country, Year) %>%
-  summarise(across(where(is.numeric) & !any_of("Year"), \(x) sum(x, na.rm = TRUE)), .groups = "drop")
+  summarise(across(
+    all_of(setdiff(names(.)[sapply(., is.numeric)], "Year")),
+    ~ if (all(is.na(.))) NA_real_ else sum(., na.rm = TRUE)
+  ), .groups = "drop")
+
 
 
 
@@ -148,15 +152,15 @@ print(unique(unmatched_after_fix$country))
 
 
 # ---- UI layout ----
-# 1. Get the list of unique, non-missing, non-empty country names from your data
+# 1. Get the list of unique, non-missing, non-empty country names from the data
 all_countries <- sort(unique(data_countries$country))
 
-# Remove any NA values or purely empty strings that might be in your country list
+# Remove any NA values or purely empty strings that might be in the country list
 all_countries <- all_countries[!is.na(all_countries) & all_countries != ""]
 
 # 2. Create a named list for selectizeInput choices
 # The 'names' of this list are what the user sees in the dropdown.
-# The 'values' of this list are what Shiny passes to your server logic.
+# The 'values' of this list are what Shiny passes to the server logic.
 # For countries, it's common for them to be the same.
 country_choices_list <- as.list(all_countries)
 names(country_choices_list) <- all_countries # Assign each country name as its own list element's name
@@ -205,7 +209,7 @@ ui <- tagList(
                           
                           h4("World Stats Explorer"),
                           selectInput("variable", "Select variable to display:",
-                                      choices = names(data_countries)[sapply(data_countries, is.numeric) & names(data_countries) != "Year"]),
+                                      choices = setdiff(names(data_countries)[sapply(data_countries, is.numeric) & names(data_countries) != "Year"], "Area.in.km.2")),
                           selectInput("year", "Select year:",
                                       choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
                           
@@ -260,7 +264,7 @@ server <- function(input, output, session) {
     # Build map
     leaflet(filtered_data) %>%
       addProviderTiles("CartoDB.Positron") %>%
-      setView(lng = 10, lat = 20, zoom = 2) %>%
+      setView(lng = 10, lat = 45, zoom = 3) %>%
       addPolygons(
         fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
@@ -373,6 +377,16 @@ server <- function(input, output, session) {
     }
   })
   
+  #Data Explorer
+  output$table <- renderDT({
+    req(input$variable, input$year)
+    
+    filtered <- data_countries %>%
+      filter(Year == input$year) %>%
+      select(country, Year, all_of(input$variable))
+    
+    datatable(filtered, options = list(pageLength = 20))
+  })
   
   #Histogram of the variable displayed
   output$varPlot <- renderPlot({
