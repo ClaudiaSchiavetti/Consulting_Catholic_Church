@@ -173,7 +173,7 @@ ui <- tagList(
   tags$head(
     #css
     tags$style(HTML("
-      .leaflet-container { background: #f7f7f7; }
+      .leaflet-container { background: #F5F5F5; }
       .leaflet-control { font-size: 14px; }
       .panel-default {
         box-shadow: 0 2px 6px rgba(0,0,0,0.25);
@@ -260,29 +260,55 @@ server <- function(input, output, session) {
     
     # Define color palette
     library(viridisLite)  # at top if not yet loaded
-    pal <- colorNumeric(viridis(256), domain = filtered_data[[input$variable]], na.color = "transparent")
+    # Define blue-purple palette inspired by Our World in Data
+    custom_colors <- c("#E0E8F5", "#B0C4DE", "#87CEEB", "#6A5ACD", "#483D8B", "#4B0082", "#4A2C5A")
+    pal <- colorNumeric(
+      palette = custom_colors,
+      domain = range(filtered_data[[input$variable]], na.rm = TRUE),  # Dynamic range based on data
+      na.color = "#D3D3D3"
+    )
     
     # Build map
     leaflet(filtered_data) %>%
-      addProviderTiles("CartoDB.Positron") %>%
-      setView(lng = 10, lat = 45, zoom = 3) %>%
       addPolygons(
-        fillColor = ~pal(filtered_data[[input$variable]]),
+        data = sf::st_polygon(list(
+          matrix(c(-180, -90, 180, -90, 180, 90, -180, 90, -180, -90), ncol = 2, byrow = TRUE)
+        )) %>% sf::st_sfc(crs = 4326) %>% sf::st_sf(),
+        fillColor = "#F0F0F0",  # Match background for water
+        fillOpacity = 1,
+        color = "transparent",
+        weight = 0,
+        group = "background"
+      ) %>%
+      addProviderTiles("CartoDB.Positron", options = providerTileOptions(noWrap = TRUE)) %>%
+      addPolygons(
+        data = filtered_data,
+        fillColor = ~pal(filtered_data[[input$variable]]),  # Use palette directly
         weight = 1,
         opacity = 1,
-        color = "white",
-        dashArray = "3",
-        fillOpacity = 0.7,
+        color = "white",  # White borders to match map.png
+        dashArray = "3",  # Dashed borders to match map.png
+        fillOpacity = 0.7,  # Consistent opacity
         layerId = ~name,
         label = ~lapply(paste0("<strong>", name, "</strong><br/>", 
-                                input$variable, ": ", 
-                                formatC(filtered_data[[input$variable]], big.mark = ",")), htmltools::HTML),
+                               input$variable, ": ", 
+                               formatC(filtered_data[[input$variable]], big.mark = ",")), htmltools::HTML),
         highlight = highlightOptions(
           weight = 2,
           color = "#666",
           fillOpacity = 0.7,
           bringToFront = TRUE
         )
+      ) %>%
+      addPolygons(
+        data = filtered_data[is.na(filtered_data[[input$variable]]), ],  # Separate layer for no-data
+        fillColor = "#D3D3D3",
+        weight = 1,
+        opacity = 1,
+        color = "white",
+        dashArray = "3",
+        fillOpacity = 0.5,  # Lighter opacity for no-data
+        layerId = ~name
       ) %>%
       addLegend(
         pal = pal,
