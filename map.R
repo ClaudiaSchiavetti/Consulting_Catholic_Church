@@ -279,7 +279,7 @@ server <- function(input, output, session) {
         layerId = ~name,
         label = ~lapply(paste0("<strong>", name, "</strong><br/>", 
                                input$variable, ": ", 
-                               formatC(filtered_data[[input$variable]], big.mark = ",")), htmltools::HTML),
+                               formatC(filtered_data[[input$variable]], format = "f", digits = 0, big.mark = ",")), htmltools::HTML),
         highlight = highlightOptions(
           weight = 2,
           color = "#666",
@@ -290,7 +290,7 @@ server <- function(input, output, session) {
       addLegend(
         pal = pal,
         values = filtered_data[[input$variable]],
-        title = paste(input$variable, "(", input$year, ")"),
+        title = paste("Number in", input$year),
         position = "bottomright"
       )
   })
