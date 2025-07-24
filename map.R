@@ -36,11 +36,11 @@ setwd(path_outputs)
 
 # ---- Load the data ---- 
 
-data <- read.csv("final_geo_table.csv")
+data <- read.csv("final_geo_table.csv", check.names = FALSE)
 
 # Select only Countries
 data_countries <- data %>%
-  filter(Region.type == "Country")
+  filter(`Region type` == "Country")
 
 # Load world map from Natural Earth (returns an 'sf' object for mapping)
 world <- ne_countries(scale = "medium", returnclass = "sf")
