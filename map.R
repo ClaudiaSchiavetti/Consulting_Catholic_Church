@@ -1,6 +1,6 @@
 # ---- Load the required libraries ---- 
 
-required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata")
+required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer")
 
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
@@ -19,6 +19,7 @@ library(rnaturalearth)
 library(rnaturalearthdata)
 library(viridisLite)
 library(ggplot2)
+library(RColorBrewer)
 
 # ---- Docker instructions ---- 
 
@@ -174,7 +175,7 @@ ui <- tagList(
     #css
     tags$style(HTML("
       .leaflet-container { background: #ececec !important; } /* Very light grey */
-      .leaflet-tile-pane { filter: grayscale(10%) brightness(1.1); } /* Adjust tile rendering */
+      .leaflet-tile-pane { filter: grayscale(10%) brightness(1.15); } /* Adjust tile rendering */
       .leaflet-control { font-size: 14px; }
       .panel-default {
         box-shadow: 0 2px 6px rgba(0,0,0,0.25);
@@ -261,20 +262,20 @@ server <- function(input, output, session) {
     
     # Define color palette
     library(viridisLite)  # at top if not yet loaded
-    pal <- colorNumeric(palette = c("#E0E8F5", "#B0C4DE", "#87CEEB", "#6A5ACD", "#483D8B", "#4B0082", "#4A2C5A"), 
+    pal <- colorNumeric(palette = RColorBrewer::brewer.pal(7, "Purples"), 
                         domain = filtered_data[[input$variable]], na.color = "transparent")
     
     # Build map
     leaflet(filtered_data) %>%
-      addProviderTiles("CartoDB.Positron") %>%
+      addProviderTiles("CartoDB.Voyager") %>%
       setView(lng = 10, lat = 45, zoom = 3) %>%
       addPolygons(
         fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
-        opacity = 1,
+        opacity = 0.7,  # Reduced to make borders less opaque
         color = "white",
         dashArray = "3",
-        fillOpacity = 0.7,
+        fillOpacity = 0.7,  # Reduced to allow labels to show through
         layerId = ~name,
         label = ~lapply(paste0("<strong>", name, "</strong><br/>", 
                                input$variable, ": ", 
@@ -282,7 +283,7 @@ server <- function(input, output, session) {
         highlight = highlightOptions(
           weight = 2,
           color = "#666",
-          fillOpacity = 0.7,
+          fillOpacity = 0.8,  # Adjusted highlight opacity
           bringToFront = TRUE
         )
       ) %>%
