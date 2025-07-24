@@ -290,7 +290,7 @@ server <- function(input, output, session) {
     # Build map
     leaflet(filtered_data, options = leafletOptions(maxBounds = list(c(-120, -240), c(120, 240)), maxBoundsViscosity = 1)) %>%
       addProviderTiles("CartoDB.Voyager", options = providerTileOptions(noWrap = TRUE)) %>%
-      setView(lng = 10, lat = 45, zoom = 3) %>%
+      setView(lng = 0, lat = 30, zoom = 3) %>%
       addPolygons(
         fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
