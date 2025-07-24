@@ -173,7 +173,8 @@ ui <- tagList(
   tags$head(
     #css
     tags$style(HTML("
-      .leaflet-container { background: #F5F5F5; }
+      .leaflet-container { background: #ececec !important; } /* Very light grey */
+      .leaflet-tile-pane { filter: grayscale(10%) brightness(1.1); } /* Adjust tile rendering */
       .leaflet-control { font-size: 14px; }
       .panel-default {
         box-shadow: 0 2px 6px rgba(0,0,0,0.25);
@@ -196,7 +197,7 @@ ui <- tagList(
     "))
   ),
   
-  navbarPage("World Stats Explorer", theme = shinytheme("flatly"),
+  navbarPage("Annuarium Statisticum Ecclesiae", theme = shinytheme("flatly"),
              
              # MAP TAB
              tabPanel("Map",
@@ -260,35 +261,20 @@ server <- function(input, output, session) {
     
     # Define color palette
     library(viridisLite)  # at top if not yet loaded
-    # Define blue-purple palette inspired by Our World in Data
-    custom_colors <- c("#E0E8F5", "#B0C4DE", "#87CEEB", "#6A5ACD", "#483D8B", "#4B0082", "#4A2C5A")
-    pal <- colorNumeric(
-      palette = custom_colors,
-      domain = range(filtered_data[[input$variable]], na.rm = TRUE),  # Dynamic range based on data
-      na.color = "#D3D3D3"
-    )
+    pal <- colorNumeric(palette = c("#E0E8F5", "#B0C4DE", "#87CEEB", "#6A5ACD", "#483D8B", "#4B0082", "#4A2C5A"), 
+                        domain = filtered_data[[input$variable]], na.color = "transparent")
     
     # Build map
     leaflet(filtered_data) %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(lng = 10, lat = 45, zoom = 3) %>%
       addPolygons(
-        data = sf::st_polygon(list(
-          matrix(c(-180, -90, 180, -90, 180, 90, -180, 90, -180, -90), ncol = 2, byrow = TRUE)
-        )) %>% sf::st_sfc(crs = 4326) %>% sf::st_sf(),
-        fillColor = "#F0F0F0",  # Match background for water
-        fillOpacity = 1,
-        color = "transparent",
-        weight = 0,
-        group = "background"
-      ) %>%
-      addProviderTiles("CartoDB.Positron", options = providerTileOptions(noWrap = TRUE)) %>%
-      addPolygons(
-        data = filtered_data,
-        fillColor = ~pal(filtered_data[[input$variable]]),  # Use palette directly
+        fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
         opacity = 1,
-        color = "white",  # White borders to match map.png
-        dashArray = "3",  # Dashed borders to match map.png
-        fillOpacity = 0.7,  # Consistent opacity
+        color = "white",
+        dashArray = "3",
+        fillOpacity = 0.7,
         layerId = ~name,
         label = ~lapply(paste0("<strong>", name, "</strong><br/>", 
                                input$variable, ": ", 
@@ -299,16 +285,6 @@ server <- function(input, output, session) {
           fillOpacity = 0.7,
           bringToFront = TRUE
         )
-      ) %>%
-      addPolygons(
-        data = filtered_data[is.na(filtered_data[[input$variable]]), ],  # Separate layer for no-data
-        fillColor = "#D3D3D3",
-        weight = 1,
-        opacity = 1,
-        color = "white",
-        dashArray = "3",
-        fillOpacity = 0.5,  # Lighter opacity for no-data
-        layerId = ~name
       ) %>%
       addLegend(
         pal = pal,
@@ -323,30 +299,30 @@ server <- function(input, output, session) {
   
   # When a country is clicked on the map
   observeEvent(input$map_shape_click, {
-      selected_country(input$map_shape_click$id)
+    selected_country(input$map_shape_click$id)
     
     # Update the dropdown with the clicked country
     updateSelectInput(session, "country_search", selected = input$map_shape_click$id)
-      
-      leafletProxy("map") %>%
-        clearGroup("highlight") %>%
-        addPolygons(
-          data = map_data %>% filter(name == input$map_shape_click$id, Year == input$year),
-          fill = FALSE,
-          color = "red",
-          weight = 3,
-          opacity = 1,
-          group = "highlight"
-        ) %>%
-        setView(
-          lng = st_coordinates(st_centroid(st_union(map_data %>%
-                                                      filter(name == input$map_shape_click$id))))[1],
-          lat = st_coordinates(st_centroid(st_union(map_data %>%
-                                                      filter(name == input$map_shape_click$id))))[2],
-          zoom = 4
-        )
-    })
     
+    leafletProxy("map") %>%
+      clearGroup("highlight") %>%
+      addPolygons(
+        data = map_data %>% filter(name == input$map_shape_click$id, Year == input$year),
+        fill = FALSE,
+        color = "red",
+        weight = 3,
+        opacity = 1,
+        group = "highlight"
+      ) %>%
+      setView(
+        lng = st_coordinates(st_centroid(st_union(map_data %>%
+                                                    filter(name == input$map_shape_click$id))))[1],
+        lat = st_coordinates(st_centroid(st_union(map_data %>%
+                                                    filter(name == input$map_shape_click$id))))[2],
+        zoom = 4
+      )
+  })
+  
   # When a country is selected from the dropdown
   observeEvent(input$country_search, {
     req(input$country_search, input$year)
@@ -448,4 +424,3 @@ server <- function(input, output, session) {
 
 # ---- Launch the app ----
 shinyApp(ui, server)
-
