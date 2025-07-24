@@ -174,28 +174,50 @@ ui <- tagList(
   tags$head(
     #css
     tags$style(HTML("
-      .leaflet-container { background: #ececec !important; } /* Very light grey */
-      .leaflet-tile-pane { filter: grayscale(10%) brightness(1.15); } /* Adjust tile rendering */
-      .leaflet-control { font-size: 14px; }
-      .panel-default {
-        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-        border-radius: 10px;
-      }
-      .panel-default > .panel-heading {
-        background-color: #4e73df;
-        color: white;
-        font-weight: bold;
-      }
-      body {
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      }
-      .shiny-plot-output {
-        margin-top: 10px;
-      }
-      .panel-default .form-group {
-        margin-bottom: 15px;
-      }
-    "))
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  #map {
+    height: 100vh !important;
+    width: 100vw !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+  }
+  .leaflet-container { 
+    background: #ececec !important; 
+    height: 100% !important;
+    width: 100% !important;
+  }
+  .leaflet-tile-pane { filter: grayscale(10%) brightness(1.15); }
+  .leaflet-control { font-size: 14px; }
+  .panel-default {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    border-radius: 10px;
+    z-index: 1000 !important;
+  }
+  .panel-default > .panel-heading {
+    background-color: #4e73df;
+    color: white;
+    font-weight: bold;
+  }
+  .navbar {
+    z-index: 1001 !important;
+  }
+  body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+  .shiny-plot-output {
+    margin-top: 10px;
+  }
+  .panel-default .form-group {
+    margin-bottom: 15px;
+  }
+"))
   ),
   
   navbarPage("Annuarium Statisticum Ecclesiae", theme = shinytheme("flatly"),
@@ -203,7 +225,7 @@ ui <- tagList(
              # MAP TAB
              tabPanel("Map",
                       div(
-                        leafletOutput("map", height = "100vh"),
+                        leafletOutput("map", height = "100vh", width = "100%"),
                         absolutePanel(
                           id = "controls", class = "panel panel-default", fixed = TRUE,
                           draggable = TRUE, top = 60, left = 20, right = "auto", bottom = "auto",
