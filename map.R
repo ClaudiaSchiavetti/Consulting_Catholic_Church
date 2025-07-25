@@ -30,7 +30,7 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # tells Shiny which port to use
 
 # ---- Set the Working Directory ---- 
-#path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App")
+path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
 path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
 setwd(path_outputs)
 
@@ -230,7 +230,7 @@ ui <- tagList(
                           id = "controls", class = "panel panel-default", fixed = TRUE,
                           draggable = TRUE, top = 60, left = 20, right = "auto", bottom = "auto",
                           width = 300, height = "auto",
-                          style = "background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px;",
+                          style = "background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px; overflow-y: auto; max-height: 90vh;",
                           
                           h4("World Stats Explorer"),
                           selectInput("variable", "Select variable to display:",
@@ -238,12 +238,12 @@ ui <- tagList(
                           selectInput("year", "Select year:",
                                       choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
                           
-                          # --- THIS IS THE UPDATED LINE ---
+                          
                           selectizeInput("country_search", "Search for a country:",
                                          choices = final_country_dropdown_choices, # <-- USE THE NEW VARIABLE HERE
                                          selected = "", multiple = FALSE,
                                          options = list(placeholder = 'Type to search...')),
-                          # --- END OF UPDATED LINE ---
+                        
                           
                           plotOutput("varPlot", height = 150),
                           hr(),
@@ -255,9 +255,34 @@ ui <- tagList(
              ),
              
              # DATA TABLE TAB
-             tabPanel("Data Explorer", DTOutput("table"))
-  )
+             tabPanel("Data Explorer",
+                      sidebarLayout(
+                        sidebarPanel(
+                          width = 3,
+                          tags$div(
+                            style = "background-color: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #dee2e6; font-size: 14px;",
+                            selectInput("explorer_variable", "Select variable:",
+                                        choices = c("Select a variable..." = "", 
+                                                    setdiff(names(data_countries)[sapply(data_countries, is.numeric)], "Year"))
+                            ),
+                            selectInput("explorer_year", "Select year:",
+                                        choices = sort(unique(data_countries$Year))
+                            ),
+                            actionButton("reset_table", "Reset Filters", icon = icon("redo"))
+                          )
+                        ),
+                        mainPanel(
+                          width = 9,
+                          DTOutput("table")
+                        )
+                      )
+             )
+             
 )
+
+) 
+ 
+
 # ---- Server logic ---- 
 
 server <- function(input, output, session) {
@@ -294,7 +319,7 @@ server <- function(input, output, session) {
       addPolygons(
         fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
-        opacity = 0.7,  # Reduced to make borders less opaque
+        opacity = 0.45,  # Reduced to make borders less opaque
         color = "white",
         dashArray = "3",
         fillOpacity = 0.7,  # Reduced to allow labels to show through
@@ -319,6 +344,24 @@ server <- function(input, output, session) {
   
   # Create a reactive value to store the selected country
   selected_country <- reactiveVal(NULL)
+  
+  # Store selections for syncing between tabs
+  selections <- reactiveValues(variable = NULL, year = NULL)
+  
+  # Keep track of current selections in Map tab
+  observe({
+    selections$variable <- input$variable
+    selections$year <- input$year
+  })
+  
+  # Sync Data Explorer inputs with Map tab
+  observeEvent(input$variable, {
+    updateSelectInput(session, "explorer_variable", selected = input$variable)
+  })
+  
+  observeEvent(input$year, {
+    updateSelectInput(session, "explorer_year", selected = input$year)
+  })
   
   # When a country is clicked on the map
   observeEvent(input$map_shape_click, {
@@ -378,7 +421,7 @@ server <- function(input, output, session) {
     
     leafletProxy("map") %>%
       clearGroup("highlight") %>%
-      setView(lng = 10, lat = 45, zoom = 3)
+      setView(lng = 0, lat = 30, zoom = 3)
     
     updateSelectInput(session, "country_search", selected = "")
   })
@@ -405,13 +448,42 @@ server <- function(input, output, session) {
   
   #Data Explorer
   output$table <- renderDT({
-    req(input$variable, input$year)
+    if (is.null(input$explorer_variable) || input$explorer_variable == "") {
+      return(datatable(data.frame(Message = "Please select a variable to explore.")))
+    }
+    
+    req(input$explorer_year)
     
     filtered <- data_countries %>%
-      filter(Year == input$year) %>%
-      select(country, Year, all_of(input$variable))
+      filter(Year == input$explorer_year) %>%
+      select(country, Year, all_of(input$explorer_variable))
+    
+    if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
+      filtered <- filtered %>% filter(country == selected_country())
+    }
     
     datatable(filtered, options = list(pageLength = 20))
+  })
+  
+  
+  #To display only the available years for each variable
+  observeEvent(input$explorer_variable, {
+    req(input$explorer_variable)
+    
+    available_years <- sort(unique(data_countries %>%
+                                     filter(!is.na(.data[[input$explorer_variable]])) %>%
+                                     pull(Year)))
+    
+    updateSelectInput(session, "explorer_year",
+                      choices = available_years,
+                      selected = max(available_years))
+  })
+  
+  
+  observeEvent(input$reset_table, {
+    updateSelectInput(session, "explorer_variable", selected = "")
+    updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
+    selected_country(NULL)
   })
   
   #Histogram of the variable displayed
@@ -447,3 +519,4 @@ server <- function(input, output, session) {
 
 # ---- Launch the app ----
 shinyApp(ui, server)
+
