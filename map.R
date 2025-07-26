@@ -31,12 +31,36 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 
 # ---- Set the Working Directory ---- 
 path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
-path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
+#path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
 setwd(path_outputs)
 
 # ---- Load the data ---- 
 
 data <- read.csv("final_geo_table.csv", check.names = FALSE)
+
+# Function to check if a column has data only in macroregions
+has_country_data <- function(col_data, region_type) {
+  # Check if there's any non-NA data for countries
+  country_data <- col_data[region_type == "Country"]
+  return(sum(!is.na(country_data)) > 0)
+}
+
+# Identify columns that have data for countries
+cols_with_country_data <- sapply(names(data), function(col_name) {
+  if(is.numeric(data[[col_name]])) {
+    has_country_data(data[[col_name]], data$`Region type`)
+  } else {
+    TRUE  # Keep non-numeric columns
+  }
+})
+
+#To verify the debug
+#print(paste("Total columns:", length(cols_with_country_data)))
+#print(paste("Columns with country data:", sum(cols_with_country_data)))
+#print(paste("Columns with only macroregion data:", sum(!cols_with_country_data)))
+
+# Filter your dataset to keep only columns with country data
+data_filtered <- data[, cols_with_country_data]
 
 # Select only Countries
 data_countries <- data %>%
@@ -243,7 +267,7 @@ ui <- tagList(
                                          choices = final_country_dropdown_choices, # <-- USE THE NEW VARIABLE HERE
                                          selected = "", multiple = FALSE,
                                          options = list(placeholder = 'Type to search...')),
-                        
+                          
                           
                           plotOutput("varPlot", height = 150),
                           hr(),
@@ -278,10 +302,10 @@ ui <- tagList(
                       )
              )
              
-)
-
+  )
+  
 ) 
- 
+
 
 # ---- Server logic ---- 
 
@@ -441,10 +465,12 @@ server <- function(input, output, session) {
       HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
     } else {
       value <- info[[input$variable]][1]
-      HTML(paste0("<strong>", selected_country(), "</strong><br/>", 
-                  input$variable, ": ", formatC(value, big.mark = ",")))
+      formatted_value <- format(round(as.numeric(value), 0), big.mark = ",", scientific = FALSE)
+      HTML(paste0("<strong>", selected_country(), "</strong><br/>", input$variable, ": ", formatted_value))
     }
   })
+  
+  
   
   #Data Explorer
   output$table <- renderDT({
@@ -493,6 +519,13 @@ server <- function(input, output, session) {
     filtered <- data_countries %>% filter(Year == input$year)
     values <- filtered[[input$variable]]
     
+    # Check if values are all NA
+    if (all(is.na(values))) {
+      plot.new()
+      text(0.5, 0.5, "No data available for this variable in selected year", cex = 1.2)
+      return()
+    }
+    
     country_selected <- selected_country()
     selected_value <- NA
     
@@ -502,10 +535,19 @@ server <- function(input, output, session) {
         pull(input$variable)
     }
     
-    p <- ggplot(filtered, aes(x = values)) +
-      geom_density(fill = "#440154", alpha = 0.5) +
-      labs(x = input$variable, y = "Density", title = paste("Distribution of", input$variable)) +
-      theme_minimal(base_size = 12)
+    library(stringr)
+    x_label <- str_wrap(input$variable, width = 30)
+    plot_title <- str_wrap(paste("Distribution of", input$variable), width = 40)
+    
+    p <- ggplot(data.frame(values), aes(x = values)) +
+      geom_density(fill = "#440154", alpha = 0.5, na.rm = TRUE) +
+      labs(x = x_label, y = "Density", title = plot_title) +
+      theme_minimal(base_size = 11) +
+      theme(
+        plot.title = element_text(size = 11),
+        axis.title.x = element_text(size = 10),
+        axis.text.x = element_text(size = 9)
+      )
     
     if (!is.na(selected_value)) {
       p <- p + geom_vline(xintercept = selected_value, color = "red", size = 1.2)
@@ -513,6 +555,8 @@ server <- function(input, output, session) {
     
     p
   })
+  
+  
   
 }
 
