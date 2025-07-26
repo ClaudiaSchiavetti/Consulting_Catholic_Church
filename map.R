@@ -30,8 +30,8 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # tells Shiny which port to use
 
 # ---- Set the Working Directory ---- 
-path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
-#path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
+#path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
+path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
 setwd(path_outputs)
 
 # ---- Load the data ---- 
@@ -202,7 +202,7 @@ ui <- tagList(
     height: 100%;
     margin: 0;
     padding: 0;
-    overflow: hidden;
+    overflow: hidden; /* Keep for Map tab */
   }
   #map {
     height: 100vh !important;
@@ -240,6 +240,13 @@ ui <- tagList(
   }
   .panel-default .form-group {
     margin-bottom: 15px;
+  }
+  /* Add scrollbar to Data Explorer tab's main panel */
+  div.tab-pane[data-value='Data Explorer'] .data-explorer-main {
+  overflow-y: auto !important;
+  max-height: 80vh !important;
+  padding: 15px;
+}
   }
 "))
   ),
@@ -296,6 +303,7 @@ ui <- tagList(
                           )
                         ),
                         mainPanel(
+                          class = "data-explorer-main",
                           width = 9,
                           DTOutput("table")
                         )
@@ -563,4 +571,3 @@ server <- function(input, output, session) {
 
 # ---- Launch the app ----
 shinyApp(ui, server)
-
