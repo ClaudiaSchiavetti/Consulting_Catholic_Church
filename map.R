@@ -30,8 +30,8 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # tells Shiny which port to use
 
 # ---- Set the Working Directory ---- 
-#path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
-path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
+path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
+#path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
 setwd(path_outputs)
 
 # ---- Load the data ---- 
@@ -63,7 +63,7 @@ cols_with_country_data <- sapply(names(data), function(col_name) {
 data_filtered <- data[, cols_with_country_data]
 
 # Select only Countries
-data_countries <- data %>%
+data_countries <- data_filtered %>%
   filter(`Region type` == "Country")
 
 # Load world map from Natural Earth (returns an 'sf' object for mapping)
@@ -167,6 +167,14 @@ data_countries <- data_countries %>%
   ), .groups = "drop")
 
 
+# Define variables to exclude
+excluded_vars <- c("Area in km^2")
+
+# Only include numeric variables with country-level data and not excluded
+allowed_variables <- setdiff(
+  names(data_countries)[sapply(data_countries, is.numeric) & names(data_countries) != "Year"],
+  excluded_vars
+)
 
 
 #Rematching
@@ -265,7 +273,7 @@ ui <- tagList(
                           
                           h4("World Stats Explorer"),
                           selectInput("variable", "Select variable to display:",
-                                      choices = setdiff(names(data_countries)[sapply(data_countries, is.numeric) & names(data_countries) != "Year"], "Area.in.km.2")),
+                                      choices = allowed_variables),
                           selectInput("year", "Select year:",
                                       choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
                           
@@ -293,8 +301,7 @@ ui <- tagList(
                           tags$div(
                             style = "background-color: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #dee2e6; font-size: 14px;",
                             selectInput("explorer_variable", "Select variable:",
-                                        choices = c("Select a variable..." = "", 
-                                                    setdiff(names(data_countries)[sapply(data_countries, is.numeric)], "Year"))
+                                        choices = c("Select a variable..." = "", allowed_variables)
                             ),
                             selectInput("explorer_year", "Select year:",
                                         choices = sort(unique(data_countries$Year))
