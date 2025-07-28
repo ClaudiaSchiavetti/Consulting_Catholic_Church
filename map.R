@@ -1,6 +1,6 @@
 # ---- Load the required libraries ---- 
 
-required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer")
+required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview")
 
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
@@ -20,6 +20,7 @@ library(rnaturalearthdata)
 library(viridisLite)
 library(ggplot2)
 library(RColorBrewer)
+library(webshot) 
 
 # ---- Docker instructions ---- 
 
@@ -246,15 +247,18 @@ ui <- tagList(
   .shiny-plot-output {
     margin-top: 10px;
   }
-  .panel-default .form-group {
+   .panel-default .form-group {
     margin-bottom: 15px;
   }
-  /* Add scrollbar to Data Explorer tab's main panel */
+
   div.tab-pane[data-value='Data Explorer'] .data-explorer-main {
-  overflow-y: auto !important;
-  max-height: 80vh !important;
-  padding: 15px;
-}
+    overflow-y: auto !important;
+    max-height: 80vh !important;
+    padding: 15px;
+  }
+
+  .leaflet-top {
+    margin-top: 70px !important;
   }
 "))
   ),
@@ -287,8 +291,8 @@ ui <- tagList(
                           plotOutput("varPlot", height = 150),
                           hr(),
                           htmlOutput("country_info"),
-                          actionButton("reset_map", "Reset Map View", icon = icon("undo"))
-                          
+                          actionButton("reset_map", "Reset Map View", icon = icon("undo")),
+                          downloadButton("download_map", "Download Full Map", class = "btn btn-primary")
                         )
                       )
              ),
@@ -326,253 +330,215 @@ ui <- tagList(
 
 server <- function(input, output, session) {
   
-  # Dynamically update year choices when variable changes
+  # Download full map
+  output$download_map <- downloadHandler(
+    filename = function() {
+      paste0("map_export_", input$variable, "_", input$year, ".png")
+    },
+    content = function(file) {
+      library(htmlwidgets)
+      filtered_data <- map_data %>% filter(Year == input$year)
+      pal <- colorNumeric(
+        palette = RColorBrewer::brewer.pal(7, "Purples"),
+        domain = filtered_data[[input$variable]],
+        na.color = "transparent"
+      )
+      leaflet_obj <- leaflet(filtered_data) %>%
+        addProviderTiles("CartoDB.Positron") %>%
+        fitBounds(lng1 = -110, lat1 = -40, lng2 = 120, lat2 = 65) %>%
+        addPolygons(
+          fillColor = ~pal(filtered_data[[input$variable]]),
+          color = "white", weight = 1, opacity = 0.45, fillOpacity = 0.9,
+          label = ~name
+        ) %>%
+        addLegend(
+          pal = pal,
+          values = filtered_data[[input$variable]],
+          title = paste("Number in", input$year),
+          position = "bottomright"
+        )
+      temp_html <- tempfile(fileext = ".html")
+      saveWidget(leaflet_obj, temp_html, selfcontained = TRUE)
+      webshot::webshot(temp_html, file = file, vwidth = 1600, vheight = 1000)
+    }
+  )
+  
+  # Track selected country
+  selected_country <- reactiveVal(NULL)
+  selections <- reactiveValues(variable = NULL, year = NULL)
+  
+  # Sync Data Explorer inputs with Map tab
+  observe({
+    selections$variable <- input$variable
+    selections$year <- input$year
+  })
+  observeEvent(input$variable, {
+    updateSelectInput(session, "explorer_variable", selected = input$variable)
+  })
+  observeEvent(input$year, {
+    updateSelectInput(session, "explorer_year", selected = input$year)
+  })
+  
+  # Update year choices dynamically
   observeEvent(input$variable, {
     available_years <- sort(unique(data_countries %>%
                                      filter(!is.na(.data[[input$variable]])) %>%
                                      pull(Year)))
-    
-    updateSelectInput(session, "year", 
-                      choices = available_years, 
-                      selected = max(available_years))
+    updateSelectInput(session, "year", choices = available_years, selected = max(available_years))
   })
   
-  
-  # Render the leaflet map
+  # Render leaflet map
   output$map <- renderLeaflet({
-    req(input$variable, input$year)  # Ensure both inputs are available
-    
-    # Filter data for selected year
-    filtered_data <- map_data %>%
-      filter(Year == input$year)
-    
-    # Define color palette
-    library(viridisLite)  # at top if not yet loaded
-    pal <- colorNumeric(palette = RColorBrewer::brewer.pal(7, "Purples"), 
+    req(input$variable, input$year)
+    filtered_data <- map_data %>% filter(Year == input$year)
+    pal <- colorNumeric(palette = RColorBrewer::brewer.pal(7, "Purples"),
                         domain = filtered_data[[input$variable]], na.color = "transparent")
     
-    # Build map
     leaflet(filtered_data, options = leafletOptions(maxBounds = list(c(-120, -240), c(120, 240)), maxBoundsViscosity = 1)) %>%
       addProviderTiles("CartoDB.Voyager", options = providerTileOptions(noWrap = TRUE)) %>%
       setView(lng = 0, lat = 30, zoom = 3) %>%
       addPolygons(
         fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
-        opacity = 0.45,  # Reduced to make borders less opaque
+        opacity = 0.45,
         color = "white",
         dashArray = "3",
-        fillOpacity = 0.7,  # Reduced to allow labels to show through
+        fillOpacity = 0.7,
         layerId = ~name,
-        label = ~lapply(paste0("<strong>", name, "</strong><br/>", 
-                               input$variable, ": ", 
+        label = ~lapply(paste0("<strong>", name, "</strong><br/>", input$variable, ": ", 
                                formatC(filtered_data[[input$variable]], format = "f", digits = 0, big.mark = ",")), htmltools::HTML),
-        highlight = highlightOptions(
-          weight = 2,
-          color = "#666",
-          fillOpacity = 0.8,  # Adjusted highlight opacity
-          bringToFront = TRUE
-        )
+        highlight = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.8, bringToFront = TRUE)
       ) %>%
-      addLegend(
-        pal = pal,
-        values = filtered_data[[input$variable]],
-        title = paste("Number in", input$year),
-        position = "bottomright"
-      )
+      addLegend(pal = pal, values = filtered_data[[input$variable]], title = paste("Number in", input$year), position = "bottomright")
   })
   
-  # Create a reactive value to store the selected country
-  selected_country <- reactiveVal(NULL)
+  # Download full map
+  output$download_map <- downloadHandler(
+    filename = function() {
+      paste0("map_export_", input$variable, "_", input$year, ".png")
+    },
+    content = function(file) {
+      library(htmlwidgets)
+      filtered_data <- map_data %>% filter(Year == input$year)
+      pal <- colorNumeric(palette = RColorBrewer::brewer.pal(7, "Purples"), domain = filtered_data[[input$variable]], na.color = "transparent")
+      leaflet_obj <- leaflet(filtered_data) %>%
+        addProviderTiles("CartoDB.Positron") %>%
+        fitBounds(-110, -40, 120, 65) %>%
+        addPolygons(
+          fillColor = ~pal(filtered_data[[input$variable]]),
+          color = "white", weight = 1, opacity = 0.45, fillOpacity = 0.9,
+          label = ~name
+        ) %>%
+        addLegend(pal = pal, values = filtered_data[[input$variable]], title = paste("Number in", input$year), position = "bottomright")
+      temp_html <- tempfile(fileext = ".html")
+      saveWidget(leaflet_obj, temp_html, selfcontained = TRUE)
+      webshot::webshot(temp_html, file = file, vwidth = 1600, vheight = 1000)
+    }
+  )
   
-  # Store selections for syncing between tabs
-  selections <- reactiveValues(variable = NULL, year = NULL)
-  
-  # Keep track of current selections in Map tab
-  observe({
-    selections$variable <- input$variable
-    selections$year <- input$year
-  })
-  
-  # Sync Data Explorer inputs with Map tab
-  observeEvent(input$variable, {
-    updateSelectInput(session, "explorer_variable", selected = input$variable)
-  })
-  
-  observeEvent(input$year, {
-    updateSelectInput(session, "explorer_year", selected = input$year)
-  })
-  
-  # When a country is clicked on the map
+  # Highlight country on click
   observeEvent(input$map_shape_click, {
     selected_country(input$map_shape_click$id)
-    
-    # Update the dropdown with the clicked country
     updateSelectInput(session, "country_search", selected = input$map_shape_click$id)
     
     leafletProxy("map") %>%
       clearGroup("highlight") %>%
       addPolygons(
         data = map_data %>% filter(name == input$map_shape_click$id, Year == input$year),
-        fill = FALSE,
-        color = "red",
-        weight = 3,
-        opacity = 1,
-        group = "highlight"
-      ) %>%
+        fill = FALSE, color = "red", weight = 3, opacity = 1, group = "highlight") %>%
       setView(
-        lng = st_coordinates(st_centroid(st_union(map_data %>%
-                                                    filter(name == input$map_shape_click$id))))[1],
-        lat = st_coordinates(st_centroid(st_union(map_data %>%
-                                                    filter(name == input$map_shape_click$id))))[2],
-        zoom = 4
-      )
+        lng = st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$map_shape_click$id))))[1],
+        lat = st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$map_shape_click$id))))[2],
+        zoom = 4)
   })
   
-  # When a country is selected from the dropdown
+  # Highlight country on search
   observeEvent(input$country_search, {
     req(input$country_search, input$year)
-    
     selected_country(input$country_search)
     
     leafletProxy("map") %>%
       clearGroup("highlight") %>%
       addPolygons(
         data = map_data %>% filter(name == input$country_search, Year == input$year),
-        fill = FALSE,
-        color = "red",
-        weight = 3,
-        opacity = 1,
-        group = "highlight"
-      ) %>%
+        fill = FALSE, color = "red", weight = 3, opacity = 1, group = "highlight") %>%
       setView(
-        lng = st_coordinates(st_centroid(st_union(map_data %>%
-                                                    filter(name == input$country_search))))[1],
-        lat = st_coordinates(st_centroid(st_union(map_data %>%
-                                                    filter(name == input$country_search))))[2],
-        zoom = 4
-      )
+        lng = st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$country_search))))[1],
+        lat = st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$country_search))))[2],
+        zoom = 4)
   })
   
-  
-  
+  # Reset button
   observeEvent(input$reset_map, {
     selected_country(NULL)
-    
     leafletProxy("map") %>%
       clearGroup("highlight") %>%
       setView(lng = 0, lat = 30, zoom = 3)
-    
     updateSelectInput(session, "country_search", selected = "")
   })
   
-  
-  
-  
-  # Create an output that shows info about the selected country and variable
+  # Country info
   output$country_info <- renderUI({
     req(selected_country())
-    
-    info <- map_data %>%
-      filter(name == selected_country(), Year == input$year) %>%
-      select(name, all_of(input$variable))
-    
+    info <- map_data %>% filter(name == selected_country(), Year == input$year) %>% select(name, all_of(input$variable))
     if (nrow(info) == 0 || is.na(info[[input$variable]][1])) {
       HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
     } else {
       value <- info[[input$variable]][1]
-      formatted_value <- format(round(as.numeric(value), 0), big.mark = ",", scientific = FALSE)
-      HTML(paste0("<strong>", selected_country(), "</strong><br/>", input$variable, ": ", formatted_value))
+      formatted <- format(round(as.numeric(value), 0), big.mark = ",", scientific = FALSE)
+      HTML(paste0("<strong>", selected_country(), "</strong><br/>", input$variable, ": ", formatted))
     }
   })
   
+  # Histogram
+  output$varPlot <- renderPlot({
+    req(input$variable, input$year)
+    filtered <- data_countries %>% filter(Year == input$year)
+    values <- filtered[[input$variable]]
+    if (all(is.na(values))) {
+      plot.new()
+      text(0.5, 0.5, "No data available", cex = 1.2)
+      return()
+    }
+    country_selected <- selected_country()
+    selected_value <- if (!is.null(country_selected) && country_selected %in% filtered$country) {
+      filtered %>% filter(country == country_selected) %>% pull(input$variable)
+    } else NA
+    ggplot(data.frame(values), aes(x = values)) +
+      geom_density(fill = "#440154", alpha = 0.5, na.rm = TRUE) +
+      labs(x = stringr::str_wrap(input$variable, width = 30), y = "Density",
+           title = stringr::str_wrap(paste("Distribution of", input$variable), width = 40)) +
+      theme_minimal(base_size = 11) +
+      theme(plot.title = element_text(size = 11), axis.title.x = element_text(size = 10), axis.text.x = element_text(size = 9)) +
+      {if (!is.na(selected_value)) geom_vline(xintercept = selected_value, color = "red", linewidth = 1.2)}
+  })
   
-  
-  #Data Explorer
+  # Data Explorer table
   output$table <- renderDT({
     if (is.null(input$explorer_variable) || input$explorer_variable == "") {
       return(datatable(data.frame(Message = "Please select a variable to explore.")))
     }
-    
     req(input$explorer_year)
-    
-    filtered <- data_countries %>%
-      filter(Year == input$explorer_year) %>%
-      select(country, Year, all_of(input$explorer_variable))
-    
+    filtered <- data_countries %>% filter(Year == input$explorer_year) %>% select(country, Year, all_of(input$explorer_variable))
     if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
       filtered <- filtered %>% filter(country == selected_country())
     }
-    
     datatable(filtered, options = list(pageLength = 20))
   })
   
-  
-  #To display only the available years for each variable
   observeEvent(input$explorer_variable, {
     req(input$explorer_variable)
-    
     available_years <- sort(unique(data_countries %>%
                                      filter(!is.na(.data[[input$explorer_variable]])) %>%
                                      pull(Year)))
-    
-    updateSelectInput(session, "explorer_year",
-                      choices = available_years,
-                      selected = max(available_years))
+    updateSelectInput(session, "explorer_year", choices = available_years, selected = max(available_years))
   })
-  
   
   observeEvent(input$reset_table, {
     updateSelectInput(session, "explorer_variable", selected = "")
     updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
     selected_country(NULL)
   })
-  
-  #Histogram of the variable displayed
-  output$varPlot <- renderPlot({
-    req(input$variable, input$year)
-    
-    filtered <- data_countries %>% filter(Year == input$year)
-    values <- filtered[[input$variable]]
-    
-    # Check if values are all NA
-    if (all(is.na(values))) {
-      plot.new()
-      text(0.5, 0.5, "No data available for this variable in selected year", cex = 1.2)
-      return()
-    }
-    
-    country_selected <- selected_country()
-    selected_value <- NA
-    
-    if (!is.null(country_selected) && country_selected %in% filtered$country) {
-      selected_value <- filtered %>%
-        filter(country == country_selected) %>%
-        pull(input$variable)
-    }
-    
-    library(stringr)
-    x_label <- str_wrap(input$variable, width = 30)
-    plot_title <- str_wrap(paste("Distribution of", input$variable), width = 40)
-    
-    p <- ggplot(data.frame(values), aes(x = values)) +
-      geom_density(fill = "#440154", alpha = 0.5, na.rm = TRUE) +
-      labs(x = x_label, y = "Density", title = plot_title) +
-      theme_minimal(base_size = 11) +
-      theme(
-        plot.title = element_text(size = 11),
-        axis.title.x = element_text(size = 10),
-        axis.text.x = element_text(size = 9)
-      )
-    
-    if (!is.na(selected_value)) {
-      p <- p + geom_vline(xintercept = selected_value, color = "red", size = 1.2)
-    }
-    
-    p
-  })
-  
-  
-  
 }
 
 
