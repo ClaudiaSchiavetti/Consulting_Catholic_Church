@@ -339,7 +339,7 @@ server <- function(input, output, session) {
       library(htmlwidgets)
       filtered_data <- map_data %>% filter(Year == input$year)
       pal <- colorNumeric(
-        palette = RColorBrewer::brewer.pal(7, "Purples"),
+        palette = viridisLite::plasma(256),
         domain = filtered_data[[input$variable]],
         na.color = "transparent"
       )
@@ -348,7 +348,7 @@ server <- function(input, output, session) {
         fitBounds(lng1 = -110, lat1 = -40, lng2 = 120, lat2 = 65) %>%
         addPolygons(
           fillColor = ~pal(filtered_data[[input$variable]]),
-          color = "white", weight = 1, opacity = 0.45, fillOpacity = 0.9,
+          color = "white", weight = 1, opacity = 0.45, fillOpacity = 0.6,
           label = ~name
         ) %>%
         addLegend(
@@ -391,7 +391,7 @@ server <- function(input, output, session) {
   output$map <- renderLeaflet({
     req(input$variable, input$year)
     filtered_data <- map_data %>% filter(Year == input$year)
-    pal <- colorNumeric(palette = RColorBrewer::brewer.pal(7, "Purples"),
+    pal <- colorNumeric(palette = viridisLite::plasma(256),
                         domain = filtered_data[[input$variable]], na.color = "transparent")
     
     leaflet(filtered_data, options = leafletOptions(maxBounds = list(c(-120, -240), c(120, 240)), maxBoundsViscosity = 1)) %>%
@@ -403,7 +403,7 @@ server <- function(input, output, session) {
         opacity = 0.45,
         color = "white",
         dashArray = "3",
-        fillOpacity = 0.7,
+        fillOpacity = 0.6,
         layerId = ~name,
         label = ~lapply(paste0("<strong>", name, "</strong><br/>", input$variable, ": ", 
                                formatC(filtered_data[[input$variable]], format = "f", digits = 0, big.mark = ",")), htmltools::HTML),
@@ -420,13 +420,13 @@ server <- function(input, output, session) {
     content = function(file) {
       library(htmlwidgets)
       filtered_data <- map_data %>% filter(Year == input$year)
-      pal <- colorNumeric(palette = RColorBrewer::brewer.pal(7, "Purples"), domain = filtered_data[[input$variable]], na.color = "transparent")
+      pal <- colorNumeric(palette = viridisLite::plasma(256), domain = filtered_data[[input$variable]], na.color = "transparent")
       leaflet_obj <- leaflet(filtered_data) %>%
         addProviderTiles("CartoDB.Positron") %>%
         fitBounds(-110, -40, 120, 65) %>%
         addPolygons(
           fillColor = ~pal(filtered_data[[input$variable]]),
-          color = "white", weight = 1, opacity = 0.45, fillOpacity = 0.9,
+          color = "white", weight = 1, opacity = 0.45, fillOpacity = 0.6,
           label = ~name
         ) %>%
         addLegend(pal = pal, values = filtered_data[[input$variable]], title = paste("Number in", input$year), position = "bottomright")
