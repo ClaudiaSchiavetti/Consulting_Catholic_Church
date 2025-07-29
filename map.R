@@ -1,6 +1,6 @@
 # ---- Load the required libraries ---- 
 
-required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview", "webshot")
+required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview", "webshot", "writexl")
 
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
@@ -24,7 +24,8 @@ library(rnaturalearthdata)
 library(viridisLite)
 library(ggplot2)
 library(RColorBrewer)
-library(webshot) 
+library(webshot)
+library(writexl)
 
 # ---- Docker instructions ---- 
 
@@ -308,19 +309,21 @@ ui <- tagList(
                           width = 3,
                           tags$div(
                             style = "background-color: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #dee2e6; font-size: 14px;",
-                            selectInput("explorer_variable", "Select variable:",
-                                        choices = c("Select a variable..." = "", allowed_variables)
+                            selectInput("explorer_variable", "Select variable:", choices = c("Select a variable..." = "", allowed_variables)),
+                            selectInput("explorer_year", "Select year:", choices = sort(unique(data_countries$Year))),
+                            div(style = "margin-top: 10px;",
+                                downloadButton("download_csv", "CSV", class = "btn btn-sm btn-success"),
+                                downloadButton("download_excel", "Excel", class = "btn btn-sm btn-info")
                             ),
-                            selectInput("explorer_year", "Select year:",
-                                        choices = sort(unique(data_countries$Year))
-                            ),
-                            actionButton("reset_table", "Reset Filters", icon = icon("redo"))
+                            br(),
+                            actionButton("reset_table", "Reset Filters", icon = icon("redo"), class = "btn btn-sm btn-secondary")
                           )
                         ),
                         mainPanel(
                           class = "data-explorer-main",
                           width = 9,
-                          DTOutput("table")
+                          DTOutput("table"),
+                          br()
                         )
                       )
              )
@@ -531,6 +534,40 @@ server <- function(input, output, session) {
     updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
     selected_country(NULL)
   })
+  # CSV download
+  output$download_csv <- downloadHandler(
+    filename = function() {
+      paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".csv")
+    },
+    content = function(file) {
+      req(input$explorer_variable, input$explorer_year)
+      filtered <- data_countries %>%
+        filter(Year == input$explorer_year) %>%
+        select(country, Year, all_of(input$explorer_variable))
+      if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
+        filtered <- filtered %>% filter(country == selected_country())
+      }
+      write.csv(filtered, file, row.names = FALSE)
+    }
+  )
+  
+  # Excel download (requires writexl)
+  output$download_excel <- downloadHandler(
+    filename = function() {
+      paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".xlsx")
+    },
+    content = function(file) {
+      req(input$explorer_variable, input$explorer_year)
+      filtered <- data_countries %>%
+        filter(Year == input$explorer_year) %>%
+        select(country, Year, all_of(input$explorer_variable))
+      if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
+        filtered <- filtered %>% filter(country == selected_country())
+      }
+      writexl::write_xlsx(filtered, path = file)
+    }
+  )
+  
 }
 
 
