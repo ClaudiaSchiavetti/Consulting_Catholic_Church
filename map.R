@@ -1,6 +1,6 @@
 # ---- Load the required libraries ---- 
 
-required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview")
+required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview", "webshot")
 
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
@@ -8,6 +8,10 @@ for (pkg in required_packages) {
   }
 }
 
+# Ensure PhantomJS is installed
+if (!webshot::is_phantomjs_installed()) {
+  webshot::install_phantomjs()
+}
 library(shiny)
 library(leaflet)
 library(dplyr)
