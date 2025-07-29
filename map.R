@@ -68,6 +68,11 @@ cols_with_country_data <- sapply(names(data), function(col_name) {
 # Filter your dataset to keep only columns with country data
 data_filtered <- data[, cols_with_country_data]
 
+# Select only Macroregions
+data_macroregions <- data_filtered %>%
+  filter(`Region type` == "Macroregion") %>%
+  rename(macroregion = Region)
+
 # Select only Countries
 data_countries <- data_filtered %>%
   filter(`Region type` == "Country")
@@ -481,31 +486,54 @@ server <- function(input, output, session) {
     } else {
       value <- info[[input$variable]][1]
       formatted <- format(round(as.numeric(value), 0), big.mark = ",", scientific = FALSE)
-      HTML(paste0("<strong>", selected_country(), "</strong><br/>", input$variable, ": ", formatted))
+      HTML(paste0("<strong>", selected_country(), "</strong><br/>", input$variable, " in ", input$year, ": ", formatted))
     }
   })
   
   # Histogram
   output$varPlot <- renderPlot({
     req(input$variable, input$year)
-    filtered <- data_countries %>% filter(Year == input$year)
-    values <- filtered[[input$variable]]
-    if (all(is.na(values))) {
+    
+    filtered_macro <- data_macroregions %>%
+      filter(Year == input$year) %>%
+      mutate(macroregion = case_when(
+        macroregion %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
+        macroregion == "South East and Far East Asia" ~ "South & Far East Asia",
+        TRUE ~ macroregion
+      )) %>%
+      filter(!macroregion %in% c("World", "America", "Asia")) %>%
+      group_by(macroregion) %>%
+      summarise(value = sum(.data[[input$variable]], na.rm = TRUE), .groups = "drop")
+    
+    if (all(is.na(filtered_macro$value))) {
       plot.new()
-      text(0.5, 0.5, "No data available", cex = 1.2)
+      text(0.5, 0.5, "No data available at macroregion level", cex = 1.2)
       return()
     }
-    country_selected <- selected_country()
-    selected_value <- if (!is.null(country_selected) && country_selected %in% filtered$country) {
-      filtered %>% filter(country == country_selected) %>% pull(input$variable)
-    } else NA
-    ggplot(data.frame(values), aes(x = values)) +
-      geom_density(fill = "#440154", alpha = 0.5, na.rm = TRUE) +
-      labs(x = stringr::str_wrap(input$variable, width = 30), y = "Density",
-           title = stringr::str_wrap(paste("Distribution of", input$variable), width = 40)) +
+    
+    ggplot(filtered_macro, aes(x = reorder(macroregion, value), y = value)) +
+      geom_col(fill = viridisLite::viridis(5)[3], color = "gray90", linewidth = 0.3, alpha = 0.85)+
+      geom_text(
+        aes(label = scales::comma(value)),
+        hjust = -0.05, size = 2.9
+      ) +
+      coord_flip(clip = "off") +  # allow text beyond plot area
+      labs(
+        x = "Continents",
+        y = NULL,
+        title = paste("Continent-level distribution", "in", input$year)
+      ) +
+      scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +  # add extra room on right
       theme_minimal(base_size = 11) +
-      theme(plot.title = element_text(size = 11), axis.title.x = element_text(size = 10), axis.text.x = element_text(size = 9)) +
-      {if (!is.na(selected_value)) geom_vline(xintercept = selected_value, color = "red", linewidth = 1.2)}
+      theme(
+        plot.title = element_text(hjust = 0.45, size = 10, face = "bold"),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_blank(),
+        axis.text.x = element_blank(),          # <- remove x-axis tick labels
+        axis.ticks.x = element_blank(),         # <- remove x-axis ticks
+        panel.grid.major.x = element_blank(),   # <- remove x-axis grid lines
+        axis.text.y = element_text(size = 8)
+      )
   })
   
   # Data Explorer table
