@@ -338,27 +338,39 @@ server <- function(input, output, session) {
     content = function(file) {
       library(htmlwidgets)
       filtered_data <- map_data %>% filter(Year == input$year)
-      pal <- colorNumeric(
-        palette = viridisLite::plasma(256),
-        domain = filtered_data[[input$variable]],
-        na.color = "transparent"
-      )
+      pal <- colorNumeric(palette = viridisLite::plasma(256), domain = filtered_data[[input$variable]], na.color = "transparent")
+      
       leaflet_obj <- leaflet(filtered_data) %>%
         addProviderTiles("CartoDB.Positron") %>%
-        fitBounds(lng1 = -110, lat1 = -40, lng2 = 120, lat2 = 65) %>%
+        fitBounds(-110, -40, 120, 65) %>%
         addPolygons(
           fillColor = ~pal(filtered_data[[input$variable]]),
           color = "white", weight = 1, opacity = 0.45, fillOpacity = 0.6,
           label = ~name
         ) %>%
-        addLegend(
-          pal = pal,
-          values = filtered_data[[input$variable]],
-          title = paste("Number in", input$year),
-          position = "bottomright"
-        )
+        addLegend(pal = pal, values = filtered_data[[input$variable]],
+                  title = paste("Number in", input$year),
+                  position = "bottomright")
+      
+      # Create a title overlay using prependContent
+      # Add title directly inside the map using leaflet::addControl()
+      leaflet_obj <- leaflet_obj %>%
+        addControl(
+          html = paste0("<div style='font-size:20px; font-weight:bold; background-color:rgba(255,255,255,0.7); 
+                  padding:6px 12px; border-radius:6px;'>", input$variable, " - ", input$year, "</div>"),
+          position = "topright"
+        ) %>%
+        addControl(
+         html = "<div style='font-size:13px; background-color:rgba(255,255,255,0.6); padding:4px 10px; 
+            border-radius:5px;'>Source: Annuarium Statisticum Ecclesiae</div>",
+        position = "bottomleft"
+      )
+      # Save the widget
       temp_html <- tempfile(fileext = ".html")
       saveWidget(leaflet_obj, temp_html, selfcontained = TRUE)
+      
+      
+      # Take screenshot
       webshot::webshot(temp_html, file = file, vwidth = 1600, vheight = 1000)
     }
   )
@@ -411,30 +423,6 @@ server <- function(input, output, session) {
       ) %>%
       addLegend(pal = pal, values = filtered_data[[input$variable]], title = paste("Number in", input$year), position = "bottomright")
   })
-  
-  # Download full map
-  output$download_map <- downloadHandler(
-    filename = function() {
-      paste0("map_export_", input$variable, "_", input$year, ".png")
-    },
-    content = function(file) {
-      library(htmlwidgets)
-      filtered_data <- map_data %>% filter(Year == input$year)
-      pal <- colorNumeric(palette = viridisLite::plasma(256), domain = filtered_data[[input$variable]], na.color = "transparent")
-      leaflet_obj <- leaflet(filtered_data) %>%
-        addProviderTiles("CartoDB.Positron") %>%
-        fitBounds(-110, -40, 120, 65) %>%
-        addPolygons(
-          fillColor = ~pal(filtered_data[[input$variable]]),
-          color = "white", weight = 1, opacity = 0.45, fillOpacity = 0.6,
-          label = ~name
-        ) %>%
-        addLegend(pal = pal, values = filtered_data[[input$variable]], title = paste("Number in", input$year), position = "bottomright")
-      temp_html <- tempfile(fileext = ".html")
-      saveWidget(leaflet_obj, temp_html, selfcontained = TRUE)
-      webshot::webshot(temp_html, file = file, vwidth = 1600, vheight = 1000)
-    }
-  )
   
   # Highlight country on click
   observeEvent(input$map_shape_click, {
