@@ -521,7 +521,8 @@ server <- function(input, output, session) {
       labs(
         x = "Continents",
         y = NULL,
-        title = paste("Continent-level distribution", "in", input$year)
+        title = paste("Continent-level distribution", "in", input$year),
+        caption = input$variable
       ) +
       scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +  # add extra room on right
       theme_minimal(base_size = 11) +
