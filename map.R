@@ -30,9 +30,7 @@ library(writexl)
 # ---- Docker instructions ---- 
 
 options(shiny.host = "0.0.0.0") 
-# tells Shiny to listen on all network interfaces
 options(shiny.port = 3838) # Also 8180 is a valid option 
-# tells Shiny which port to use
 
 # ---- Set the Working Directory ---- 
 path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
@@ -42,6 +40,289 @@ setwd(path_outputs)
 # ---- Load the data ---- 
 
 data <- read.csv("final_geo_table.csv", check.names = FALSE)
+
+# ---- Define variable abbreviations for display in histogram and map legend ----
+variable_abbreviations <- c(
+  "Inhabitants in thousands" = "Pop. (thousands)",
+  "Catholics in thousands" = "Cath. (thousands)",
+  "Area in km^2" = "Area (km²)",
+  "Inhabitants per km^2" = "Pop. per km²",
+  "Catholics per 100 inhabitants" = "Cath. per 100 Pop.",
+  "Ecclesiastical territories (total)" = "Eccl. Terr. (total)",
+  "Average area of ecclesiastical territories in km^2" = "Avg. Eccl. Area (km²)",
+  "Ecclesiastical territories of Latin rite" = "Eccl. Terr. (Latin)",
+  "Ecclesiastical territories of Eastern rites" = "Eccl. Terr. (Eastern)",
+  "Patriarchal Sees" = "Patr. Sees",
+  "Metropolitan Sees" = "Metr. Sees",
+  "Archiepiscopal Sees" = "Archiep. Sees",
+  "Episcopal Sees" = "Episc. Sees",
+  "Territorial Prelatures" = "Terr. Prel.",
+  "Territorial Abbacies" = "Terr. Abb.",
+  "Exarchates and Ordinariates" = "Exarch. & Ordin.",
+  "Military Ordinariates" = "Mil. Ordin.",
+  "Apostolic Vicariates" = "Apost. Vic.",
+  "Apostolic Prefectures" = "Apost. Pref.",
+  "Apostolic Administrations" = "Apost. Admin.",
+  "Independent Missions" = "Ind. Missions",
+  "Patriarchal Exarchate" = "Patr. Exarch.",
+  "Parishes (total)" = "Parishes (total)",
+  "Mission stations with resident priest" = "Miss. Stn. w/ Priest",
+  "Mission stations without resident priest" = "Miss. Stn. w/o Priest",
+  "Other pastoral centres" = "Other Past. Ctrs.",
+  "Pastoral centres (total)" = "Past. Ctrs. (total)",
+  "Inhabitants per pastoral centre" = "Pop. per Past. Ctr.",
+  "Catholics per pastoral centre" = "Cath. per Past. Ctr.",
+  "Pastoral centres per diocese" = "Past. Ctrs. per Diocese",
+  "Parishes as share of total pastoral centres" = "Parishes % Past. Ctrs.",
+  "Mission stations" = "Miss. Stn. (total)",
+  "Mission stations as share of total pastoral centres" = "Miss. Stn. % Past. Ctrs.",
+  "Number of other pastoral centres as share of total pastoral centres" = "Other Past. Ctrs. %",
+  "Pastoral centres as share of total pastoral centres" = "Past. Ctrs. % Total",
+  "Parishes with diocesan pastor" = "Parishes w/ Dioc. Pastor",
+  "Parishes with religious pastor" = "Parishes w/ Rel. Pastor",
+  "Parishes without pastor administered by another priest" = "Parishes Adm. by Priest",
+  "Parishes without pastor entrusted to permanent deacons" = "Parishes w/ Perm. Deacons",
+  "Parishes without pastor entrusted to non-priest religious men" = "Parishes w/ Non-Pr. Men",
+  "Parishes without pastor entrusted to religious women" = "Parishes w/ Rel. Women",
+  "Parishes without pastor entrusted to laypeople" = "Parishes w/ Laypeople",
+  "Parishes entirely vacant" = "Vacant Parishes",
+  "Parishes administered by a priest" = "Parishes w/ Priest Admin.",
+  "Parishes entrusted to non-priests" = "Parishes w/ Non-Pr. Admin.",
+  "Bishops (total)" = "Bishops (total)",
+  "Diocesan bishops" = "Dioc. Bishops",
+  "Titular bishops" = "Tit. Bishops",
+  "Secular cardinals" = "Sec. Cardinals",
+  "Secular patriarchs" = "Sec. Patriarchs",
+  "Secular archbishops" = "Sec. Archbishops",
+  "Secular bishops" = "Sec. Bishops",
+  "Secular episcopate (total)" = "Sec. Episc. (total)",
+  "Religious cardinals" = "Rel. Cardinals",
+  "Religious patriarchs" = "Rel. Patriarchs",
+  "Religious archbishops" = "Rel. Archbishops",
+  "Religious bishops" = "Rel. Bishops",
+  "Religious episcopate (total)" = "Rel. Episc. (total)",
+  "Diocesan bishops (as main office)" = "Dioc. Bp. (Main)",
+  "Coadjutor or auxhiliary bishops (as main office)" = "Coadj./Aux. Bp. (Main)",
+  "Bishops with office in Roman Curia (as main office)" = "Bp. in Roman Curia",
+  "Bishops with other main office" = "Bp. Other Office",
+  "Bishops without office" = "Bp. w/o Office",
+  "Bishops native to country of residence" = "Native Bishops",
+  "Bishops foreign to country of residence" = "Foreign Bishops",
+  "Diocesan priests (total)" = "Dioc. Priests (total)",
+  "Religious priests" = "Rel. Priests",
+  "Incardinated diocesan priests" = "Inc. Dioc. Priests",
+  "Incardinated diocesan priests (resident abroad)" = "Inc. Dioc. Priests Abroad",
+  "Incardinated diocesan priests (incardinated in another country)" = "Inc. Dioc. Priests Other Ctry.",
+  "Difference between incardinated and present diocesan priests" = "Inc. vs. Pres. Dioc. Priests",
+  "Incardinated diocesan priests on January 1" = "Inc. Dioc. Priests Jan 1",
+  "Yearly ordinations of diocesan priests" = "Dioc. Priest Ord. (Yr.)",
+  "Yearly deaths of diocesan priests" = "Dioc. Priest Deaths (Yr.)",
+  "Yearly defections of diocesan priests" = "Dioc. Priest Def. (Yr.)",
+  "Yearly variation in number of diocesan priests for other reasons" = "Dioc. Priest Var. Other (Yr.)",
+  "Yearly variation in number of diocesan priests (overall balance)" = "Dioc. Priest Var. (Yr.)",
+  "Yearly ordinations of diocesan priests as share of those incardinated on January 1" = "Dioc. Ord. % Inc. Jan 1",
+  "Yearly deaths of diocesan priests as share of those incardinated on January 1" = "Dioc. Deaths % Inc. Jan 1",
+  "Yearly defections of diocesan priests as share of those incardinated at January 1" = "Dioc. Def. % Inc. Jan 1",
+  "Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1" = "Dioc. Net Ord. % Inc. Jan 1",
+  "Priests and bishops as share of apostolic workforce" = "Priests & Bp. % Workforce",
+  "Diocesan permanent deacons" = "Dioc. Perm. Deacons",
+  "Religious permanent deacons" = "Rel. Perm. Deacons",
+  "Permanent deacons (diocesan and religious)" = "Perm. Deacons (total)",
+  "Non-priest religious men (with temporary or perpetual vows)" = "Non-Pr. Rel. Men",
+  "Religious women (with temporary or perpetual vows)" = "Rel. Women",
+  "Lay members of secular institutes for men" = "Lay Sec. Inst. Men",
+  "Members of secular institutes for women" = "Sec. Inst. Women",
+  "Lay missionaries" = "Lay Missionaries",
+  "Catechists" = "Catechists",
+  "Inhabitants per priest" = "Pop. per Priest",
+  "Catholics per priest" = "Cath. per Priest",
+  "Secondary schools for diocesan clergy - seminaries" = "Dioc. Sec. Sem.",
+  "Secondary schools for diocesan clergy - residences" = "Dioc. Sec. Res.",
+  "Philosophy+theology centres for diocesan clergy - seminaries" = "Dioc. Phil+Theo Sem.",
+  "Philosophy+theology centres for diocesan clergy - residences" = "Dioc. Phil+Theo Res.",
+  "Secondary schools for religious clergy - seminaries" = "Rel. Sec. Sem.",
+  "Secondary schools for religious clergy - residences" = "Rel. Sec. Res.",
+  "Philosophy+theology centres for religious clergy - seminaries" = "Rel. Phil+Theo Sem.",
+  "Philosophy+theology centres for religious clergy - residences" = "Rel. Phil+Theo Res.",
+  "Secondary schools and philosophy+theology centres (for diocesan and religious clergy)" = "Sec. & Phil+Theo (total)",
+  "Secondary schools and philosophy+theology centres (for diocesan clergy)" = "Dioc. Sec. & Phil+Theo",
+  "Secondary schools and philosophy+theology centres (for religious clergy)" = "Rel. Sec. & Phil+Theo",
+  "Philosophy+theology centres for diocesan and religious clergy - seminaries and residences" = "Phil+Theo Sem. & Res.",
+  "Philosophy+theology centres for diocesan and religious clergy - seminaries" = "Phil+Theo Sem. (total)",
+  "Philosophy+theology centres for diocesan and religious clergy - residences" = "Phil+Theo Res. (total)",
+  "Secondary schools for diocesan and religious clergy - seminaries and residences" = "Sec. Sem. & Res. (total)",
+  "Secondary schools for diocesan and religious clergy - seminaries" = "Sec. Sem. (total)",
+  "Secondary schools for diocesan and religious clergy - residences" = "Sec. Res. (total)",
+  "Secondary schools and philosophy+theology centres for diocesan clergy - seminaries" = "Dioc. Sec. & Sem.",
+  "Secondary schools and philosophy+theology centres for diocesan clergy - residences" = "Dioc. Sec. & Res.",
+  "Secondary schools and philosophy+theology centres for religious clergy - seminaries" = "Rel. Sec. & Sem.",
+  "Secondary schools and philosophy+theology centres for religious clergy - residences" = "Rel. Sec. & Res.",
+  "Students for diocesan clergy in secondary schools" = "Dioc. Sec. Students",
+  "Students for religious clergy in secondary schools" = "Rel. Sec. Students",
+  "Students for diocesan and religious clergy in secondary schools" = "Sec. Students (total)",
+  "Candidates for diocesan clergy in philosophy centres" = "Dioc. Phil. Cand.",
+  "Candidates for religious clergy in philosophy centres" = "Rel. Phil. Cand.",
+  "Candidates for diocesan and religious clergy in philosophy centres" = "Phil. Cand. (total)",
+  "Candidates for diocesan clergy in theology centres" = "Dioc. Theo. Cand.",
+  "Candidates for religious clergy in theology centres" = "Rel. Theo. Cand.",
+  "Candidates for diocesan and religious clergy in theology centres" = "Theo. Cand. (total)",
+  "Candidates for diocesan clergy in philosophy+theology centres" = "Dioc. Phil+Theo Cand.",
+  "Candidates for religious clergy in philosophy+theology centres" = "Rel. Phil+Theo Cand.",
+  "Candidates for diocesan and religious clergy in philosophy+theology centres" = "Phil+Theo Cand. (total)",
+  "Students in philosophy centres for diocesan clergy who left seminary" = "Dioc. Phil. Dropouts",
+  "Students in theology centres for diocesan clergy who left seminary" = "Dioc. Theo. Dropouts",
+  "Students in philosophy+theology centres for diocesan clergy who left seminary" = "Dioc. Phil+Theo Dropouts",
+  "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants" = "Voc. Rate per 100k Pop.",
+  "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics" = "Voc. Rate per 100k Cath.",
+  "Philosophy+theology candidates for diocesan and religious clergy per 100 priests" = "Cand. per 100 Priests",
+  "Vocation rate - philosophy+theology and secondary school students (for diocesan and religious clergy) per 100 thousand Catholics" = "Voc. Rate Stud. per 100k Cath.",
+  "Vocation rate - philosophy+theology and secondary school students (for diocesan and religious clergy) per 100 thousand inhabitants" = "Voc. Rate Stud. per 100k Pop.",
+  "Ordination rate - Yearly ordinations per 100 philosophy+theology students for diocesan priesthood" = "Ord. Rate per 100 Dioc. Cand.",
+  "Departures per 100 enrolled students in philosophy+theology centres for diocesan clergy" = "Dropout Rate per 100 Dioc.",
+  "Kindergartens" = "Kindergartens",
+  "Students in kindergartens" = "Kindergarten Students",
+  "Primary or elementary schools" = "Prim. Schools",
+  "Students in primary or elementary schools" = "Prim. School Students",
+  "Secondary schools" = "Sec. Schools",
+  "Students in secondary schools" = "Sec. School Students",
+  "Students in higher institutes" = "Higher Inst. Students",
+  "Students in universities for ecclesiastical studies" = "Eccl. Univ. Students",
+  "Students in other universities" = "Other Univ. Students",
+  "Infant baptisms (people up to 7 years old)" = "Infant Baptisms",
+  "Adult baptisms (people over 7 years old)" = "Adult Baptisms",
+  "Baptisms" = "Baptisms (total)",
+  "Infant baptisms (people up to 7 years old) per 1000 Catholics" = "Infant Bapt. per 1000 Cath.",
+  "Marriages between Catholics" = "Cath. Marriages",
+  "Mixed marriages" = "Mixed Marriages",
+  "Marriages" = "Marriages (total)",
+  "Marriages per 1000 Catholics" = "Marriages per 1000 Cath.",
+  "Confirmations" = "Confirmations",
+  "Confirmations per 1000 Catholics" = "Conf. per 1000 Cath.",
+  "First Communions" = "First Communions",
+  "First Communions per 1000 Catholics" = "First Comm. per 1000 Cath.",
+  "Share of adult baptisms (people over 7 years old)" = "Adult Bapt. %",
+  "Share of mixed marriages (among those celebrated with ecclesiastical rite)" = "Mixed Marr. %",
+  "Hospitals" = "Hospitals",
+  "Dispensaries" = "Dispensaries",
+  "Leprosaria" = "Leprosaria",
+  "Homes for old, chronically ill, and disabled people" = "Homes for Elderly/Disabled",
+  "Orphanages" = "Orphanages",
+  "Nurseries" = "Nurseries",
+  "Matrimonial advice centres" = "Marr. Advice Ctrs.",
+  "Special centres for social (re-)education" = "Soc. Re-ed. Ctrs.",
+  "Other welfare institutions" = "Other Welfare Inst.",
+  "Welfare institutions (total)" = "Welfare Inst. (total)",
+  "ISPR houses for men" = "ISPR Men Houses",
+  "Bishop members of ISPRs for men" = "Bp. ISPR Men",
+  "Priest members of ISPRs for men" = "Priest ISPR Men",
+  "Permanent deacon members of ISPRs for men" = "Perm. Deacon ISPR Men",
+  "Seminarian members of ISPRs for men" = "Sem. ISPR Men",
+  "Non-priest religious members of ISPRs for men" = "Non-Pr. ISPR Men",
+  "Novice seminarian members of ISPRs for men" = "Novice Sem. ISPR Men",
+  "Novice non-seminarian members of ISPRs for men" = "Novice Non-Sem. ISPR Men",
+  "Postulants in ISPRs for men" = "Postulants ISPR Men",
+  "ISPR autonomous houses for women" = "ISPR Women Houses",
+  "Postulants in ISPR autonomous houses for women" = "Postulants ISPR Women",
+  "Novices in ISPR autonomous houses for women" = "Novices ISPR Women",
+  "Professed religious women in ISPR autonomous houses (with temporary vows)" = "Temp. Vow ISPR Women",
+  "Professed religious women in ISPR autonomous houses (with perpetual vows)" = "Perp. Vow ISPR Women",
+  "ISPR centralized institutes houses for women" = "ISPR Cent. Women Houses",
+  "Postulants in ISPR centralized institutes houses for women" = "Postulants Cent. ISPR Women",
+  "Novices in ISPR centralized institutes houses for women" = "Novices Cent. ISPR Women",
+  "Professed religious women in ISPR centralized institutes houses (with temporary vows)" = "Temp. Vow Cent. ISPR Women",
+  "Professed religious women in ISPR centralized institutes houses (with perpetual vows)" = "Perp. Vow Cent. ISPR Women",
+  "Candidates admitted to probation period in ISPR secular institutes for women" = "Prob. Cand. ISPR Women",
+  "Members temporarily incorporated into ISPR secular institutes for women" = "Temp. Inc. ISPR Women",
+  "Members definitively incorporated into ISPR secular institutes for women" = "Def. Inc. ISPR Women",
+  "Laypeople associated with ISPR secular institutes for women" = "Lay Assoc. ISPR Women",
+  "First instance cases for declaration of nullity of marriage pending on January 1 (ordinary processes)" = "1st Inst. Nullity Pend. Jan 1 (Ord.)",
+  "First instance cases for declaration of nullity of marriage introduced during year (ordinary processes)" = "1st Inst. Nullity Intro. (Ord.)",
+  "First instance cases for declaration of nullity of marriage completed during year (ordinary processes)" = "1st Inst. Nullity Compl. (Ord.)",
+  "First instance cases for declaration of nullity of marriage pending on December 31 (ordinary processes)" = "1st Inst. Nullity Pend. Dec 31 (Ord.)",
+  "Second instance cases for declaration of nullity of marriage pending on January 1 (ordinary processes)" = "2nd Inst. Nullity Pend. Jan 1 (Ord.)",
+  "Second instance cases for declaration of nullity of marriage introduced during year (ordinary processes)" = "2nd Inst. Nullity Intro. (Ord.)",
+  "Second instance cases for declaration of nullity of marriage completed during year (ordinary processes)" = "2nd Inst. Nullity Compl. (Ord.)",
+  "Second instance cases for declaration of nullity of marriage pending on December 31 (ordinary processes)" = "2nd Inst. Nullity Pend. Dec 31 (Ord.)",
+  "First instance cases for declaration of nullity of marriage pending on January 1 (documentary processes)" = "1st Inst. Nullity Pend. Jan 1 (Doc.)",
+  "First instance cases for declaration of nullity of marriage introduced during year (documentary processes)" = "1st Inst. Nullity Intro. (Doc.)",
+  "First instance cases for declaration of nullity of marriage completed during year (documentary processes)" = "1st Inst. Nullity Compl. (Doc.)",
+  "First instance cases for declaration of nullity of marriage pending on December 31 (documentary processes)" = "1st Inst. Nullity Pend. Dec 31 (Doc.)",
+  "Second instance cases for declaration of nullity of marriage pending on January 1 (documentary processes)" = "2nd Inst. Nullity Pend. Jan 1 (Doc.)",
+  "Second instance cases for declaration of nullity of marriage introduced during year (documentary processes)" = "2nd Inst. Nullity Intro. (Doc.)",
+  "Second instance cases for declaration of nullity of marriage completed during year (documentary processes)" = "2nd Inst. Nullity Compl. (Doc.)",
+  "Second instance cases for declaration of nullity of marriage pending on December 31 (documentary processes)" = "2nd Inst. Nullity Pend. Dec 31 (Doc.)",
+  "First instance cases for declaration of nullity of marriage pending on January 1 (briefer processes before bishop)" = "1st Inst. Nullity Pend. Jan 1 (Brief)",
+  "First instance cases for declaration of nullity of marriage introduced during year (briefer processes before bishop)" = "1st Inst. Nullity Intro. (Brief)",
+  "First instance cases for declaration of nullity of marriage completed during year (briefer processes before bishop)" = "1st Inst. Nullity Compl. (Brief)",
+  "First instance cases for declaration of nullity of marriage pending on December 31 (briefer processes before bishop)" = "1st Inst. Nullity Pend. Dec 31 (Brief)",
+  "Second instance cases for declaration of nullity of marriage pending on January 1 (briefer processes before bishop)" = "2nd Inst. Nullity Pend. Jan 1 (Brief)",
+  "Second instance cases for declaration of nullity of marriage introduced during year (briefer processes before bishop)" = "2nd Inst. Nullity Intro. (Brief)",
+  "Second instance cases for declaration of nullity of marriage completed during year (briefer processes before bishop)" = "2nd Inst. Nullity Compl. (Brief)",
+  "Second instance cases for declaration of nullity of marriage pending on December 31 (briefer processes before bishop)" = "2nd Inst. Nullity Pend. Dec 31 (Brief)",
+  "First instance sentences pro nullity of marriage (ordinary processes)" = "1st Inst. Sent. Pro Nullity (Ord.)",
+  "First instance sentences contra nullity of marriage (ordinary processes)" = "1st Inst. Sent. Contra Nullity (Ord.)",
+  "First instance peremptions of cases for declaration of nullity of marriage (ordinary processes)" = "1st Inst. Peremp. Nullity (Ord.)",
+  "First instance renunciations of cases for declaration of nullity of marriage (ordinary processes)" = "1st Inst. Renunc. Nullity (Ord.)",
+  "Total first instance closures of cases for declaration of nullity of marriage (ordinary processes)" = "1st Inst. Closures Nullity (Ord.)",
+  "Second instance decree of first sentence confirmation for declaration of nullity of marriage (ordinary processes)" = "2nd Inst. Conf. Nullity (Ord.)",
+  "Second instance sentence pro nullity of marriage (ordinary processes)" = "2nd Inst. Sent. Pro Nullity (Ord.)",
+  "Second instance sentence contra nullity of marriage (ordinary processes)" = "2nd Inst. Sent. Contra Nullity (Ord.)",
+  "Second instance peremptions of cases for declaration of nullity of marriage (ordinary processes)" = "2nd Inst. Peremp. Nullity (Ord.)",
+  "Second instance renunciations of cases for declaration of nullity of marriage (ordinary processes)" = "2nd Inst. Renunc. Nullity (Ord.)",
+  "Total second instance closures of cases (ordinary processes)" = "2nd Inst. Closures Nullity (Ord.)",
+  "First instance sentences pro nullity of marriage (documentary processes)" = "1st Inst. Sent. Pro Nullity (Doc.)",
+  "First instance cases for declaration of nullity of marriage referred to ordinary process (documentary processes)" = "1st Inst. Ref. to Ord. (Doc.)",
+  "First instance peremptions of cases for declaration of nullity of marriage (documentary processes)" = "1st Inst. Peremp. Nullity (Doc.)",
+  "First instance renunciations of cases for declaration of nullity of marriage (documentary processes)" = "1st Inst. Renunc. Nullity (Doc.)",
+  "Total first instance closures of cases for declaration of nullity of marriage (documentary processes)" = "1st Inst. Closures Nullity (Doc.)",
+  "Second instance sentences pro nullity of marriage (documentary processes)" = "2nd Inst. Sent. Pro Nullity (Doc.)",
+  "Second instance cases for declaration of nullity of marriage referred to ordinary process (documentary processes)" = "2nd Inst. Ref. to Ord. (Doc.)",
+  "Second instance peremptions of cases for declaration of nullity of marriage (documentary processes)" = "2nd Inst. Peremp. Nullity (Doc.)",
+  "Second instance renunciations of cases for declaration of nullity of marriage (documentary processes)" = "2nd Inst. Renunc. Nullity (Doc.)",
+  "Total second instance closures of cases for declaration of nullity of marriage (documentary processes)" = "2nd Inst. Closures Nullity (Doc.)",
+  "First instance sentences pro nullity of marriage (briefer processes before bishop)" = "1st Inst. Sent. Pro Nullity (Brief)",
+  "First instance cases for declaration of nullity of marriage referred to ordinary process (briefer processes before bishop)" = "1st Inst. Ref. to Ord. (Brief)",
+  "First instance peremptions of cases for declaration of nullity of marriage (briefer processes before bishop)" = "1st Inst. Peremp. Nullity (Brief)",
+  "First instance renunciations of cases for declaration of nullity of marriage (briefer processes before bishop)" = "1st Inst. Renunc. Nullity (Brief)",
+  "Total first instance closures of cases for declaration of nullity of marriage (briefer processes before bishop)" = "1st Inst. Closures Nullity (Brief)",
+  "Second instance decree of first sentence confirmation for declaration of nullity of marriage (briefer processes before bishop)" = "2nd Inst. Conf. Nullity (Brief)",
+  "Second instance cases for declaration of nullity of marriage referred to ordinary process (briefer processes before bishop)" = "2nd Inst. Ref. to Ord. (Brief)",
+  "Second instance peremptions of cases for declaration of nullity of marriage (briefer processes before bishop)" = "2nd Inst. Peremp. Nullity (Brief)",
+  "Second instance renunciations of cases for declaration of nullity of marriage (briefer processes before bishop)" = "2nd Inst. Renunc. Nullity (Brief)",
+  "Total second instance closures of cases for declaration of nullity of marriage (briefer processes before bishop)" = "2nd Inst. Closures Nullity (Brief)",
+  "Processes for dispensation from unconsummated marriage pending on January 1" = "Disp. Uncons. Pend. Jan 1",
+  "Processes for dispensation from unconsummated marriage introduced during year" = "Disp. Uncons. Intro. (Yr.)",
+  "Acts of dispensation from unconsummated marriage transmitted to Apostolic See with favorable vote" = "Disp. Uncons. Fav. Vote",
+  "Acts of dispensation from unconsummated marriage transmitted to Apostolic See with unfavorable vote" = "Disp. Uncons. Unfav. Vote",
+  "Processes for dispensation from unconsummated marriage closed for other reasons" = "Disp. Uncons. Closed Other",
+  "Processes for dispensation from unconsummated marriage pending on December 31" = "Disp. Uncons. Pend. Dec 31",
+  "Processes for declaration of presumed death of spouse pending on January 1" = "Pres. Death Pend. Jan 1",
+  "Processes for declaration of presumed death of spouse introduced during year" = "Pres. Death Intro. (Yr.)",
+  "Processes for declaration of presumed death of spouse closed during year" = "Pres. Death Closed (Yr.)",
+  "Processes for declaration of presumed death of spouse pending on December 31" = "Pres. Death Pend. Dec 31",
+  "Cases for declaration of nullity of marriage - not paid by parties" = "Nullity Cases Not Paid",
+  "Cases for declaration of nullity of marriage - partially paid by parties" = "Nullity Cases Part. Paid",
+  "Cases for declaration of nullity of marriage - entirely paid by parties" = "Nullity Cases Fully Paid",
+  "Processes for dispensation from unconsummated marriage - not paid by parties" = "Disp. Uncons. Not Paid",
+  "Processes for dispensation from unconsummated marriage - partially paid by parties" = "Disp. Uncons. Part. Paid",
+  "Processes for dispensation from unconsummated marriage - entirely paid by parties" = "Disp. Uncons. Fully Paid",
+  "Processes for presumed death of spouse - not paid by parties" = "Pres. Death Not Paid",
+  "Processes for presumed death of spouse - partially paid by parties" = "Pres. Death Part. Paid",
+  "Processes for presumed death of spouse - entirely paid by parties" = "Pres. Death Fully Paid",
+  "Ecclesiastical territories (total) - index numbers (base 2013 = 100)" = "Eccl. Terr. Index (2013=100)",
+  "Pastoral centres (total) - index numbers (base 2013 = 100)" = "Past. Ctrs. Index (2013=100)",
+  "Parishes (total) - index numbers (base 2013 = 100)" = "Parishes Index (2013=100)",
+  "Priests (diocesan and religious)" = "Priests (total)",
+  "Priests (diocesan and religious) - index numbers (base 2013 = 100)" = "Priests Index (2013=100)",
+  "Diocesan priests (total) - index numbers (base 2013 = 100)" = "Dioc. Priests Index (2013=100)",
+  "Incardinated diocesan priests - index numbers (base 2013 = 100)" = "Inc. Dioc. Priests Index (2013=100)",
+  "Religious priests - index numbers (base 2013 = 100)" = "Rel. Priests Index (2013=100)",
+  "Permanent deacons (diocesan and religious) - index numbers (base 2013 = 100)" = "Perm. Deacons Index (2013=100)",
+  "Non-priest religious men (with temporary or perpetual vows) - index numbers (base 2013 = 100)" = "Non-Pr. Rel. Men Index (2013=100)",
+  "Religious women (with temporary or perpetual vows) - index numbers (base 2013 = 100)" = "Rel. Women Index (2013=100)",
+  "Candidates for diocesan and religious clergy in philosophy+theology centres - index numbers (base 2013 = 100)" = "Phil+Theo Cand. Index (2013=100)",
+  "Students for diocesan and religious clergy in secondary schools - index numbers (base 2013 = 100)" = "Sec. Students Index (2013=100)"
+)
 
 # Function to check if a column has data only in macroregions
 has_country_data <- function(col_data, region_type) {
@@ -268,7 +549,7 @@ ui <- tagList(
                           
                           h4("World Stats Explorer"),
                           selectInput("variable", "Select variable to display:",
-                                      choices = allowed_variables),
+                                      choices = allowed_variables), # Use full variable names
                           selectInput("year", "Select year:",
                                       choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
                           radioButtons("display_mode", "Display mode:",
@@ -296,7 +577,7 @@ ui <- tagList(
                           width = 3,
                           tags$div(
                             style = "background-color: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #dee2e6; font-size: 14px;",
-                            selectInput("explorer_variable", "Select variable:", choices = c("Select a variable..." = "", allowed_variables)),
+                            selectInput("explorer_variable", "Select variable:", choices = c("Select a variable..." = "", allowed_variables)), # Use full variable names
                             selectInput("explorer_year", "Select year:", choices = sort(unique(data_countries$Year))),
                             div(style = "margin-top: 10px;",
                                 downloadButton("download_csv", "CSV", class = "btn btn-sm btn-success"),
@@ -320,7 +601,7 @@ ui <- tagList(
 # ---- Server logic ---- 
 server <- function(input, output, session) {
   
-  # ---- Handle map download with display mode adjustments ----
+  # ---- Handle map download with full variable names ----
   output$download_map <- downloadHandler(
     filename = function() {
       paste0("map_export_", input$variable, "_", input$year, 
@@ -364,9 +645,9 @@ server <- function(input, output, session) {
         ) %>%
         addLegend(pal = pal, values = filtered_data[[input$variable]],
                   title = paste(switch(input$display_mode,
-                                       "absolute" = input$variable,
-                                       "per_capita" = paste(input$variable, "per thousand inhabitants"),
-                                       "per_catholic" = paste(input$variable, "per thousand Catholics")),
+                                       "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
+                                       "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
+                                       "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
                                 "in", input$year),
                   position = "bottomright")
       
@@ -377,7 +658,7 @@ server <- function(input, output, session) {
           html = paste0("<div style='font-size:20px; font-weight:bold; background-color:rgba(255,255,255,0.7); 
                   padding:6px 12px; border-radius:6px;'>", 
                         switch(input$display_mode,
-                               "absolute" = input$variable,
+                               "absolute" = input$variable, # Use full variable name
                                "per_capita" = paste(input$variable, "per thousand inhabitants"),
                                "per_catholic" = paste(input$variable, "per thousand Catholics")),
                         " - ", input$year, "</div>"),
@@ -395,12 +676,10 @@ server <- function(input, output, session) {
     }
   )
   
-  # Track selected country
   # ---- Initialize reactive values for selections ----
   selected_country <- reactiveVal(NULL)
   selections <- reactiveValues(variable = NULL, year = NULL)
   
-  # Sync Data Explorer inputs with Map tab
   # ---- Synchronize variable and year selections ----
   observe({
     selections$variable <- input$variable
@@ -413,7 +692,6 @@ server <- function(input, output, session) {
     updateSelectInput(session, "explorer_year", selected = input$year)
   })
   
-  # Update year choices dynamically
   # ---- Update available years based on variable selection ----
   observeEvent(input$variable, {
     available_years <- sort(unique(data_countries %>%
@@ -422,7 +700,7 @@ server <- function(input, output, session) {
     updateSelectInput(session, "year", choices = available_years, selected = max(available_years))
   })
   
-  # ---- Render the interactive world map ----
+  # ---- Render the interactive world map with abbreviated names in legend ----
   output$map <- renderLeaflet({
     req(input$variable, input$year)
     filtered_data <- map_data %>% filter(Year == input$year)
@@ -460,23 +738,22 @@ server <- function(input, output, session) {
         layerId = ~name,
         label = ~lapply(paste0("<strong>", name, "</strong><br/>", 
                                switch(input$display_mode,
-                                      "absolute" = input$variable,
-                                      "per_capita" = paste(input$variable, "per thousand inhabitants"),
-                                      "per_catholic" = paste(input$variable, "per thousand Catholics")), 
+                                      "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
+                                      "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
+                                      "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")), 
                                ": ", 
                                formatC(filtered_data[[input$variable]], format = "f", digits = 2, big.mark = ",")), htmltools::HTML),
         highlight = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.8, bringToFront = TRUE)
       ) %>%
       addLegend(pal = pal, values = filtered_data[[input$variable]], 
                 title = paste(switch(input$display_mode,
-                                     "absolute" = input$variable,
-                                     "per_capita" = paste(input$variable, "per thousand inhabitants"),
-                                     "per_catholic" = paste(input$variable, "per thousand Catholics")),
+                                     "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
+                                     "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
+                                     "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
                               "in", input$year), 
                 position = "bottomright")
   })
   
-  # Highlight country on click
   # ---- Handle map click events to highlight countries ----
   observeEvent(input$map_shape_click, {
     selected_country(input$map_shape_click$id)
@@ -493,7 +770,6 @@ server <- function(input, output, session) {
         zoom = 4)
   })
   
-  # Highlight country on search
   # ---- Handle country search selection ----
   observeEvent(input$country_search, {
     req(input$country_search, input$year)
@@ -510,7 +786,6 @@ server <- function(input, output, session) {
         zoom = 4)
   })
   
-  # Reset button
   # ---- Reset map view and clear selections ----
   observeEvent(input$reset_map, {
     selected_country(NULL)
@@ -520,8 +795,7 @@ server <- function(input, output, session) {
     updateSelectInput(session, "country_search", selected = "")
   })
   
-  # Country info
-  # ---- Display country-specific information ----
+  # ---- Display country-specific information with full variable names ----
   output$country_info <- renderUI({
     req(selected_country())
     info <- map_data %>% filter(name = selected_country(), Year = input$year)
@@ -545,15 +819,14 @@ server <- function(input, output, session) {
       formatted <- format(round(as.numeric(value), ifelse(input$display_mode == "absolute", 0, 2)), big.mark = ",", scientific = FALSE)
       HTML(paste0("<strong>", selected_country(), "</strong><br/>", 
                   switch(input$display_mode,
-                         "absolute" = input$variable,
+                         "absolute" = input$variable, # Use full variable name
                          "per_capita" = paste(input$variable, "per thousand inhabitants"),
                          "per_catholic" = paste(input$variable, "per thousand Catholics")), 
                   " in ", input$year, ": ", formatted))
     }
   })
   
-  # Histogram
-  # ---- Render macroregion histogram ----
+  # ---- Render macroregion histogram with abbreviated name in caption ----
   output$varPlot <- renderPlot({
     req(input$variable, input$year)
     
@@ -600,9 +873,9 @@ server <- function(input, output, session) {
         y = NULL,
         title = paste("Continent-level distribution", "in", input$year),
         caption = switch(input$display_mode,
-                         "absolute" = input$variable,
-                         "per_capita" = paste(input$variable, "per thousand inhabitants"),
-                         "per_catholic" = paste(input$variable, "per thousand Catholics"))
+                         "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
+                         "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
+                         "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath."))
       ) +
       scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +
       theme_minimal(base_size = 11) +
@@ -617,7 +890,6 @@ server <- function(input, output, session) {
       )
   })
   
-  # Data Explorer table
   # ---- Render data table for explorer tab ----
   output$table <- renderDT({
     if (is.null(input$explorer_variable) || input$explorer_variable == "") {
@@ -646,7 +918,6 @@ server <- function(input, output, session) {
     updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
     selected_country(NULL)
   })
-  # CSV download
   
   # ---- Download data as CSV ----
   output$download_csv <- downloadHandler(
@@ -665,7 +936,6 @@ server <- function(input, output, session) {
     }
   )
   
-  # Excel download (requires writexl)
   # ---- Download data as Excel ----
   output$download_excel <- downloadHandler(
     filename = function() {
