@@ -33,8 +33,8 @@ options(shiny.host = "0.0.0.0")
 options(shiny.port = 3838) # Also 8180 is a valid option 
 
 # ---- Set the Working Directory ---- 
-path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
-#path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
+#path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
+path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
 setwd(path_outputs)
 
 # ---- Load the data ---- 
@@ -546,8 +546,6 @@ ui <- tagList(
                           draggable = TRUE, top = 60, left = 20, right = "auto", bottom = "auto",
                           width = 300, height = "auto",
                           style = "background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px; overflow-y: auto; max-height: 90vh;",
-                          
-                          h4("World Stats Explorer"),
                           selectInput("variable", "Select variable to display:",
                                       choices = allowed_variables), # Use full variable names
                           selectInput("year", "Select year:",
@@ -565,7 +563,9 @@ ui <- tagList(
                           hr(),
                           htmlOutput("country_info"),
                           actionButton("reset_map", "Reset Map View", icon = icon("undo")),
-                          downloadButton("download_map", "Download Full Map", class = "btn btn-primary")
+                          div(style = "margin-top: 15px;",
+                              downloadButton("download_map", "Download Full Map", class = "btn btn-primary")
+                          )
                         )
                       )
              ),
@@ -756,18 +756,38 @@ server <- function(input, output, session) {
   
   # ---- Handle map click events to highlight countries ----
   observeEvent(input$map_shape_click, {
-    selected_country(input$map_shape_click$id)
-    updateSelectInput(session, "country_search", selected = input$map_shape_click$id)
+    req(input$map_shape_click$id, input$year) # Ensure click ID and year are valid
+    clicked_country <- input$map_shape_click$id
+    filtered_data <- map_data %>% filter(name == clicked_country, Year == input$year)
     
+    # Check if data exists for the clicked country and year
+    if (nrow(filtered_data) == 0 || is.na(filtered_data$geometry[1])) {
+      showNotification("No data available for this country in the selected year.", type = "warning")
+      return()
+    }
+    
+    # Update reactive value and dropdown
+    selected_country(clicked_country)
+    updateSelectInput(session, "country_search", selected = clicked_country)
+    
+    # Highlight and center map
     leafletProxy("map") %>%
       clearGroup("highlight") %>%
       addPolygons(
-        data = map_data %>% filter(name == input$map_shape_click$id, Year = input$year),
-        fill = FALSE, color = "red", weight = 3, opacity = 1, group = "highlight") %>%
+        data = filtered_data,
+        fill = FALSE, color = "red", weight = 3, opacity = 1, group = "highlight"
+      ) %>%
       setView(
-        lng = st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$map_shape_click$id))))[1],
-        lat = st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$map_shape_click$id))))[2],
-        zoom = 4)
+        lng = tryCatch(
+          st_coordinates(st_centroid(st_union(filtered_data$geometry)))[1],
+          error = function(e) 0
+        ),
+        lat = tryCatch(
+          st_coordinates(st_centroid(st_union(filtered_data$geometry)))[2],
+          error = function(e) 30
+        ),
+        zoom = 4
+      )
   })
   
   # ---- Handle country search selection ----
@@ -798,7 +818,7 @@ server <- function(input, output, session) {
   # ---- Display country-specific information with full variable names ----
   output$country_info <- renderUI({
     req(selected_country())
-    info <- map_data %>% filter(name = selected_country(), Year = input$year)
+    info <- map_data %>% filter(name == selected_country(), Year == input$year)
     if (input$display_mode == "per_capita") {
       info[[input$variable]] <- ifelse(
         !is.na(info[["Inhabitants in thousands"]]) & info[["Inhabitants in thousands"]] > 0,
