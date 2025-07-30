@@ -51,12 +51,12 @@ has_country_data <- function(col_data, region_type) {
   return(sum(!is.na(country_data)) > 0)
 }
 
-# Identify columns that have data for countries
+# Identify columns that have country data
 cols_with_country_data <- sapply(names(data), function(col_name) {
   if(is.numeric(data[[col_name]])) {
     has_country_data(data[[col_name]], data$`Region type`)
   } else {
-    TRUE  # Keep non-numeric columns
+    TRUE
   }
 })
 
@@ -64,8 +64,7 @@ cols_with_country_data <- sapply(names(data), function(col_name) {
 #print(paste("Total columns:", length(cols_with_country_data)))
 #print(paste("Columns with country data:", sum(cols_with_country_data)))
 #print(paste("Columns with only macroregion data:", sum(!cols_with_country_data)))
-
-# Filter your dataset to keep only columns with country data
+# Filter dataset to keep only columns with country data
 data_filtered <- data[, cols_with_country_data]
 
 # Select only Macroregions
@@ -95,7 +94,6 @@ map_data <- left_join(world, data_countries, by = c("name" = "Region"))
 
 # ---- Analysis of unmatched names ---- 
 
-# Find unmatched names
 unmatched_in_data <- anti_join(data_countries, world, by = c("Region" = "name"))
 print(unmatched_in_data$Region)
 
@@ -127,7 +125,7 @@ name_corrections <- c(
   "Guadeloupe" = "France",
   "Hong Kong SAR" = "Hong Kong",
   "Iran (Islamic Rep. of)" = "Iran",
-  "Kazakchstan" = "Kazakhstan",  # spelling fix
+  "Kazakchstan" = "Kazakhstan",
   "Macao SAR" = "Macao",
   "Macedonia (Rep. of North)" = "North Macedonia",
   "Marshall Islands" = "Marshall Is.",
@@ -162,7 +160,6 @@ name_corrections <- c(
 )
 
 #Create a new column with the corrected country names 
-
 data_countries$country <- ifelse(
   data_countries$Region %in% names(name_corrections),
   name_corrections[data_countries$Region],
@@ -177,7 +174,6 @@ data_countries <- data_countries %>%
     ~ if (all(is.na(.))) NA_real_ else sum(., na.rm = TRUE)
   ), .groups = "drop")
 
-
 # Define variables to exclude
 excluded_vars <- c("Area in km^2")
 
@@ -187,7 +183,6 @@ allowed_variables <- setdiff(
   excluded_vars
 )
 
-
 #Rematching
 map_data <- left_join(world, data_countries, by = c("name" = "country"))
 
@@ -195,33 +190,27 @@ map_data <- left_join(world, data_countries, by = c("name" = "country"))
 unmatched_after_fix <- anti_join(data_countries, world, by = c("country" = "name"))
 print(unique(unmatched_after_fix$country))
 
-
 # ---- UI layout ----
 # 1. Get the list of unique, non-missing, non-empty country names from the data
 all_countries <- sort(unique(data_countries$country))
-
 # Remove any NA values or purely empty strings that might be in the country list
 all_countries <- all_countries[!is.na(all_countries) & all_countries != ""]
-
 # 2. Create a named list for selectizeInput choices
 # The 'names' of this list are what the user sees in the dropdown.
 # The 'values' of this list are what Shiny passes to the server logic.
 # For countries, it's common for them to be the same.
 country_choices_list <- as.list(all_countries)
 names(country_choices_list) <- all_countries # Assign each country name as its own list element's name
-
-# 3. Add the initial blank/placeholder option to the beginning of the list
 final_country_dropdown_choices <- c("Type to search..." = "", country_choices_list)
 
 ui <- tagList(
   tags$head(
-    #css
     tags$style(HTML("
   html, body {
     height: 100%;
     margin: 0;
     padding: 0;
-    overflow: hidden; /* Keep for Map tab */
+    overflow: hidden;
   }
   #map {
     height: 100vh !important;
@@ -260,13 +249,11 @@ ui <- tagList(
    .panel-default .form-group {
     margin-bottom: 15px;
   }
-
   div.tab-pane[data-value='Data Explorer'] .data-explorer-main {
     overflow-y: auto !important;
     max-height: 80vh !important;
     padding: 15px;
   }
-
   .leaflet-top {
     margin-top: 70px !important;
   }
@@ -275,7 +262,6 @@ ui <- tagList(
   
   navbarPage("Annuarium Statisticum Ecclesiae", theme = shinytheme("flatly"),
              
-             # MAP TAB
              tabPanel("Map",
                       div(
                         leafletOutput("map", height = "100vh", width = "100%"),
@@ -290,14 +276,11 @@ ui <- tagList(
                                       choices = allowed_variables),
                           selectInput("year", "Select year:",
                                       choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
-                          
-                          
+                          checkboxInput("per_capita", "Display per capita (per thousand inhabitants)", FALSE),
                           selectizeInput("country_search", "Search for a country:",
-                                         choices = final_country_dropdown_choices, # <-- USE THE NEW VARIABLE HERE
+                                         choices = final_country_dropdown_choices,
                                          selected = "", multiple = FALSE,
                                          options = list(placeholder = 'Type to search...')),
-                          
-                          
                           plotOutput("varPlot", height = 150),
                           hr(),
                           htmlOutput("country_info"),
@@ -332,24 +315,23 @@ ui <- tagList(
                         )
                       )
              )
-             
   )
-  
 ) 
 
-
 # ---- Server logic ---- 
-
 server <- function(input, output, session) {
   
   # Download full map
   output$download_map <- downloadHandler(
     filename = function() {
-      paste0("map_export_", input$variable, "_", input$year, ".png")
+      paste0("map_export_", input$variable, "_", input$year, ifelse(input$per_capita, "_per_capita", ""), ".png")
     },
     content = function(file) {
       library(htmlwidgets)
       filtered_data <- map_data %>% filter(Year == input$year)
+      if (input$per_capita) {
+        filtered_data[[input$variable]] <- filtered_data[[input$variable]] / filtered_data[["Inhabitants in thousands"]]
+      }
       pal <- colorNumeric(palette = viridisLite::plasma(256), domain = filtered_data[[input$variable]], na.color = "transparent")
       
       leaflet_obj <- leaflet(filtered_data) %>%
@@ -361,7 +343,7 @@ server <- function(input, output, session) {
           label = ~name
         ) %>%
         addLegend(pal = pal, values = filtered_data[[input$variable]],
-                  title = paste("Number in", input$year),
+                  title = paste(ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable), "in", input$year),
                   position = "bottomright")
       
       # Create a title overlay using prependContent
@@ -369,19 +351,17 @@ server <- function(input, output, session) {
       leaflet_obj <- leaflet_obj %>%
         addControl(
           html = paste0("<div style='font-size:20px; font-weight:bold; background-color:rgba(255,255,255,0.7); 
-                  padding:6px 12px; border-radius:6px;'>", input$variable, " - ", input$year, "</div>"),
+                  padding:6px 12px; border-radius:6px;'>", 
+                        ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable), " - ", input$year, "</div>"),
           position = "topright"
         ) %>%
         addControl(
-         html = "<div style='font-size:13px; background-color:rgba(255,255,255,0.6); padding:4px 10px; 
+          html = "<div style='font-size:13px; background-color:rgba(255,255,255,0.6); padding:4px 10px; 
             border-radius:5px;'>Source: Annuarium Statisticum Ecclesiae</div>",
-        position = "bottomleft"
-      )
-      # Save the widget
+          position = "bottomleft"
+        )
       temp_html <- tempfile(fileext = ".html")
       saveWidget(leaflet_obj, temp_html, selfcontained = TRUE)
-      
-      
       # Take screenshot
       webshot::webshot(temp_html, file = file, vwidth = 1600, vheight = 1000)
     }
@@ -411,10 +391,12 @@ server <- function(input, output, session) {
     updateSelectInput(session, "year", choices = available_years, selected = max(available_years))
   })
   
-  # Render leaflet map
   output$map <- renderLeaflet({
     req(input$variable, input$year)
     filtered_data <- map_data %>% filter(Year == input$year)
+    if (input$per_capita) {
+      filtered_data[[input$variable]] <- filtered_data[[input$variable]] / filtered_data[["Inhabitants in thousands"]]
+    }
     pal <- colorNumeric(palette = viridisLite::plasma(256),
                         domain = filtered_data[[input$variable]], na.color = "transparent")
     
@@ -429,11 +411,14 @@ server <- function(input, output, session) {
         dashArray = "3",
         fillOpacity = 0.6,
         layerId = ~name,
-        label = ~lapply(paste0("<strong>", name, "</strong><br/>", input$variable, ": ", 
-                               formatC(filtered_data[[input$variable]], format = "f", digits = 0, big.mark = ",")), htmltools::HTML),
+        label = ~lapply(paste0("<strong>", name, "</strong><br/>", 
+                               ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable), ": ", 
+                               formatC(filtered_data[[input$variable]], format = "f", digits = 2, big.mark = ",")), htmltools::HTML),
         highlight = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.8, bringToFront = TRUE)
       ) %>%
-      addLegend(pal = pal, values = filtered_data[[input$variable]], title = paste("Number in", input$year), position = "bottomright")
+      addLegend(pal = pal, values = filtered_data[[input$variable]], 
+                title = paste(ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable), "in", input$year), 
+                position = "bottomright")
   })
   
   # Highlight country on click
@@ -480,13 +465,18 @@ server <- function(input, output, session) {
   # Country info
   output$country_info <- renderUI({
     req(selected_country())
-    info <- map_data %>% filter(name == selected_country(), Year == input$year) %>% select(name, all_of(input$variable))
+    info <- map_data %>% filter(name == selected_country(), Year = input$year)
+    if (input$per_capita) {
+      info[[input$variable]] <- info[[input$variable]] / info[["Inhabitants in thousands"]]
+    }
     if (nrow(info) == 0 || is.na(info[[input$variable]][1])) {
       HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
     } else {
       value <- info[[input$variable]][1]
-      formatted <- format(round(as.numeric(value), 0), big.mark = ",", scientific = FALSE)
-      HTML(paste0("<strong>", selected_country(), "</strong><br/>", input$variable, " in ", input$year, ": ", formatted))
+      formatted <- format(round(as.numeric(value), ifelse(input$per_capita, 2, 0)), big.mark = ",", scientific = FALSE)
+      HTML(paste0("<strong>", selected_country(), "</strong><br/>", 
+                  ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable), 
+                  " in ", input$year, ": ", formatted))
     }
   })
   
@@ -503,7 +493,14 @@ server <- function(input, output, session) {
       )) %>%
       filter(!macroregion %in% c("World", "America", "Asia")) %>%
       group_by(macroregion) %>%
-      summarise(value = sum(.data[[input$variable]], na.rm = TRUE), .groups = "drop")
+      summarise(
+        value = if (input$per_capita) {
+          sum(.data[[input$variable]], na.rm = TRUE) / sum(.data[["Inhabitants in thousands"]], na.rm = TRUE)
+        } else {
+          sum(.data[[input$variable]], na.rm = TRUE)
+        },
+        .groups = "drop"
+      )
     
     if (all(is.na(filtered_macro$value))) {
       plot.new()
@@ -512,27 +509,27 @@ server <- function(input, output, session) {
     }
     
     ggplot(filtered_macro, aes(x = reorder(macroregion, value), y = value)) +
-      geom_col(fill = viridisLite::viridis(5)[3], color = "gray90", linewidth = 0.3, alpha = 0.85)+
+      geom_col(fill = viridisLite::viridis(5)[3], color = "gray90", linewidth = 0.3, alpha = 0.85) +
       geom_text(
-        aes(label = scales::comma(value)),
+        aes(label = scales::comma(value, accuracy = ifelse(input$per_capita, 0.01, 1))),
         hjust = -0.05, size = 2.9
       ) +
-      coord_flip(clip = "off") +  # allow text beyond plot area
+      coord_flip(clip = "off") +
       labs(
         x = "Continents",
         y = NULL,
         title = paste("Continent-level distribution", "in", input$year),
-        caption = input$variable
+        caption = ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable)
       ) +
-      scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +  # add extra room on right
+      scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +
       theme_minimal(base_size = 11) +
       theme(
         plot.title = element_text(hjust = 0.45, size = 10, face = "bold"),
         axis.title.x = element_text(size = 10),
         axis.title.y = element_blank(),
-        axis.text.x = element_blank(),          # <- remove x-axis tick labels
-        axis.ticks.x = element_blank(),         # <- remove x-axis ticks
-        panel.grid.major.x = element_blank(),   # <- remove x-axis grid lines
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.grid.major.x = element_blank(),
         axis.text.y = element_text(size = 8)
       )
   })
@@ -564,6 +561,7 @@ server <- function(input, output, session) {
     selected_country(NULL)
   })
   # CSV download
+  
   output$download_csv <- downloadHandler(
     filename = function() {
       paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".csv")
@@ -596,9 +594,7 @@ server <- function(input, output, session) {
       writexl::write_xlsx(filtered, path = file)
     }
   )
-  
 }
-
 
 # ---- Launch the app ----
 shinyApp(ui, server)
