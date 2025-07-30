@@ -31,7 +31,6 @@ library(writexl)
 
 options(shiny.host = "0.0.0.0") 
 # tells Shiny to listen on all network interfaces
-
 options(shiny.port = 3838) # Also 8180 is a valid option 
 # tells Shiny which port to use
 
@@ -60,10 +59,6 @@ cols_with_country_data <- sapply(names(data), function(col_name) {
   }
 })
 
-#To verify the debug
-#print(paste("Total columns:", length(cols_with_country_data)))
-#print(paste("Columns with country data:", sum(cols_with_country_data)))
-#print(paste("Columns with only macroregion data:", sum(!cols_with_country_data)))
 # Filter dataset to keep only columns with country data
 data_filtered <- data[, cols_with_country_data]
 
@@ -276,7 +271,11 @@ ui <- tagList(
                                       choices = allowed_variables),
                           selectInput("year", "Select year:",
                                       choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
-                          checkboxInput("per_capita", "Display per capita (per thousand inhabitants)", FALSE),
+                          radioButtons("display_mode", "Display mode:",
+                                       choices = list("Absolute values" = "absolute",
+                                                      "Per thousand inhabitants" = "per_capita",
+                                                      "Per thousand Catholics" = "per_catholic"),
+                                       selected = "absolute"),
                           selectizeInput("country_search", "Search for a country:",
                                          choices = final_country_dropdown_choices,
                                          selected = "", multiple = FALSE,
@@ -321,18 +320,39 @@ ui <- tagList(
 # ---- Server logic ---- 
 server <- function(input, output, session) {
   
-  # Download full map
+  # ---- Handle map download with display mode adjustments ----
   output$download_map <- downloadHandler(
     filename = function() {
-      paste0("map_export_", input$variable, "_", input$year, ifelse(input$per_capita, "_per_capita", ""), ".png")
+      paste0("map_export_", input$variable, "_", input$year, 
+             switch(input$display_mode, 
+                    "absolute" = "", 
+                    "per_capita" = "_per_capita", 
+                    "per_catholic" = "_per_catholic"), ".png")
     },
     content = function(file) {
       library(htmlwidgets)
+      # Filter data for the selected year and apply display mode
       filtered_data <- map_data %>% filter(Year == input$year)
-      if (input$per_capita) {
-        filtered_data[[input$variable]] <- filtered_data[[input$variable]] / filtered_data[["Inhabitants in thousands"]]
+      if (input$display_mode == "per_capita") {
+        filtered_data[[input$variable]] <- ifelse(
+          !is.na(filtered_data[["Inhabitants in thousands"]]) & filtered_data[["Inhabitants in thousands"]] > 0,
+          filtered_data[[input$variable]] / filtered_data[["Inhabitants in thousands"]],
+          NA_real_
+        )
+      } else if (input$display_mode == "per_catholic") {
+        filtered_data[[input$variable]] <- ifelse(
+          !is.na(filtered_data[["Catholics in thousands"]]) & filtered_data[["Catholics in thousands"]] > 0,
+          filtered_data[[input$variable]] / filtered_data[["Catholics in thousands"]],
+          NA_real_
+        )
       }
-      pal <- colorNumeric(palette = viridisLite::plasma(256), domain = filtered_data[[input$variable]], na.color = "transparent")
+      # Ensure valid values for color palette to avoid domain errors
+      valid_values <- filtered_data[[input$variable]][!is.na(filtered_data[[input$variable]])]
+      pal <- if (length(valid_values) > 0) {
+        colorNumeric(palette = viridisLite::plasma(256), domain = valid_values, na.color = "transparent")
+      } else {
+        colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
+      }
       
       leaflet_obj <- leaflet(filtered_data) %>%
         addProviderTiles("CartoDB.Positron") %>%
@@ -343,7 +363,11 @@ server <- function(input, output, session) {
           label = ~name
         ) %>%
         addLegend(pal = pal, values = filtered_data[[input$variable]],
-                  title = paste(ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable), "in", input$year),
+                  title = paste(switch(input$display_mode,
+                                       "absolute" = input$variable,
+                                       "per_capita" = paste(input$variable, "per thousand inhabitants"),
+                                       "per_catholic" = paste(input$variable, "per thousand Catholics")),
+                                "in", input$year),
                   position = "bottomright")
       
       # Create a title overlay using prependContent
@@ -352,7 +376,11 @@ server <- function(input, output, session) {
         addControl(
           html = paste0("<div style='font-size:20px; font-weight:bold; background-color:rgba(255,255,255,0.7); 
                   padding:6px 12px; border-radius:6px;'>", 
-                        ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable), " - ", input$year, "</div>"),
+                        switch(input$display_mode,
+                               "absolute" = input$variable,
+                               "per_capita" = paste(input$variable, "per thousand inhabitants"),
+                               "per_catholic" = paste(input$variable, "per thousand Catholics")),
+                        " - ", input$year, "</div>"),
           position = "topright"
         ) %>%
         addControl(
@@ -368,10 +396,12 @@ server <- function(input, output, session) {
   )
   
   # Track selected country
+  # ---- Initialize reactive values for selections ----
   selected_country <- reactiveVal(NULL)
   selections <- reactiveValues(variable = NULL, year = NULL)
   
   # Sync Data Explorer inputs with Map tab
+  # ---- Synchronize variable and year selections ----
   observe({
     selections$variable <- input$variable
     selections$year <- input$year
@@ -384,6 +414,7 @@ server <- function(input, output, session) {
   })
   
   # Update year choices dynamically
+  # ---- Update available years based on variable selection ----
   observeEvent(input$variable, {
     available_years <- sort(unique(data_countries %>%
                                      filter(!is.na(.data[[input$variable]])) %>%
@@ -391,14 +422,30 @@ server <- function(input, output, session) {
     updateSelectInput(session, "year", choices = available_years, selected = max(available_years))
   })
   
+  # ---- Render the interactive world map ----
   output$map <- renderLeaflet({
     req(input$variable, input$year)
     filtered_data <- map_data %>% filter(Year == input$year)
-    if (input$per_capita) {
-      filtered_data[[input$variable]] <- filtered_data[[input$variable]] / filtered_data[["Inhabitants in thousands"]]
+    if (input$display_mode == "per_capita") {
+      filtered_data[[input$variable]] <- ifelse(
+        !is.na(filtered_data[["Inhabitants in thousands"]]) & filtered_data[["Inhabitants in thousands"]] > 0,
+        filtered_data[[input$variable]] / filtered_data[["Inhabitants in thousands"]],
+        NA_real_
+      )
+    } else if (input$display_mode == "per_catholic") {
+      filtered_data[[input$variable]] <- ifelse(
+        !is.na(filtered_data[["Catholics in thousands"]]) & filtered_data[["Catholics in thousands"]] > 0,
+        filtered_data[[input$variable]] / filtered_data[["Catholics in thousands"]],
+        NA_real_
+      )
     }
-    pal <- colorNumeric(palette = viridisLite::plasma(256),
-                        domain = filtered_data[[input$variable]], na.color = "transparent")
+    # Ensure valid values for color palette
+    valid_values <- filtered_data[[input$variable]][!is.na(filtered_data[[input$variable]])]
+    pal <- if (length(valid_values) > 0) {
+      colorNumeric(palette = viridisLite::plasma(256), domain = valid_values, na.color = "transparent")
+    } else {
+      colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
+    }
     
     leaflet(filtered_data, options = leafletOptions(maxBounds = list(c(-120, -240), c(120, 240)), maxBoundsViscosity = 1)) %>%
       addProviderTiles("CartoDB.Voyager", options = providerTileOptions(noWrap = TRUE)) %>%
@@ -412,16 +459,25 @@ server <- function(input, output, session) {
         fillOpacity = 0.6,
         layerId = ~name,
         label = ~lapply(paste0("<strong>", name, "</strong><br/>", 
-                               ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable), ": ", 
+                               switch(input$display_mode,
+                                      "absolute" = input$variable,
+                                      "per_capita" = paste(input$variable, "per thousand inhabitants"),
+                                      "per_catholic" = paste(input$variable, "per thousand Catholics")), 
+                               ": ", 
                                formatC(filtered_data[[input$variable]], format = "f", digits = 2, big.mark = ",")), htmltools::HTML),
         highlight = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.8, bringToFront = TRUE)
       ) %>%
       addLegend(pal = pal, values = filtered_data[[input$variable]], 
-                title = paste(ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable), "in", input$year), 
+                title = paste(switch(input$display_mode,
+                                     "absolute" = input$variable,
+                                     "per_capita" = paste(input$variable, "per thousand inhabitants"),
+                                     "per_catholic" = paste(input$variable, "per thousand Catholics")),
+                              "in", input$year), 
                 position = "bottomright")
   })
   
   # Highlight country on click
+  # ---- Handle map click events to highlight countries ----
   observeEvent(input$map_shape_click, {
     selected_country(input$map_shape_click$id)
     updateSelectInput(session, "country_search", selected = input$map_shape_click$id)
@@ -429,7 +485,7 @@ server <- function(input, output, session) {
     leafletProxy("map") %>%
       clearGroup("highlight") %>%
       addPolygons(
-        data = map_data %>% filter(name == input$map_shape_click$id, Year == input$year),
+        data = map_data %>% filter(name == input$map_shape_click$id, Year = input$year),
         fill = FALSE, color = "red", weight = 3, opacity = 1, group = "highlight") %>%
       setView(
         lng = st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$map_shape_click$id))))[1],
@@ -438,6 +494,7 @@ server <- function(input, output, session) {
   })
   
   # Highlight country on search
+  # ---- Handle country search selection ----
   observeEvent(input$country_search, {
     req(input$country_search, input$year)
     selected_country(input$country_search)
@@ -454,6 +511,7 @@ server <- function(input, output, session) {
   })
   
   # Reset button
+  # ---- Reset map view and clear selections ----
   observeEvent(input$reset_map, {
     selected_country(NULL)
     leafletProxy("map") %>%
@@ -463,24 +521,39 @@ server <- function(input, output, session) {
   })
   
   # Country info
+  # ---- Display country-specific information ----
   output$country_info <- renderUI({
     req(selected_country())
-    info <- map_data %>% filter(name == selected_country(), Year = input$year)
-    if (input$per_capita) {
-      info[[input$variable]] <- info[[input$variable]] / info[["Inhabitants in thousands"]]
+    info <- map_data %>% filter(name = selected_country(), Year = input$year)
+    if (input$display_mode == "per_capita") {
+      info[[input$variable]] <- ifelse(
+        !is.na(info[["Inhabitants in thousands"]]) & info[["Inhabitants in thousands"]] > 0,
+        info[[input$variable]] / info[["Inhabitants in thousands"]],
+        NA_real_
+      )
+    } else if (input$display_mode == "per_catholic") {
+      info[[input$variable]] <- ifelse(
+        !is.na(info[["Catholics in thousands"]]) & info[["Catholics in thousands"]] > 0,
+        info[[input$variable]] / info[["Catholics in thousands"]],
+        NA_real_
+      )
     }
     if (nrow(info) == 0 || is.na(info[[input$variable]][1])) {
       HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
     } else {
       value <- info[[input$variable]][1]
-      formatted <- format(round(as.numeric(value), ifelse(input$per_capita, 2, 0)), big.mark = ",", scientific = FALSE)
+      formatted <- format(round(as.numeric(value), ifelse(input$display_mode == "absolute", 0, 2)), big.mark = ",", scientific = FALSE)
       HTML(paste0("<strong>", selected_country(), "</strong><br/>", 
-                  ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable), 
+                  switch(input$display_mode,
+                         "absolute" = input$variable,
+                         "per_capita" = paste(input$variable, "per thousand inhabitants"),
+                         "per_catholic" = paste(input$variable, "per thousand Catholics")), 
                   " in ", input$year, ": ", formatted))
     }
   })
   
   # Histogram
+  # ---- Render macroregion histogram ----
   output$varPlot <- renderPlot({
     req(input$variable, input$year)
     
@@ -494,11 +567,18 @@ server <- function(input, output, session) {
       filter(!macroregion %in% c("World", "America", "Asia")) %>%
       group_by(macroregion) %>%
       summarise(
-        value = if (input$per_capita) {
-          sum(.data[[input$variable]], na.rm = TRUE) / sum(.data[["Inhabitants in thousands"]], na.rm = TRUE)
-        } else {
-          sum(.data[[input$variable]], na.rm = TRUE)
-        },
+        value = switch(input$display_mode,
+                       "absolute" = sum(.data[[input$variable]], na.rm = TRUE),
+                       "per_capita" = ifelse(
+                         sum(.data[["Inhabitants in thousands"]], na.rm = TRUE) > 0,
+                         sum(.data[[input$variable]], na.rm = TRUE) / sum(.data[["Inhabitants in thousands"]], na.rm = TRUE),
+                         NA_real_
+                       ),
+                       "per_catholic" = ifelse(
+                         sum(.data[["Catholics in thousands"]], na.rm = TRUE) > 0,
+                         sum(.data[[input$variable]], na.rm = TRUE) / sum(.data[["Catholics in thousands"]], na.rm = TRUE),
+                         NA_real_
+                       )),
         .groups = "drop"
       )
     
@@ -511,7 +591,7 @@ server <- function(input, output, session) {
     ggplot(filtered_macro, aes(x = reorder(macroregion, value), y = value)) +
       geom_col(fill = viridisLite::viridis(5)[3], color = "gray90", linewidth = 0.3, alpha = 0.85) +
       geom_text(
-        aes(label = scales::comma(value, accuracy = ifelse(input$per_capita, 0.01, 1))),
+        aes(label = scales::comma(value, accuracy = ifelse(input$display_mode == "absolute", 1, 0.01))),
         hjust = -0.05, size = 2.9
       ) +
       coord_flip(clip = "off") +
@@ -519,7 +599,10 @@ server <- function(input, output, session) {
         x = "Continents",
         y = NULL,
         title = paste("Continent-level distribution", "in", input$year),
-        caption = ifelse(input$per_capita, paste(input$variable, "per thousand inhabitants"), input$variable)
+        caption = switch(input$display_mode,
+                         "absolute" = input$variable,
+                         "per_capita" = paste(input$variable, "per thousand inhabitants"),
+                         "per_catholic" = paste(input$variable, "per thousand Catholics"))
       ) +
       scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +
       theme_minimal(base_size = 11) +
@@ -535,6 +618,7 @@ server <- function(input, output, session) {
   })
   
   # Data Explorer table
+  # ---- Render data table for explorer tab ----
   output$table <- renderDT({
     if (is.null(input$explorer_variable) || input$explorer_variable == "") {
       return(datatable(data.frame(Message = "Please select a variable to explore.")))
@@ -547,6 +631,7 @@ server <- function(input, output, session) {
     datatable(filtered, options = list(pageLength = 20))
   })
   
+  # ---- Update available years for explorer tab ----
   observeEvent(input$explorer_variable, {
     req(input$explorer_variable)
     available_years <- sort(unique(data_countries %>%
@@ -555,6 +640,7 @@ server <- function(input, output, session) {
     updateSelectInput(session, "explorer_year", choices = available_years, selected = max(available_years))
   })
   
+  # ---- Reset table filters ----
   observeEvent(input$reset_table, {
     updateSelectInput(session, "explorer_variable", selected = "")
     updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
@@ -562,6 +648,7 @@ server <- function(input, output, session) {
   })
   # CSV download
   
+  # ---- Download data as CSV ----
   output$download_csv <- downloadHandler(
     filename = function() {
       paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".csv")
@@ -579,6 +666,7 @@ server <- function(input, output, session) {
   )
   
   # Excel download (requires writexl)
+  # ---- Download data as Excel ----
   output$download_excel <- downloadHandler(
     filename = function() {
       paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".xlsx")
