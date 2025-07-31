@@ -813,6 +813,7 @@ server <- function(input, output, session) {
       clearGroup("highlight") %>%
       setView(lng = 0, lat = 30, zoom = 3)
     updateSelectInput(session, "country_search", selected = "")
+    updateRadioButtons(session, "display_mode", selected = "absolute")
   })
   
   # ---- Display country-specific information with full variable names ----
