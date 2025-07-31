@@ -883,7 +883,7 @@ server <- function(input, output, session) {
     }
     
     ggplot(filtered_macro, aes(x = reorder(macroregion, value), y = value)) +
-      geom_col(fill = viridisLite::viridis(5)[3], color = "gray90", linewidth = 0.3, alpha = 0.85) +
+      geom_col(fill = "white", color = "black", linewidth = 0.3, alpha = 1) +
       geom_text(
         aes(label = scales::comma(value, accuracy = ifelse(input$display_mode == "absolute", 1, 0.01))),
         hjust = -0.05, size = 2.9
@@ -901,12 +901,14 @@ server <- function(input, output, session) {
       scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +
       theme_minimal(base_size = 11) +
       theme(
-        plot.title = element_text(hjust = 0.45, size = 10, face = "bold"),
+        plot.title = element_text(hjust = 0.5, size = 10, face = "bold", margin = margin(b = 10)),
         axis.title.x = element_text(size = 10),
         axis.title.y = element_blank(),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_line(colour = "#CCCCCC1A"),  # More transparent (~0.25 alpha)
+        panel.grid.minor = element_line(colour = "#CCCCCC1A"),    # More transparent (~0.1 alpha)
         axis.text.y = element_text(size = 8)
       )
   })
