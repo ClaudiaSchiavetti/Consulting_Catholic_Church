@@ -941,7 +941,24 @@ server <- function(input, output, session) {
       return(datatable(data.frame(Message = "Please select a variable to explore.")))
     }
     req(input$explorer_year)
-    filtered <- data_countries %>% filter(Year == input$explorer_year) %>% select(country, Year, all_of(input$explorer_variable))
+    filtered <- data_countries %>% filter(Year == input$explorer_year) %>% select(country, Year, 
+                                                                                  !!input$explorer_variable, 
+                                                                                  `Inhabitants in thousands`, 
+                                                                                  `Catholics in thousands`) %>%
+      mutate(
+        `Per 1000 Inhabitants` = ifelse(
+          !is.na(`Inhabitants in thousands`) & `Inhabitants in thousands` > 0,
+          round(.data[[input$explorer_variable]] / `Inhabitants in thousands`, 3),
+          NA_real_
+        ),
+        `Per 1000 Catholics` = ifelse(
+          !is.na(`Catholics in thousands`) & `Catholics in thousands` > 0,
+          round(.data[[input$explorer_variable]] / `Catholics in thousands`, 3),
+          NA_real_
+        )
+      )
+    
+    
     if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
       filtered <- filtered %>% filter(country == selected_country())
     }
