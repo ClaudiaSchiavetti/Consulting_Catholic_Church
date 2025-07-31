@@ -33,8 +33,8 @@ options(shiny.host = "0.0.0.0")
 options(shiny.port = 3838) # Also 8180 is a valid option 
 
 # ---- Set the Working Directory ---- 
-#path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
-path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
+path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
+#path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
 setwd(path_outputs)
 
 # ---- Load the data ---- 
@@ -746,7 +746,9 @@ server <- function(input, output, session) {
                                       "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
                                       "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")), 
                                ": ", 
-                               formatC(filtered_data[[input$variable]], format = "f", digits = 2, big.mark = ",")), htmltools::HTML),
+                               ifelse(input$display_mode != "absolute" & filtered_data[[input$variable]] == 0,
+                                      "<0.01",
+                                      formatC(filtered_data[[input$variable]], format = "f", digits = 2, big.mark = ","))), htmltools::HTML),
         highlight = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.8, bringToFront = TRUE)
       ) %>%
       addLegend(pal = pal, values = filtered_data[[input$variable]], 
@@ -841,7 +843,11 @@ server <- function(input, output, session) {
       HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
     } else {
       value <- info[[input$variable]][1]
-      formatted <- format(round(as.numeric(value), ifelse(input$display_mode == "absolute", 0, 2)), big.mark = ",", scientific = FALSE)
+      formatted <- if (input$display_mode != "absolute" && value == 0) {
+        "<0.01"
+      } else {
+        format(round(as.numeric(value), ifelse(input$display_mode == "absolute", 0, 2)), big.mark = ",", scientific = FALSE)
+      }
       HTML(paste0("<strong>", selected_country(), "</strong><br/>", 
                   switch(input$display_mode,
                          "absolute" = input$variable, # Use full variable name
@@ -887,9 +893,10 @@ server <- function(input, output, session) {
     }
     
     ggplot(filtered_macro, aes(x = reorder(macroregion, value), y = value)) +
-      geom_col(fill = "white", color = "black", linewidth = 0.3, alpha = 1) +
+      geom_col(fill = "#f7f7f7", color = "gray80", linewidth = 0.3, alpha = 1)+
       geom_text(
-        aes(label = scales::comma(value, accuracy = ifelse(input$display_mode == "absolute", 1, 0.01))),
+        aes(label = ifelse(input$display_mode != "absolute" & value == 0, "<0.01", 
+                           scales::comma(value, accuracy = ifelse(input$display_mode == "absolute", 1, 0.01)))),
         hjust = -0.05, size = 2.9
       ) +
       coord_flip(clip = "off") +
