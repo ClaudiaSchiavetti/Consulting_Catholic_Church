@@ -639,7 +639,7 @@ server <- function(input, output, session) {
         colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
       }
       
-      leaflet_obj <- leaflet(filtered_data) %>%
+      leaflet_obj <-leaflet(filtered_data) %>%
         addProviderTiles("CartoDB.Positron") %>%
         fitBounds(-110, -40, 120, 65) %>%
         addPolygons(
@@ -729,9 +729,20 @@ server <- function(input, output, session) {
       colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
     }
     
-    leaflet(filtered_data, options = leafletOptions(maxBounds = list(c(-120, -240), c(120, 240)), maxBoundsViscosity = 1, zoomControl = FALSE)) %>%
+    leaflet(filtered_data, options = leafletOptions(
+      maxBounds = list(c(-120, -240), c(120, 240)), 
+      maxBoundsViscosity = 1,
+      zoomControl = FALSE  # disable default (top-left)
+    )) %>%
       addProviderTiles("CartoDB.Voyager", options = providerTileOptions(noWrap = TRUE)) %>%
       setView(lng = 0, lat = 30, zoom = 3) %>%
+      htmlwidgets::onRender("
+    function(el, x) {
+      var map = this;
+      L.control.zoom({ position: 'topright' }).addTo(map);
+    }
+  ") %>%
+      
       addPolygons(
         fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
