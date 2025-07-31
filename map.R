@@ -533,6 +533,10 @@ ui <- tagList(
   .leaflet-top {
     margin-top: 70px !important;
   }
+  .panel-default hr {
+    margin-top: 5px;
+    margin-bottom: 5px;
+  }
 "))
   ),
   
@@ -543,11 +547,11 @@ ui <- tagList(
                         leafletOutput("map", height = "100vh", width = "100%"),
                         absolutePanel(
                           id = "controls", class = "panel panel-default", fixed = TRUE,
-                          draggable = TRUE, top = 60, left = 20, right = "auto", bottom = "auto",
+                          draggable = TRUE, top = 60, left = 0, right = "auto", bottom = "auto",
                           width = 300, height = "auto",
                           style = "background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px; overflow-y: auto; max-height: 90vh;",
                           selectInput("variable", "Select variable to display:",
-                                      choices = allowed_variables), # Use full variable names
+                                      choices = allowed_variables),
                           selectInput("year", "Select year:",
                                       choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
                           radioButtons("display_mode", "Display mode:",
@@ -561,10 +565,10 @@ ui <- tagList(
                                          options = list(placeholder = 'Type to search...')),
                           plotOutput("varPlot", height = 150),
                           hr(),
-                          htmlOutput("country_info"),
-                          actionButton("reset_map", "Reset Map View", icon = icon("undo")),
+                          div(style = "margin-bottom: 15px;", htmlOutput("country_info")),
+                          actionButton("reset_map", "Reset View", icon = icon("undo")),
                           div(style = "margin-top: 15px;",
-                              downloadButton("download_map", "Download Full Map", class = "btn btn-primary")
+                              downloadButton("download_map", "Download Map", class = "btn btn-primary")
                           )
                         )
                       )
@@ -725,7 +729,7 @@ server <- function(input, output, session) {
       colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
     }
     
-    leaflet(filtered_data, options = leafletOptions(maxBounds = list(c(-120, -240), c(120, 240)), maxBoundsViscosity = 1)) %>%
+    leaflet(filtered_data, options = leafletOptions(maxBounds = list(c(-120, -240), c(120, 240)), maxBoundsViscosity = 1, zoomControl = FALSE)) %>%
       addProviderTiles("CartoDB.Voyager", options = providerTileOptions(noWrap = TRUE)) %>%
       setView(lng = 0, lat = 30, zoom = 3) %>%
       addPolygons(
