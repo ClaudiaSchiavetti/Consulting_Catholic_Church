@@ -1,6 +1,6 @@
 # ---- Load the required libraries ---- 
 
-required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview", "webshot", "writexl")
+required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview", "webshot", "writexl", "plotly")
 
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
@@ -26,6 +26,8 @@ library(ggplot2)
 library(RColorBrewer)
 library(webshot)
 library(writexl)
+library(plotly)
+
 
 # ---- Docker instructions ---- 
 
@@ -466,6 +468,18 @@ map_data <- left_join(world, data_countries, by = c("name" = "country"))
 unmatched_after_fix <- anti_join(data_countries, world, by = c("country" = "name"))
 print(unique(unmatched_after_fix$country))
 
+# Keep only variables with data for more than one year
+time_series_vars <- allowed_variables[
+  sapply(allowed_variables, function(var) {
+    years <- data_countries %>%
+      filter(!is.na(.data[[var]])) %>%
+      pull(Year) %>%
+      unique()
+    length(years) > 1
+  })
+]
+
+
 # ---- UI layout ----
 # 1. Get the list of unique, non-missing, non-empty country names from the data
 all_countries <- sort(unique(data_countries$country))
@@ -598,7 +612,31 @@ ui <- tagList(
                           br()
                         )
                       )
+             ), 
+             #Time Serie TAB
+             tabPanel("Time Series",
+                      sidebarLayout(
+                        sidebarPanel(
+                          selectInput("ts_variable", "Select variable:",
+                                      choices = time_series_vars,
+                                      selected = time_series_vars[1]),
+                          radioButtons("ts_level", "Region level:",
+                                       choices = c("Macroregion", "Country"),
+                                       selected = "Macroregion"),
+                          uiOutput("ts_region_selector"),
+                          radioButtons("ts_mode", "Display mode:",
+                                       choices = c("Absolute" = "absolute",
+                                                   "Per 1000 Inhabitants" = "per_capita",
+                                                   "Per 1000 Catholics" = "per_catholic"),
+                                       selected = "absolute")
+                        ),
+                        mainPanel(
+                          plotlyOutput("ts_plot")
+                        )
+                      )
              )
+             
+             
   )
 ) 
 
@@ -770,6 +808,21 @@ server <- function(input, output, session) {
                               "in", input$year), 
                 position = "bottomright")
   })
+  #---- Time serie output ----
+  output$ts_region_selector <- renderUI({
+    if (input$ts_level == "Country") {
+      selectInput("ts_regions", "Select country/countries:",
+                  choices = sort(unique(data_countries$country)),
+                  multiple = TRUE)
+    } else {
+      selectInput("ts_regions", "Select macroregion(s):",
+                  choices = sort(unique(data_macroregions$macroregion)),
+                  selected = sort(unique(data_macroregions$macroregion)),
+                  multiple = TRUE)
+    }
+  })
+  
+  
   
   # ---- Handle map click events to highlight countries ----
   observeEvent(input$map_shape_click, {
@@ -933,6 +986,31 @@ server <- function(input, output, session) {
         panel.grid.minor = element_line(colour = "#CCCCCC1A"),    # More transparent (~0.1 alpha)
         axis.text.y = element_text(size = 8)
       )
+  })
+  
+  #---- Time Serie plot ---- 
+  output$ts_plot <- renderPlotly({
+    req(input$ts_variable, input$ts_regions, input$ts_level)
+    
+    data_source <- if (input$ts_level == "Country") data_countries else data_macroregions
+    region_col <- if (input$ts_level == "Country") "country" else "macroregion"
+    
+    plot_data <- data_source %>%
+      filter(.data[[region_col]] %in% input$ts_regions) %>%
+      select(Year, !!sym(region_col), !!sym(input$ts_variable),
+             `Inhabitants in thousands`, `Catholics in thousands`) %>%
+      mutate(value = case_when(
+        input$ts_mode == "absolute" ~ .data[[input$ts_variable]],
+        input$ts_mode == "per_capita" ~ ifelse(`Inhabitants in thousands` > 0, .data[[input$ts_variable]] / `Inhabitants in thousands`, NA_real_),
+        input$ts_mode == "per_catholic" ~ ifelse(`Catholics in thousands` > 0, .data[[input$ts_variable]] / `Catholics in thousands`, NA_real_)
+      ))
+    
+    plot_ly(plot_data, x = ~Year, y = ~value, color = plot_data[[region_col]],
+            type = 'scatter', mode = 'lines+markers', text = ~paste(region_col, "<br>Year:", Year, "<br>Value:", round(value, 2)),
+            hoverinfo = 'text') %>%
+      layout(title = paste("Time Series of", input$ts_variable),
+             xaxis = list(title = "Year"), yaxis = list(title = input$ts_mode),
+             legend = list(title = list(text = region_col)))
   })
   
   # ---- Render data table for explorer tab ----
