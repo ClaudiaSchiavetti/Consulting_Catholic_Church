@@ -624,14 +624,16 @@ ui <- tagList(
                                       choices = time_series_vars,
                                       selected = time_series_vars[1]),
                           radioButtons("ts_level", "Region level:",
-                                       choices = c("Macroregion", "Country"),
+                                       choices = c("Continent" = "Macroregion", "Country" = "Country"),
                                        selected = "Macroregion"),
-                          uiOutput("ts_region_selector"),
+                          uiOutput("ts_region_selector")
+                        ),
                         mainPanel(
                           plotlyOutput("ts_plot")
                         )
                       )
              )
+             
              
              
   )
@@ -830,9 +832,23 @@ server <- function(input, output, session) {
                   choices = sort(unique(data_countries$country)),
                   multiple = TRUE)
     } else {
-      selectInput("ts_regions", "Select macroregion(s):",
-                  choices = sort(unique(data_macroregions$macroregion)),
-                  selected = sort(unique(data_macroregions$macroregion)),
+      selectInput("ts_regions", "Select continent(s):",
+                  choices = c(
+                    "Africa",
+                    "Asia",
+                    "Central America",
+                    "Europe",
+                    "Middle East",
+                    "North America",
+                    "Oceania",
+                    "South & Far East Asia",
+                    "South America"
+                  ),
+                  selected = c(
+                    "Africa", "Asia", "Central America", "Europe",
+                    "Middle East", "North America", "Oceania",
+                    "South & Far East Asia", "South America"
+                  ),
                   multiple = TRUE)
     }
   })
@@ -1031,6 +1047,19 @@ server <- function(input, output, session) {
       select(Year, !!sym(region_col), !!sym(input$ts_variable)) %>%
       rename(region = !!sym(region_col),
              value = !!sym(input$ts_variable))
+    
+    # Apply continent regrouping if level is Macroregion
+    if (input$ts_level == "Macroregion") {
+      plot_data <- plot_data %>%
+        mutate(region = case_when(
+          region %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
+          region == "South East and Far East Asia" ~ "South & Far East Asia",
+          TRUE ~ region
+        )) %>%
+        group_by(Year, region) %>%
+        summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+    }
+    
     
     plot_ly(plot_data, x = ~Year, y = ~value, color = ~region,
             type = 'scatter', mode = 'lines+markers+text',
