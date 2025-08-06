@@ -1,6 +1,7 @@
 # ---- Load the required libraries ---- 
 
-required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview", "webshot", "writexl", "plotly")
+required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview", "webshot", "writexl", "plotly",
+                       "shinyjs")
 
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
@@ -27,6 +28,8 @@ library(RColorBrewer)
 library(webshot)
 library(writexl)
 library(plotly)
+library(shinyjs)
+useShinyjs()
 
 
 # ---- Docker instructions ---- 
@@ -554,7 +557,7 @@ ui <- tagList(
 "))
   ),
   
-  navbarPage("Annuarium Statisticum Ecclesiae", theme = shinytheme("flatly"),
+  navbarPage("Annuarium Statisticum Ecclesiae", id = "navbar", theme = shinytheme("flatly"),
              
              tabPanel("Map",
                       div(
@@ -624,12 +627,6 @@ ui <- tagList(
                                        choices = c("Macroregion", "Country"),
                                        selected = "Macroregion"),
                           uiOutput("ts_region_selector"),
-                          radioButtons("ts_mode", "Display mode:",
-                                       choices = c("Absolute" = "absolute",
-                                                   "Per 1000 Inhabitants" = "per_capita",
-                                                   "Per 1000 Catholics" = "per_catholic"),
-                                       selected = "absolute")
-                        ),
                         mainPanel(
                           plotlyOutput("ts_plot")
                         )
@@ -720,6 +717,13 @@ server <- function(input, output, session) {
   
   # ---- Initialize reactive values for selections ----
   selected_country <- reactiveVal(NULL)
+  ts_selected_regions <- reactive({
+    if (!is.null(selected_country()) && selected_country() %in% data_countries$country) {
+      return(list(level = "Country", regions = selected_country()))
+    } else {
+      return(list(level = "Macroregion", regions = unique(data_macroregions$macroregion)))
+    }
+  })
   selections <- reactiveValues(variable = NULL, year = NULL)
   
   # ---- Synchronize variable and year selections ----
@@ -729,7 +733,18 @@ server <- function(input, output, session) {
   })
   observeEvent(input$variable, {
     updateSelectInput(session, "explorer_variable", selected = input$variable)
+    
+    if (input$variable %in% time_series_vars) {
+      updateSelectInput(session, "ts_variable", selected = input$variable)
+      
+      isolate({
+        selection <- ts_selected_regions()
+        updateRadioButtons(session, "ts_level", selected = selection$level)
+        updateSelectInput(session, "ts_regions", selected = selection$regions)
+      })
+    }
   })
+  
   observeEvent(input$year, {
     updateSelectInput(session, "explorer_year", selected = input$year)
   })
@@ -859,6 +874,22 @@ server <- function(input, output, session) {
         zoom = 4
       )
   })
+  
+  observeEvent(selected_country(), {
+    req(selections$variable)
+    
+    if (selections$variable %in% time_series_vars) {
+      updateSelectInput(session, "ts_variable", selected = selections$variable)
+      
+      # Add delay here to fix country selection
+      shinyjs::delay(100, {
+        updateRadioButtons(session, "ts_level", selected = "Country")
+        updateSelectInput(session, "ts_regions", selected = selected_country())
+      })
+    }
+  })
+  
+  
   
   # ---- Handle country search selection ----
   observeEvent(input$country_search, {
@@ -997,20 +1028,21 @@ server <- function(input, output, session) {
     
     plot_data <- data_source %>%
       filter(.data[[region_col]] %in% input$ts_regions) %>%
-      select(Year, !!sym(region_col), !!sym(input$ts_variable),
-             `Inhabitants in thousands`, `Catholics in thousands`) %>%
-      mutate(value = case_when(
-        input$ts_mode == "absolute" ~ .data[[input$ts_variable]],
-        input$ts_mode == "per_capita" ~ ifelse(`Inhabitants in thousands` > 0, .data[[input$ts_variable]] / `Inhabitants in thousands`, NA_real_),
-        input$ts_mode == "per_catholic" ~ ifelse(`Catholics in thousands` > 0, .data[[input$ts_variable]] / `Catholics in thousands`, NA_real_)
-      ))
+      select(Year, !!sym(region_col), !!sym(input$ts_variable)) %>%
+      rename(region = !!sym(region_col),
+             value = !!sym(input$ts_variable))
     
-    plot_ly(plot_data, x = ~Year, y = ~value, color = plot_data[[region_col]],
-            type = 'scatter', mode = 'lines+markers', text = ~paste(region_col, "<br>Year:", Year, "<br>Value:", round(value, 2)),
-            hoverinfo = 'text') %>%
+    plot_ly(plot_data, x = ~Year, y = ~value, color = ~region,
+            type = 'scatter', mode = 'lines+markers+text',
+            text = ~region,
+            textposition = 'top right',
+            hoverinfo = 'text',
+            hovertext = ~paste0("<b>", region, "</b><br>Year: ", Year, "<br>Value: ", round(value, 2))
+    ) %>%
       layout(title = paste("Time Series of", input$ts_variable),
-             xaxis = list(title = "Year"), yaxis = list(title = input$ts_mode),
-             legend = list(title = list(text = region_col)))
+             xaxis = list(title = "Year"),
+             yaxis = list(title = "Absolute Value"),
+             legend = list(title = list(text = "Continents")))
   })
   
   # ---- Render data table for explorer tab ----
@@ -1050,6 +1082,18 @@ server <- function(input, output, session) {
                                      filter(!is.na(.data[[input$explorer_variable]])) %>%
                                      pull(Year)))
     updateSelectInput(session, "explorer_year", choices = available_years, selected = max(available_years))
+  })
+  
+  observeEvent(input$explorer_variable, {
+    if (input$explorer_variable %in% time_series_vars) {
+      updateSelectInput(session, "ts_variable", selected = input$explorer_variable)
+      
+      isolate({
+        selection <- ts_selected_regions()
+        updateRadioButtons(session, "ts_level", selected = selection$level)
+        updateSelectInput(session, "ts_regions", selected = selection$regions)
+      })
+    }
   })
   
   # ---- Reset table filters ----
