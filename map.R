@@ -1071,7 +1071,8 @@ server <- function(input, output, session) {
       layout(title = paste("Time Series of", input$ts_variable),
              xaxis = list(title = "Year"),
              yaxis = list(title = "Absolute Value"),
-             legend = list(title = list(text = "Continents")))
+             legend = list(title = list(text = "Continents"))) %>%
+      config(displayModeBar = FALSE)
   })
   
   # ---- Render data table for explorer tab ----
