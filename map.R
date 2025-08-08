@@ -626,7 +626,11 @@ ui <- tagList(
                           radioButtons("ts_level", "Region level:",
                                        choices = c("Continent" = "Macroregion", "Country" = "Country"),
                                        selected = "Macroregion"),
-                          uiOutput("ts_region_selector")
+                          uiOutput("ts_region_selector"),
+                          div(style = "margin-top: 10px;",
+                              downloadButton("download_ts_plot", "Download Plot", class = "btn btn-sm btn-primary"),
+                              actionButton("reset_ts", "Reset", icon = icon("undo"), class = "btn btn-sm btn-secondary")
+                          )
                         ),
                         mainPanel(
                           plotlyOutput("ts_plot")
@@ -1074,6 +1078,60 @@ server <- function(input, output, session) {
              legend = list(title = list(text = "Continents"))) %>%
       config(displayModeBar = FALSE)
   })
+  #--- Reset Button ---- 
+  observeEvent(input$reset_ts, {
+    updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
+    updateRadioButtons(session, "ts_level", selected = "Macroregion")
+    updateSelectInput(session, "ts_regions", selected = c(
+      "Africa", "Asia", "Central America", "Europe",
+      "Middle East", "North America", "Oceania",
+      "South & Far East Asia", "South America"
+    ))
+  })
+  
+  #---- Download Button ---- 
+  
+  # Create a static plot for the download 
+  plot_ts_static <- reactive({
+    req(input$ts_variable, input$ts_regions, input$ts_level)
+    
+    data_source <- if (input$ts_level == "Country") data_countries else data_macroregions
+    region_col <- if (input$ts_level == "Country") "country" else "macroregion"
+    
+    plot_data <- data_source %>%
+      filter(.data[[region_col]] %in% input$ts_regions) %>%
+      select(Year, !!sym(region_col), !!sym(input$ts_variable)) %>%
+      rename(region = !!sym(region_col), value = !!sym(input$ts_variable))
+    
+    if (input$ts_level == "Macroregion") {
+      plot_data <- plot_data %>%
+        mutate(region = case_when(
+          region %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
+          region == "South East and Far East Asia" ~ "South & Far East Asia",
+          TRUE ~ region
+        )) %>%
+        group_by(Year, region) %>%
+        summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+    }
+    
+    ggplot(plot_data, aes(x = Year, y = value, color = region)) +
+      geom_line(size = 1) +
+      geom_point(size = 2) +
+      labs(title = paste("Time Series of", input$ts_variable),
+           x = "Year", y = "Absolute Value", color = ifelse(input$ts_level == "Country", "Countries", "Continents")) +
+      theme_minimal(base_size = 13) +
+      theme(legend.position = "bottom")
+  })
+  
+  output$download_ts_plot <- downloadHandler(
+    filename = function() {
+      paste0("time_series_", input$ts_variable, "_", Sys.Date(), ".png")
+    },
+    content = function(file) {
+      ggsave(file, plot = plot_ts_static(), width = 10, height = 6, dpi = 300)
+    }
+  )
+  
   
   # ---- Render data table for explorer tab ----
   output$table <- renderDT({
@@ -1170,3 +1228,4 @@ server <- function(input, output, session) {
 
 # ---- Launch the app ----
 shinyApp(ui, server)
+
