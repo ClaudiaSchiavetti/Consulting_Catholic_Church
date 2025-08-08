@@ -618,8 +618,10 @@ ui <- tagList(
              ), 
              #Time Serie TAB
              tabPanel("Time Series",
-                      sidebarLayout(
-                        sidebarPanel(
+                      fluidRow(
+                        column(
+                          width = 3,
+                          style = "background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;",
                           selectInput("ts_variable", "Select variable:",
                                       choices = time_series_vars,
                                       selected = time_series_vars[1]),
@@ -632,11 +634,13 @@ ui <- tagList(
                               actionButton("reset_ts", "Reset", icon = icon("undo"), class = "btn btn-sm btn-secondary")
                           )
                         ),
-                        mainPanel(
-                          plotlyOutput("ts_plot")
+                        column(
+                          width = 9,
+                          plotlyOutput("ts_plot", height = "700px")  # increased height
                         )
                       )
              )
+             
              
              
              
@@ -1049,10 +1053,8 @@ server <- function(input, output, session) {
     plot_data <- data_source %>%
       filter(.data[[region_col]] %in% input$ts_regions) %>%
       select(Year, !!sym(region_col), !!sym(input$ts_variable)) %>%
-      rename(region = !!sym(region_col),
-             value = !!sym(input$ts_variable))
+      rename(region = !!sym(region_col), value = !!sym(input$ts_variable))
     
-    # Apply continent regrouping if level is Macroregion
     if (input$ts_level == "Macroregion") {
       plot_data <- plot_data %>%
         mutate(region = case_when(
@@ -1064,20 +1066,33 @@ server <- function(input, output, session) {
         summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
     }
     
-    
-    plot_ly(plot_data, x = ~Year, y = ~value, color = ~region,
-            type = 'scatter', mode = 'lines+markers+text',
-            text = ~region,
-            textposition = 'top right',
-            hoverinfo = 'text',
-            hovertext = ~paste0("<b>", region, "</b><br>Year: ", Year, "<br>Value: ", round(value, 2))
+    plot_ly(
+      data = plot_data,
+      x = ~Year,
+      y = ~value,
+      color = ~region,
+      colors = RColorBrewer::brewer.pal(max(3, length(unique(plot_data$region))), "Set2"),
+      type = "scatter",
+      mode = "lines+markers",
+      hoverinfo = "text",
+      text = ~paste0(
+        "<b>", region, "</b><br>",
+        "Year: ", Year, "<br>",
+        "Value: ", round(value, 2)
+      ),
+      line = list(width = 2),
+      marker = list(size = 6, opacity = 0.8)
     ) %>%
-      layout(title = paste("Time Series of", input$ts_variable),
-             xaxis = list(title = "Year"),
-             yaxis = list(title = "Absolute Value"),
-             legend = list(title = list(text = "Continents"))) %>%
+      layout(
+        title = paste("Time Series of", input$ts_variable),
+        hovermode = "closest",
+        xaxis = list(title = "Year"),
+        yaxis = list(title = "Absolute Value"),
+        legend = list(title = list(text = ifelse(input$ts_level == "Country", "Countries", "Continents")))
+      ) %>%
       config(displayModeBar = FALSE)
   })
+  
   #--- Reset Button ---- 
   observeEvent(input$reset_ts, {
     updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
@@ -1115,7 +1130,7 @@ server <- function(input, output, session) {
     }
     
     ggplot(plot_data, aes(x = Year, y = value, color = region)) +
-      geom_line(size = 1) +
+      geom_line(linewidth = 1) +
       geom_point(size = 2) +
       labs(title = paste("Time Series of", input$ts_variable),
            x = "Year", y = "Absolute Value", color = ifelse(input$ts_level == "Country", "Countries", "Continents")) +
