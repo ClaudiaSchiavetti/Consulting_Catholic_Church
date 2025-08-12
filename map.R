@@ -557,6 +557,16 @@ ui <- tagList(
     margin-top: 5px;
     margin-bottom: 5px;
   }
+  .ts-wrap { height: calc(100vh - 150px); }
+ .ts-sidebar {
+  max-height: calc(100vh - 190px); 
+  overflow-y: auto;
+  background-color: #f8f9fa;         
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+  padding: 15px;
+}
+
 "))
   ),
   
@@ -624,6 +634,7 @@ ui <- tagList(
                       fluidRow(
                         column(
                           width = 3,
+                          class = "ts-sidebar",
                           style = "background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;",
                           selectInput("ts_variable", "Select variable:",
                                       choices = time_series_vars,
@@ -639,15 +650,14 @@ ui <- tagList(
                         ),
                         column(
                           width = 9,
-                          plotlyOutput("ts_plot", height = "700px")  # increased height
+                          div(class = "ts-wrap",
+                              plotlyOutput("ts_plot", height = "100%")  
+                          )
                         )
                       )
              )
-             
-             
-             
-             
   )
+             
 ) 
 
 # ---- Server logic ---- 
@@ -1108,7 +1118,7 @@ server <- function(input, output, session) {
         yaxis = list(title = "Absolute Value"),
         legend = list(title = list(text = ifelse(input$ts_level == "Country", "Countries", "Continents")))
       ) %>%
-      config(displayModeBar = FALSE)
+      config(displayModeBar = FALSE, responsive = TRUE)
   })
   
   #--- Reset Button ---- 
