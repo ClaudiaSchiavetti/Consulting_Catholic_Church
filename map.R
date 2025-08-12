@@ -651,6 +651,37 @@ ui <- tagList(
 ) 
 
 # ---- Server logic ---- 
+
+# ---- Helper to standardize macroregion names ----
+
+TARGET_REGIONS <- c(
+  "South and Far East Asia",
+  "Africa",
+  "Europe",
+  "South America",
+  "North America",
+  "Middle East Asia",
+  "Central America",
+  "Oceania"
+)
+
+standardize_macro <- function(df, col = "macroregion") {
+  df %>%
+    filter(!.data[[col]] %in% c("World", "America", "Asia")) %>%   # drop aggregates
+    mutate(
+      macro_simplified = dplyr::case_when(
+        .data[[col]] %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
+        .data[[col]] %in% c("South East and Far East Asia", "South & Far East Asia")    ~ "South and Far East Asia",
+        .data[[col]] == "Middle East"                                                    ~ "Middle East Asia",
+        TRUE ~ .data[[col]]
+      )
+    ) %>%
+    filter(macro_simplified %in% TARGET_REGIONS) %>%
+    mutate(macro_simplified = factor(macro_simplified, levels = TARGET_REGIONS))
+}
+
+
+
 server <- function(input, output, session) {
   
   # ---- Handle map download with full variable names ----
@@ -844,27 +875,11 @@ server <- function(input, output, session) {
                   multiple = TRUE)
     } else {
       selectInput("ts_regions", "Select continent(s):",
-                  choices = c(
-                    "Africa",
-                    "Asia",
-                    "Central America",
-                    "Europe",
-                    "Middle East",
-                    "North America",
-                    "Oceania",
-                    "South & Far East Asia",
-                    "South America"
-                  ),
-                  selected = c(
-                    "Africa", "Asia", "Central America", "Europe",
-                    "Middle East", "North America", "Oceania",
-                    "South & Far East Asia", "South America"
-                  ),
+                  choices = TARGET_REGIONS,
+                  selected = TARGET_REGIONS,
                   multiple = TRUE)
     }
   })
-  
-  
   
   # ---- Handle map click events to highlight countries ----
   observeEvent(input$map_shape_click, {
@@ -1059,15 +1074,15 @@ server <- function(input, output, session) {
       rename(region = !!sym(region_col), value = !!sym(input$ts_variable))
     
     if (input$ts_level == "Macroregion") {
-      plot_data <- plot_data %>%
-        mutate(region = case_when(
-          region %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
-          region == "South East and Far East Asia" ~ "South & Far East Asia",
-          TRUE ~ region
-        )) %>%
+      plot_data <- data_macroregions %>%
+        standardize_macro("macroregion") %>%
+        select(Year, macro_simplified, !!sym(input$ts_variable)) %>%
+        rename(region = macro_simplified, value = !!sym(input$ts_variable)) %>%
+        filter(region %in% input$ts_regions) %>%
         group_by(Year, region) %>%
         summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
     }
+    
     
     plot_ly(
       data = plot_data,
@@ -1122,15 +1137,15 @@ server <- function(input, output, session) {
       rename(region = !!sym(region_col), value = !!sym(input$ts_variable))
     
     if (input$ts_level == "Macroregion") {
-      plot_data <- plot_data %>%
-        mutate(region = case_when(
-          region %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
-          region == "South East and Far East Asia" ~ "South & Far East Asia",
-          TRUE ~ region
-        )) %>%
+      plot_data <- data_macroregions %>%
+        standardize_macro("macroregion") %>%
+        select(Year, macro_simplified, !!sym(input$ts_variable)) %>%
+        rename(region = macro_simplified, value = !!sym(input$ts_variable)) %>%
+        filter(region %in% input$ts_regions) %>%
         group_by(Year, region) %>%
         summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
     }
+    
     
     ggplot(plot_data, aes(x = Year, y = value, color = region)) +
       geom_line(linewidth = 1) +
