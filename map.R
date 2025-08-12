@@ -536,6 +536,9 @@ ui <- tagList(
   body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   }
+  .plotly, .js-plotly-plot, .plotly text {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
   .shiny-plot-output {
     margin-top: 10px;
   }
