@@ -567,7 +567,7 @@ ui <- tagList(
   padding: 15px;
 }
 
-"))
+")),useShinyjs() 
   ),
   
   navbarPage("Annuarium Statisticum Ecclesiae", id = "navbar", theme = shinytheme("flatly"),
@@ -771,38 +771,83 @@ server <- function(input, output, session) {
   
   # ---- Initialize reactive values for selections ----
   selected_country <- reactiveVal(NULL)
-  ts_selected_regions <- reactive({
-    if (!is.null(selected_country()) && selected_country() %in% data_countries$country) {
-      return(list(level = "Country", regions = selected_country()))
-    } else {
-      return(list(level = "Macroregion", regions = unique(data_macroregions$macroregion)))
-    }
-  })
-  selections <- reactiveValues(variable = NULL, year = NULL)
+  selections <- reactiveValues(
+    variable = NULL, 
+    year = NULL,
+    from_tab = NULL  # Track which tab triggered the change
+  )
   
-  # ---- Synchronize variable and year selections ----
-  observe({
-    selections$variable <- input$variable
-    selections$year <- input$year
-  })
-  observeEvent(input$variable, {
-    updateSelectInput(session, "explorer_variable", selected = input$variable)
-    
-    if (input$variable %in% time_series_vars) {
-      updateSelectInput(session, "ts_variable", selected = input$variable)
-      
-      isolate({
-        selection <- ts_selected_regions()
-        updateRadioButtons(session, "ts_level", selected = selection$level)
-        updateSelectInput(session, "ts_regions", selected = selection$regions)
+  # Helper function to update time series selections
+  update_time_series_for_country <- function(country) {
+    req(country)
+    if (country %in% data_countries$country) {
+      updateRadioButtons(session, "ts_level", selected = "Country")
+      shinyjs::delay(500, {
+        updateSelectInput(session, "ts_regions", selected = country)
       })
     }
+  }
+  # ---- Synchronize variable and year selections ----
+  # Reactive values to track selections
+  selections <- reactiveValues(
+    variable = NULL,
+    year = NULL,
+    from_tab = NULL
+  )
+  
+  # Update selections from Map tab
+  observeEvent(input$variable, {
+    if (is.null(selections$from_tab) || selections$from_tab != "explorer") {
+      selections$variable <- input$variable
+      selections$from_tab <- "map"
+      updateSelectInput(session, "explorer_variable", selected = input$variable)
+      if (input$variable %in% time_series_vars) {
+        updateSelectInput(session, "ts_variable", selected = input$variable)
+      } else {
+        updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
+      }
+    }
   })
   
+  # Update selections from Data Explorer tab
+  observeEvent(input$explorer_variable, {
+    req(input$explorer_variable)
+    if (input$explorer_variable != "" && (is.null(selections$from_tab) || selections$from_tab != "map")) {
+      selections$variable <- input$explorer_variable
+      selections$from_tab <- "explorer"
+      updateSelectInput(session, "variable", selected = input$explorer_variable)
+      if (input$explorer_variable %in% time_series_vars) {
+        updateSelectInput(session, "ts_variable", selected = input$explorer_variable)
+      } else {
+        updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
+      }
+    }
+  })
+  
+  # Update selections from Time Series tab
+  observeEvent(input$ts_variable, {
+    if (is.null(selections$from_tab) || selections$from_tab != "map") {
+      selections$variable <- input$ts_variable
+      selections$from_tab <- "time_series"
+      updateSelectInput(session, "variable", selected = input$ts_variable)
+      updateSelectInput(session, "explorer_variable", selected = input$ts_variable)
+    }
+  })
+  
+  # Year synchronization
   observeEvent(input$year, {
-    updateSelectInput(session, "explorer_year", selected = input$year)
+    if (is.null(selections$from_tab) || selections$from_tab != "explorer") {
+      selections$year <- input$year
+      updateSelectInput(session, "explorer_year", selected = input$year)
+    }
   })
   
+  observeEvent(input$explorer_year, {
+    if (is.null(selections$from_tab) || selections$from_tab != "map") {
+      selections$year <- input$explorer_year
+      updateSelectInput(session, "year", selected = input$explorer_year)
+    }
+  })
   # ---- Update available years based on variable selection ----
   observeEvent(input$variable, {
     available_years <- sort(unique(data_countries %>%
@@ -893,21 +938,28 @@ server <- function(input, output, session) {
   
   # ---- Handle map click events to highlight countries ----
   observeEvent(input$map_shape_click, {
-    req(input$map_shape_click$id, input$year) # Ensure click ID and year are valid
+    req(input$map_shape_click$id, input$year)
     clicked_country <- input$map_shape_click$id
     filtered_data <- map_data %>% filter(name == clicked_country, Year == input$year)
     
-    # Check if data exists for the clicked country and year
     if (nrow(filtered_data) == 0 || is.na(filtered_data$geometry[1])) {
       showNotification("No data available for this country in the selected year.", type = "warning")
       return()
     }
     
-    # Update reactive value and dropdown
     selected_country(clicked_country)
     updateSelectInput(session, "country_search", selected = clicked_country)
     
-    # Highlight and center map
+    # Update time series only if variable is valid
+    if (input$variable %in% time_series_vars) {
+      update_time_series_for_country(clicked_country)
+      showNotification(
+        paste("Time series updated to show", clicked_country),
+        type = "message",
+        duration = 3
+      )
+    }
+    
     leafletProxy("map") %>%
       clearGroup("highlight") %>%
       addPolygons(
@@ -927,26 +979,15 @@ server <- function(input, output, session) {
       )
   })
   
-  observeEvent(selected_country(), {
-    req(selections$variable)
-    
-    if (selections$variable %in% time_series_vars) {
-      updateSelectInput(session, "ts_variable", selected = selections$variable)
-      
-      # Add delay here to fix country selection
-      shinyjs::delay(100, {
-        updateRadioButtons(session, "ts_level", selected = "Country")
-        updateSelectInput(session, "ts_regions", selected = selected_country())
-      })
-    }
-  })
-  
-  
-  
   # ---- Handle country search selection ----
   observeEvent(input$country_search, {
     req(input$country_search, input$year)
     selected_country(input$country_search)
+    
+    # Update time series only if variable is valid
+    if (input$variable %in% time_series_vars) {
+      update_time_series_for_country(input$country_search)
+    }
     
     leafletProxy("map") %>%
       clearGroup("highlight") %>%
@@ -954,11 +995,44 @@ server <- function(input, output, session) {
         data = map_data %>% filter(name == input$country_search, Year == input$year),
         fill = FALSE, color = "red", weight = 3, opacity = 1, group = "highlight") %>%
       setView(
-        lng = st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$country_search))))[1],
-        lat = st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$country_search))))[2],
-        zoom = 4)
+        lng = tryCatch(
+          st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$country_search))))[1],
+          error = function(e) 0
+        ),
+        lat = tryCatch(
+          st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$country_search))))[2],
+          error = function(e) 30
+        ),
+        zoom = 4
+      )
   })
   
+#---- When switching to time series tab, ensure proper selections are applied ----
+  observeEvent(input$navbar, {
+    if (input$navbar == "Time Series") {
+      # Ensure variable is valid for time series
+      valid_variable <- if (!is.null(input$variable) && input$variable %in% time_series_vars) {
+        input$variable
+      } else {
+        time_series_vars[1]  # Fallback to first valid time series variable
+      }
+      
+      # Update variable and level
+      updateSelectInput(session, "ts_variable", selected = valid_variable)
+      if (!is.null(selected_country()) && selected_country() %in% data_countries$country) {
+        updateRadioButtons(session, "ts_level", selected = "Country")
+        # Use a longer delay to ensure UI is ready
+        shinyjs::delay(500, {
+          updateSelectInput(session, "ts_regions", selected = selected_country())
+        })
+      } else {
+        updateRadioButtons(session, "ts_level", selected = "Macroregion")
+        shinyjs::delay(500, {
+          updateSelectInput(session, "ts_regions", selected = TARGET_REGIONS)
+        })
+      }
+    }
+  })
   # ---- Reset map view and clear selections ----
   observeEvent(input$reset_map, {
     selected_country(NULL)
@@ -967,8 +1041,16 @@ server <- function(input, output, session) {
       setView(lng = 0, lat = 30, zoom = 3)
     updateSelectInput(session, "country_search", selected = "")
     updateRadioButtons(session, "display_mode", selected = "absolute")
+    
+    # Reset time series to default
+    updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
+    updateRadioButtons(session, "ts_level", selected = "Macroregion")
+    updateSelectInput(session, "ts_regions", selected = TARGET_REGIONS)
+    
+    # Reset data explorer
+    updateSelectInput(session, "explorer_variable", selected = "")
+    updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
   })
-  
   # ---- Display country-specific information with full variable names ----
   output$country_info <- renderUI({
     req(selected_country())
@@ -1081,7 +1163,8 @@ server <- function(input, output, session) {
     plot_data <- data_source %>%
       filter(.data[[region_col]] %in% input$ts_regions) %>%
       select(Year, !!sym(region_col), !!sym(input$ts_variable)) %>%
-      rename(region = !!sym(region_col), value = !!sym(input$ts_variable))
+      rename(region = !!sym(region_col), value = !!sym(input$ts_variable)) %>%
+      filter(!is.na(value))  # Remove NA values
     
     if (input$ts_level == "Macroregion") {
       plot_data <- data_macroregions %>%
@@ -1090,9 +1173,19 @@ server <- function(input, output, session) {
         rename(region = macro_simplified, value = !!sym(input$ts_variable)) %>%
         filter(region %in% input$ts_regions) %>%
         group_by(Year, region) %>%
-        summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+        summarise(value = sum(value, na.rm = TRUE), .groups = "drop") %>%
+        filter(!is.na(value))
     }
     
+    if (nrow(plot_data) == 0) {
+      return(
+        plot_ly() %>%
+          add_trace(x = numeric(0), y = numeric(0),
+                    type = "scatter", mode = "lines+markers",
+                    showlegend = FALSE, hoverinfo = "skip") %>%
+          layout(title = "No data available for the selected variable and region(s)")
+      )
+    }
     
     plot_ly(
       data = plot_data,
@@ -1100,19 +1193,19 @@ server <- function(input, output, session) {
       y = ~value,
       color = ~region,
       colors = RColorBrewer::brewer.pal(max(3, length(unique(plot_data$region))), "Set2"),
-      type = "scatter",
-      mode = "lines+markers",
+      type = "scatter",  # Explicitly specify trace type
+      mode = "lines+markers",  # Explicitly specify mode
       hoverinfo = "text",
       text = ~paste0(
         "<b>", region, "</b><br>",
         "Year: ", Year, "<br>",
         "Value: ", round(value, 2)
       ),
-      line = list(width = 2),
+      line = list(width = 2),  # Corrected typo: removed 'list10:'
       marker = list(size = 6, opacity = 0.8)
     ) %>%
       layout(
-        title = paste("Time Series of", input$ts_variable),
+        title = paste("Time Series of", variable_abbreviations[input$ts_variable]),
         hovermode = "closest",
         xaxis = list(title = "Year"),
         yaxis = list(title = "Absolute Value"),
@@ -1120,18 +1213,21 @@ server <- function(input, output, session) {
       ) %>%
       config(displayModeBar = FALSE, responsive = TRUE)
   })
-  
   #--- Reset Button ---- 
   observeEvent(input$reset_ts, {
     updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
     updateRadioButtons(session, "ts_level", selected = "Macroregion")
-    updateSelectInput(session, "ts_regions", selected = c(
-      "Africa", "Asia", "Central America", "Europe",
-      "Middle East", "North America", "Oceania",
-      "South & Far East Asia", "South America"
-    ))
+    updateSelectInput(session, "ts_regions", selected = TARGET_REGIONS)
+    
+    # Clear country selection
+    selected_country(NULL)
+    leafletProxy("map") %>% clearGroup("highlight")
+    updateSelectInput(session, "country_search", selected = "")
+    
+    # Reset data explorer
+    updateSelectInput(session, "explorer_variable", selected = "")
+    updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
   })
-  
   #---- Download Button ---- 
   
   # Create a static plot for the download 
@@ -1215,25 +1311,16 @@ server <- function(input, output, session) {
     updateSelectInput(session, "explorer_year", choices = available_years, selected = max(available_years))
   })
   
-  observeEvent(input$explorer_variable, {
-    if (input$explorer_variable %in% time_series_vars) {
-      updateSelectInput(session, "ts_variable", selected = input$explorer_variable)
-      
-      isolate({
-        selection <- ts_selected_regions()
-        updateRadioButtons(session, "ts_level", selected = selection$level)
-        updateSelectInput(session, "ts_regions", selected = selection$regions)
-      })
-    }
-  })
-  
   # ---- Reset table filters ----
   observeEvent(input$reset_table, {
     updateSelectInput(session, "explorer_variable", selected = "")
     updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
     selected_country(NULL)
+    
+    # Clear map highlight
+    leafletProxy("map") %>% clearGroup("highlight")
+    updateSelectInput(session, "country_search", selected = "")
   })
-  
   # ---- Download data as CSV ----
   output$download_csv <- downloadHandler(
     filename = function() {
