@@ -447,13 +447,166 @@ data_countries$country <- ifelse(
   data_countries$Region
 )
 
-# Aggregate numeric values for countries that have been merged but keeping NA when necessary
+# ---- Aggregate numeric values by (country, Year): SUM for stocks/counts ----
+# Ensure Year exists and is numeric
+stopifnot("Year" %in% names(data_countries))
+data_countries <- data_countries %>%
+  mutate(Year = suppressWarnings(as.integer(Year)))
+
+# Sum only numeric columns EXCEPT Year
+num_cols <- names(data_countries)[sapply(data_countries, is.numeric)]
+num_cols <- setdiff(num_cols, "Year")  # <- critical line
+
 data_countries <- data_countries %>%
   group_by(country, Year) %>%
-  summarise(across(
-    all_of(setdiff(names(.)[sapply(., is.numeric)], "Year")),
-    ~ if (all(is.na(.))) NA_real_ else sum(., na.rm = TRUE)
-  ), .groups = "drop")
+  summarise(
+    across(
+      all_of(num_cols),
+      ~ if (all(is.na(.))) NA_real_ else sum(., na.rm = TRUE)
+    ),
+    .groups = "drop"
+  )
+
+# ---- Helper for safe division ----
+safe_div <- function(num, den, scale = 1) {
+  ifelse(is.na(num) | is.na(den) | den == 0, NA_real_, (num / den) * scale)
+}
+
+# ---- RECOMPUTE derived variables from components (combination / weighted avg) ----
+dc <- data_countries  # shorthand
+
+# Densities / per-100
+if (all(c("Inhabitants per km^2","Inhabitants in thousands","Area in km^2") %in% names(dc))) {
+  dc[["Inhabitants per km^2"]] <- safe_div(dc[["Inhabitants in thousands"]]*1000, dc[["Area in km^2"]])
+}
+if (all(c("Catholics per 100 inhabitants","Catholics in thousands","Inhabitants in thousands") %in% names(dc))) {
+  dc[["Catholics per 100 inhabitants"]] <- safe_div(dc[["Catholics in thousands"]], dc[["Inhabitants in thousands"]], 100)
+}
+
+# Pastoral-centre burdens & shares
+if (all(c("Inhabitants per pastoral centre","Inhabitants in thousands","Pastoral centres (total)") %in% names(dc))) {
+  dc[["Inhabitants per pastoral centre"]] <- safe_div(dc[["Inhabitants in thousands"]]*1000, dc[["Pastoral centres (total)"]])
+}
+if (all(c("Catholics per pastoral centre","Catholics in thousands","Pastoral centres (total)") %in% names(dc))) {
+  dc[["Catholics per pastoral centre"]] <- safe_div(dc[["Catholics in thousands"]]*1000, dc[["Pastoral centres (total)"]])
+}
+if (all(c("Pastoral centres per diocese","Pastoral centres (total)","Ecclesiastical territories (total)") %in% names(dc))) {
+  dc[["Pastoral centres per diocese"]] <- safe_div(dc[["Pastoral centres (total)"]], dc[["Ecclesiastical territories (total)"]])
+}
+if (all(c("Parishes as share of total pastoral centres","Parishes (total)","Pastoral centres (total)") %in% names(dc))) {
+  dc[["Parishes as share of total pastoral centres"]] <- safe_div(dc[["Parishes (total)"]], dc[["Pastoral centres (total)"]])
+}
+# Mission stations share 
+if (all(c("Mission stations with resident priest",
+          "Mission stations without resident priest",
+          "Pastoral centres (total)") %in% names(dc))) {
+  dc[["Mission stations as share of total pastoral centres"]] <-
+    safe_div(dc[["Mission stations with resident priest"]] +
+               dc[["Mission stations without resident priest"]],
+             dc[["Pastoral centres (total)"]])
+}
+
+
+if (all(c("Number of other pastoral centres as share of total pastoral centres","Other pastoral centres","Pastoral centres (total)") %in% names(dc))) {
+  dc[["Number of other pastoral centres as share of total pastoral centres"]] <- safe_div(dc[["Other pastoral centres"]], dc[["Pastoral centres (total)"]])
+}
+
+# Priest burdens (use Priests (diocesan and religious) if present; else Diocesan + Religious)
+priests_total <- if ("Priests (diocesan and religious)" %in% names(dc)) {
+  dc[["Priests (diocesan and religious)"]]
+} else if (all(c("Diocesan priests (total)","Religious priests") %in% names(dc))) {
+  dc[["Diocesan priests (total)"]] + dc[["Religious priests"]]
+} else {
+  NA_real_
+}
+if ("Inhabitants per priest" %in% names(dc) && !all(is.na(priests_total))) {
+  dc[["Inhabitants per priest"]] <- safe_div(dc[["Inhabitants in thousands"]]*1000, priests_total)
+}
+if ("Catholics per priest" %in% names(dc) && !all(is.na(priests_total))) {
+  dc[["Catholics per priest"]] <- safe_div(dc[["Catholics in thousands"]]*1000, priests_total)
+}
+
+# Sacraments per 1000 Catholics
+if (all(c("Infant baptisms (people up to 7 years old) per 1000 Catholics",
+          "Infant baptisms (people up to 7 years old)","Catholics in thousands") %in% names(dc))) {
+  dc[["Infant baptisms (people up to 7 years old) per 1000 Catholics"]] <-
+    safe_div(dc[["Infant baptisms (people up to 7 years old)"]], dc[["Catholics in thousands"]]*1000, 1000)
+}
+if (all(c("Marriages per 1000 Catholics","Marriages","Catholics in thousands") %in% names(dc))) {
+  dc[["Marriages per 1000 Catholics"]] <- safe_div(dc[["Marriages"]], dc[["Catholics in thousands"]]*1000, 1000)
+}
+if (all(c("Confirmations per 1000 Catholics","Confirmations","Catholics in thousands") %in% names(dc))) {
+  dc[["Confirmations per 1000 Catholics"]] <- safe_div(dc[["Confirmations"]], dc[["Catholics in thousands"]]*1000, 1000)
+}
+if (all(c("First Communions per 1000 Catholics","First Communions","Catholics in thousands") %in% names(dc))) {
+  dc[["First Communions per 1000 Catholics"]] <- safe_div(dc[["First Communions"]], dc[["Catholics in thousands"]]*1000, 1000)
+}
+
+# Shares you keep in your data
+if (all(c("Share of adult baptisms (people over 7 years old )","Adult baptisms (people over 7 years old)","Baptisms") %in% names(dc))) {
+  dc[["Share of adult baptisms (people over 7 years old )"]] <- safe_div(dc[["Adult baptisms (people over 7 years old)"]], dc[["Baptisms"]])
+}
+if (all(c("Share of mixed marriages (among those celebrated with ecclesiastical rite)","Mixed marriages","Marriages") %in% names(dc))) {
+  dc[["Share of mixed marriages (among those celebrated with ecclesiastical rite)"]] <- safe_div(dc[["Mixed marriages"]], dc[["Marriages"]])
+}
+
+# Vocation/ordination/departure rates
+if (all(c("Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants",
+          "Candidates for diocesan and religious clergy in philosophy+theology centres","Inhabitants in thousands") %in% names(dc))) {
+  dc[["Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants"]] <-
+    safe_div(dc[["Candidates for diocesan and religious clergy in philosophy+theology centres"]],
+             dc[["Inhabitants in thousands"]]*1000, 100000)
+}
+if (all(c("Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics",
+          "Candidates for diocesan and religious clergy in philosophy+theology centres","Catholics in thousands") %in% names(dc))) {
+  dc[["Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics"]] <-
+    safe_div(dc[["Candidates for diocesan and religious clergy in philosophy+theology centres"]],
+             dc[["Catholics in thousands"]]*1000, 100000)
+}
+if (all(c("Ordination rate - Yearly ordinations per 100 philosophy+theology students for diocesan priesthood",
+          "Yearly ordinations of diocesan priests","Students for diocesan clergy in secondary schools") %in% names(dc))) {
+  dc[["Ordination rate - Yearly ordinations per 100 philosophy+theology students for diocesan priesthood"]] <-
+    safe_div(dc[["Yearly ordinations of diocesan priests"]],
+             dc[["Students for diocesan clergy in secondary schools"]], 100)
+}
+if (all(c("Departures per 100 enrolled students in philosophy+theology centres for diocesan clergy",
+          "Students in philosophy+theology centres for diocesan clergy who left seminary",
+          "Students for diocesan clergy in secondary schools") %in% names(dc))) {
+  dc[["Departures per 100 enrolled students in philosophy+theology centres for diocesan clergy"]] <-
+    safe_div(dc[["Students in philosophy+theology centres for diocesan clergy who left seminary"]],
+             dc[["Students for diocesan clergy in secondary schools"]], 100)
+}
+
+# Weighted averages (equivalent to combination)
+if (all(c("Average area of ecclesiastical territories in km^2","Area in km^2","Ecclesiastical territories (total)") %in% names(dc))) {
+  dc[["Average area of ecclesiastical territories in km^2"]] <-
+    safe_div(dc[["Area in km^2"]], dc[["Ecclesiastical territories (total)"]])
+}
+if (all(c("Average diocesan area (in km^2)","Area in km^2","Ecclesiastical territories (total)") %in% names(dc))) {
+  dc[["Average diocesan area (in km^2)"]] <-
+    safe_div(dc[["Area in km^2"]], dc[["Ecclesiastical territories (total)"]])
+}
+
+# Apostolic workforce share
+if (all(c("Priests and bishops as share of apostolic workforce",
+          "Bishops (total)","Catechists","Lay missionaries") %in% names(dc)) &&
+    ( "Priests (diocesan and religious)" %in% names(dc) ||
+      all(c("Diocesan priests (total)","Religious priests") %in% names(dc)) )) {
+  
+  priests_total <- if ("Priests (diocesan and religious)" %in% names(dc))
+    dc[["Priests (diocesan and religious)"]]
+  else
+    dc[["Diocesan priests (total)"]] + dc[["Religious priests"]]
+  
+  workforce <- priests_total + dc[["Bishops (total)"]] + dc[["Catechists"]] + dc[["Lay missionaries"]]
+  dc[["Priests and bishops as share of apostolic workforce"]] <-
+    safe_div(priests_total + dc[["Bishops (total)"]], workforce)
+}
+
+# Commit recomputed values
+data_countries <- dc
+
+
 
 # Define variables to exclude
 excluded_vars <- c("Area in km^2")
