@@ -695,31 +695,35 @@ standardize_macro <- function(df, col = "macroregion") {
 server <- function(input, output, session) {
   
   # ---- Handle map download with full variable names ----
+  
   output$download_map <- downloadHandler(
     filename = function() {
+      ml <- mode_label()
       paste0("map_export_", input$variable, "_", input$year, 
-             switch(input$display_mode, 
+             switch(ml, 
                     "absolute" = "", 
                     "per_capita" = "_per_capita", 
                     "per_catholic" = "_per_catholic"), ".png")
     },
     content = function(file) {
+      ml <- mode_label() 
       library(htmlwidgets)
       # Filter data for the selected year and apply display mode
       filtered_data <- map_data %>% filter(Year == input$year)
-      if (input$display_mode == "per_capita") {
+      if (as.integer(input$year) == 2022 && input$display_mode == "per_capita") {
         filtered_data[[input$variable]] <- ifelse(
           !is.na(filtered_data[["Inhabitants in thousands"]]) & filtered_data[["Inhabitants in thousands"]] > 0,
           filtered_data[[input$variable]] / filtered_data[["Inhabitants in thousands"]],
           NA_real_
         )
-      } else if (input$display_mode == "per_catholic") {
+      } else if (as.integer(input$year) == 2022 && input$display_mode == "per_catholic") {
         filtered_data[[input$variable]] <- ifelse(
           !is.na(filtered_data[["Catholics in thousands"]]) & filtered_data[["Catholics in thousands"]] > 0,
           filtered_data[[input$variable]] / filtered_data[["Catholics in thousands"]],
           NA_real_
         )
       }
+      
       # Ensure valid values for color palette to avoid domain errors
       valid_values <- filtered_data[[input$variable]][!is.na(filtered_data[[input$variable]])]
       pal <- if (length(valid_values) > 0) {
@@ -737,7 +741,7 @@ server <- function(input, output, session) {
           label = ~name
         ) %>%
         addLegend(pal = pal, values = filtered_data[[input$variable]],
-                  title = paste(switch(input$display_mode,
+                  title = paste(switch(ml,
                                        "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
                                        "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
                                        "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
@@ -750,7 +754,7 @@ server <- function(input, output, session) {
         addControl(
           html = paste0("<div style='font-size:20px; font-weight:bold; background-color:rgba(255,255,255,0.7); 
                   padding:6px 12px; border-radius:6px;'>", 
-                        switch(input$display_mode,
+                        switch(ml,
                                "absolute" = input$variable, # Use full variable name
                                "per_capita" = paste(input$variable, "per thousand inhabitants"),
                                "per_catholic" = paste(input$variable, "per thousand Catholics")),
@@ -777,6 +781,11 @@ server <- function(input, output, session) {
     from_tab = NULL  # Track which tab triggered the change
   )
   
+  mode_label <- reactive({
+    if (isTRUE(as.integer(input$year) == 2022)) input$display_mode else "absolute"
+  })
+  
+  
   # Helper function to update time series selections
   update_time_series_for_country <- function(country) {
     req(country)
@@ -788,13 +797,6 @@ server <- function(input, output, session) {
     }
   }
   # ---- Synchronize variable and year selections ----
-  # Reactive values to track selections
-  selections <- reactiveValues(
-    variable = NULL,
-    year = NULL,
-    from_tab = NULL
-  )
-  
   # Update selections from Map tab
   observeEvent(input$variable, {
     if (is.null(selections$from_tab) || selections$from_tab != "explorer") {
@@ -856,17 +858,40 @@ server <- function(input, output, session) {
     updateSelectInput(session, "year", choices = available_years, selected = max(available_years))
   })
   
+  #---- Limit display modes to 2022 only ----
+  observeEvent(input$year, {
+    if (isTRUE(as.integer(input$year) == 2022)) {
+      updateRadioButtons(
+        session, "display_mode",
+        choices = list("Absolute values" = "absolute",
+                       "Per thousand inhabitants" = "per_capita",
+                       "Per thousand Catholics" = "per_catholic"),
+        selected = if (input$display_mode %in% c("absolute","per_capita","per_catholic")) input$display_mode else "absolute"
+      )
+    } else {
+      updateRadioButtons(
+        session, "display_mode",
+        choices = list("Absolute values" = "absolute"),
+        selected = "absolute"
+      )
+    }
+  })
+  
+  
   # ---- Render the interactive world map with abbreviated names in legend ----
+ 
+  
   output$map <- renderLeaflet({
+    ml <- mode_label()
     req(input$variable, input$year)
     filtered_data <- map_data %>% filter(Year == input$year)
-    if (input$display_mode == "per_capita") {
+    if (as.integer(input$year) == 2022 && input$display_mode == "per_capita"){
       filtered_data[[input$variable]] <- ifelse(
         !is.na(filtered_data[["Inhabitants in thousands"]]) & filtered_data[["Inhabitants in thousands"]] > 0,
         filtered_data[[input$variable]] / filtered_data[["Inhabitants in thousands"]],
         NA_real_
       )
-    } else if (input$display_mode == "per_catholic") {
+    } else if (as.integer(input$year) == 2022 && input$display_mode == "per_catholic") {
       filtered_data[[input$variable]] <- ifelse(
         !is.na(filtered_data[["Catholics in thousands"]]) & filtered_data[["Catholics in thousands"]] > 0,
         filtered_data[[input$variable]] / filtered_data[["Catholics in thousands"]],
@@ -904,18 +929,18 @@ server <- function(input, output, session) {
         fillOpacity = 0.6,
         layerId = ~name,
         label = ~lapply(paste0("<strong>", name, "</strong><br/>", 
-                               switch(input$display_mode,
+                               switch(ml,
                                       "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
                                       "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
                                       "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")), 
                                ": ", 
-                               ifelse(input$display_mode != "absolute" & filtered_data[[input$variable]] == 0,
+                               ifelse(ml != "absolute" & filtered_data[[input$variable]] == 0,
                                       "<0.01",
                                       formatC(filtered_data[[input$variable]], format = "f", digits = 2, big.mark = ","))), htmltools::HTML),
         highlight = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.8, bringToFront = TRUE)
       ) %>%
       addLegend(pal = pal, values = filtered_data[[input$variable]], 
-                title = paste(switch(input$display_mode,
+                title = paste(switch(ml,
                                      "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
                                      "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
                                      "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
@@ -1052,16 +1077,18 @@ server <- function(input, output, session) {
     updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
   })
   # ---- Display country-specific information with full variable names ----
+ 
   output$country_info <- renderUI({
+    ml <- mode_label()
     req(selected_country())
     info <- map_data %>% filter(name == selected_country(), Year == input$year)
-    if (input$display_mode == "per_capita") {
+    if (as.integer(input$year) == 2022 && input$display_mode == "per_capita") {
       info[[input$variable]] <- ifelse(
         !is.na(info[["Inhabitants in thousands"]]) & info[["Inhabitants in thousands"]] > 0,
         info[[input$variable]] / info[["Inhabitants in thousands"]],
         NA_real_
       )
-    } else if (input$display_mode == "per_catholic") {
+    } else if (as.integer(input$year) == 2022 && input$display_mode == "per_catholic") {
       info[[input$variable]] <- ifelse(
         !is.na(info[["Catholics in thousands"]]) & info[["Catholics in thousands"]] > 0,
         info[[input$variable]] / info[["Catholics in thousands"]],
@@ -1072,13 +1099,13 @@ server <- function(input, output, session) {
       HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
     } else {
       value <- info[[input$variable]][1]
-      formatted <- if (input$display_mode != "absolute" && value == 0) {
+      formatted <- if (ml != "absolute" && value == 0) {
         "<0.01"
       } else {
-        format(round(as.numeric(value), ifelse(input$display_mode == "absolute", 0, 2)), big.mark = ",", scientific = FALSE)
+        format(round(as.numeric(value), ifelse(ml == "absolute", 0, 2)), big.mark = ",", scientific = FALSE)
       }
       HTML(paste0("<strong>", selected_country(), "</strong><br/>", 
-                  switch(input$display_mode,
+                  switch(ml,
                          "absolute" = input$variable, # Use full variable name
                          "per_capita" = paste(input$variable, "per thousand inhabitants"),
                          "per_catholic" = paste(input$variable, "per thousand Catholics")), 
@@ -1087,7 +1114,10 @@ server <- function(input, output, session) {
   })
   
   # ---- Render macroregion histogram with abbreviated name in caption ----
+  
   output$varPlot <- renderPlot({
+    
+    ml <- mode_label()
     req(input$variable, input$year)
     
     filtered_macro <- data_macroregions %>%
@@ -1100,7 +1130,7 @@ server <- function(input, output, session) {
       filter(!macroregion %in% c("World", "America", "Asia")) %>%
       group_by(macroregion) %>%
       summarise(
-        value = switch(input$display_mode,
+        value = switch(ml,
                        "absolute" = sum(.data[[input$variable]], na.rm = TRUE),
                        "per_capita" = ifelse(
                          sum(.data[["Inhabitants in thousands"]], na.rm = TRUE) > 0,
@@ -1124,8 +1154,8 @@ server <- function(input, output, session) {
     ggplot(filtered_macro, aes(x = reorder(macroregion, value), y = value)) +
       geom_col(fill = "#f7f7f7", color = "gray80", linewidth = 0.3, alpha = 1)+
       geom_text(
-        aes(label = ifelse(input$display_mode != "absolute" & value == 0, "<0.01", 
-                           scales::comma(value, accuracy = ifelse(input$display_mode == "absolute", 1, 0.01)))),
+        aes(label = ifelse(ml != "absolute" & value == 0, "<0.01", 
+                           scales::comma(value, accuracy = ifelse(ml == "absolute", 1, 0.01)))),
         hjust = -0.05, size = 2.9
       ) +
       coord_flip(clip = "off") +
@@ -1133,7 +1163,7 @@ server <- function(input, output, session) {
         x = "Continents",
         y = NULL,
         title = paste("Continent-level distribution", "in", input$year),
-        caption = switch(input$display_mode,
+        caption = switch(ml,
                          "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
                          "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
                          "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath."))
@@ -1278,23 +1308,31 @@ server <- function(input, output, session) {
       return(datatable(data.frame(Message = "Please select a variable to explore.")))
     }
     req(input$explorer_year)
-    filtered <- data_countries %>% filter(Year == input$explorer_year) %>% select(country, Year, 
-                                                                                  !!input$explorer_variable, 
-                                                                                  `Inhabitants in thousands`, 
-                                                                                  `Catholics in thousands`) %>%
-      mutate(
-        `Per 1000 Inhabitants` = ifelse(
-          !is.na(`Inhabitants in thousands`) & `Inhabitants in thousands` > 0,
-          round(.data[[input$explorer_variable]] / `Inhabitants in thousands`, 3),
-          NA_real_
-        ),
-        `Per 1000 Catholics` = ifelse(
-          !is.na(`Catholics in thousands`) & `Catholics in thousands` > 0,
-          round(.data[[input$explorer_variable]] / `Catholics in thousands`, 3),
-          NA_real_
-        )
-      )
     
+    base_cols <- data_countries %>%
+      filter(Year == input$explorer_year) %>%
+      select(country, Year, !!input$explorer_variable,
+             `Inhabitants in thousands`, `Catholics in thousands`)
+    
+    if (as.integer(input$explorer_year) == 2022) {
+      filtered <- base_cols %>%
+        mutate(
+          `Per 1000 Inhabitants` = ifelse(
+            !is.na(`Inhabitants in thousands`) & `Inhabitants in thousands` > 0,
+            round(.data[[input$explorer_variable]] / `Inhabitants in thousands`, 3),
+            NA_real_
+          ),
+          `Per 1000 Catholics` = ifelse(
+            !is.na(`Catholics in thousands`) & `Catholics in thousands` > 0,
+            round(.data[[input$explorer_variable]] / `Catholics in thousands`, 3),
+            NA_real_
+          )
+        ) %>%
+        select(-`Inhabitants in thousands`, -`Catholics in thousands`)   # 🔥 drop context cols
+    } else {
+      filtered <- base_cols %>%
+        select(-`Inhabitants in thousands`, -`Catholics in thousands`)   # 🔥 drop context cols
+    }
     
     if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
       filtered <- filtered %>% filter(country == selected_country())
