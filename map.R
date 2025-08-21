@@ -1442,6 +1442,8 @@ server <- function(input, output, session) {
       labs(title = paste("Time Series of", input$ts_variable),
            x = "Year", y = "Absolute Value", color = ifelse(input$ts_level == "Country", "Countries", "Continents")) +
       theme_minimal(base_size = 13) +
+      theme(plot.background = element_rect(fill = "white", colour = "white"),
+            panel.background = element_rect(fill = "white", colour = "white")) +
       theme(legend.position = "bottom")
   })
   
