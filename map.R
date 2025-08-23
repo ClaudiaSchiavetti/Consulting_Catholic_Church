@@ -1,18 +1,23 @@
-# ---- Load the required libraries ---- 
-
-required_packages <- c("shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview", "webshot", "writexl", "plotly",
-                       "shinyjs")
-
+# ---- Load Required Libraries ----
+# This section installs and loads all necessary packages for the Shiny app.
+# It checks if each package is installed and installs it if not, then loads them.
+required_packages <- c(
+  "shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", 
+  "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview", 
+  "webshot", "writexl", "plotly", "shinyjs"
+)
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     install.packages(pkg)
   }
 }
 
-# Ensure PhantomJS is installed
+# Ensure PhantomJS is installed for webshot functionality (used for map downloads).
 if (!webshot::is_phantomjs_installed()) {
   webshot::install_phantomjs()
 }
+
+# Load the libraries after ensuring they are installed.
 library(shiny)
 library(leaflet)
 library(dplyr)
@@ -31,22 +36,23 @@ library(plotly)
 library(shinyjs)
 useShinyjs()
 
+# ---- Docker Instructions ----
+# Set Shiny app to listen on all interfaces and a specific port for Docker compatibility.
+options(shiny.host = "0.0.0.0")
+options(shiny.port = 3838) # Also 8180 is a valid option
 
-# ---- Docker instructions ---- 
-
-options(shiny.host = "0.0.0.0") 
-options(shiny.port = 3838) # Also 8180 is a valid option 
-
-# ---- Set the Working Directory ---- 
+# ---- Set the Working Directory ----
+# Define the path to the data and set it as the working directory.
 path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
-#path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
+# path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
 setwd(path_outputs)
 
-# ---- Load the data ---- 
-
+# ---- Load the Data ----
+# Read the CSV file containing the geographic data, preserving original column names.
 data <- read.csv("final_geo_table.csv", check.names = FALSE)
 
-# ---- Define variable abbreviations for display in histogram and map legend ----
+# ---- Define Variable Abbreviations ----
+# Create a named vector for abbreviated variable names used in displays like histograms and legends.
 variable_abbreviations <- c(
   "Inhabitants in thousands" = "Pop. (thousands)",
   "Catholics in thousands" = "Cath. (thousands)",
@@ -329,56 +335,61 @@ variable_abbreviations <- c(
   "Students for diocesan and religious clergy in secondary schools - index numbers (base 2013 = 100)" = "Sec. Students Index (2013=100)"
 )
 
-# Function to check if a column has data only in macroregions
+# ---- Data Filtering Functions ----
+# Function to check if a column has non-NA data at the country level.
 has_country_data <- function(col_data, region_type) {
-  # Check if there's any non-NA data for countries
   country_data <- col_data[region_type == "Country"]
   return(sum(!is.na(country_data)) > 0)
 }
 
-# Identify columns that have country data
+# ---- Identify and Filter Columns with Country Data ----
+# Apply the function to identify columns with country-level data.
 cols_with_country_data <- sapply(names(data), function(col_name) {
-  if(is.numeric(data[[col_name]])) {
+  if (is.numeric(data[[col_name]])) {
     has_country_data(data[[col_name]], data$`Region type`)
   } else {
     TRUE
   }
 })
 
-# Filter dataset to keep only columns with country data
+# Filter the dataset to retain only columns with country data.
 data_filtered <- data[, cols_with_country_data]
 
-# Select only Macroregions
+# ---- Separate Data into Macroregions and Countries ----
+# Extract macroregion data and rename the region column for consistency.
 data_macroregions <- data_filtered %>%
   filter(`Region type` == "Macroregion") %>%
   rename(macroregion = Region)
 
-# Select only Countries
+# Extract country data.
 data_countries <- data_filtered %>%
   filter(`Region type` == "Country")
 
-# Load world map from Natural Earth (returns an 'sf' object for mapping)
+# ---- Load and Prepare World Map ----
+# Load world map data from Natural Earth as an sf object.
 world <- ne_countries(scale = "medium", returnclass = "sf")
 
-# Fix Somalia shape by merging Somalia and Somaliland
+# Unify Somalia by merging Somalia and Somaliland geometries.
 somalia_unified <- world %>%
   filter(admin %in% c("Somalia", "Somaliland")) %>%
   summarise(admin = "Somalia", name = "Somalia", geometry = st_union(geometry))
 
-# Remove original entries and add unified Somalia
+# Update the world map by removing original entries and adding the unified Somalia.
 world <- world %>%
   filter(!admin %in% c("Somalia", "Somaliland")) %>%
   bind_rows(somalia_unified)
 
-# Merge the data with the world map using country names
+# ---- Initial Map Data Merge ----
+# Merge country data with the world map using country names.
 map_data <- left_join(world, data_countries, by = c("name" = "Region"))
 
-# ---- Analysis of unmatched names ---- 
-
+# ---- Analyze Unmatched Country Names ----
+# Identify countries in data that do not match the world map.
 unmatched_in_data <- anti_join(data_countries, world, by = c("Region" = "name"))
 print(unmatched_in_data$Region)
 
-# Manual corrections 
+# ---- Manual Country Name Corrections ----
+# Define a vector of corrections for mismatched country names.
 name_corrections <- c(
   "Antigua and Barbuda" = "Antigua and Barb.",
   "Bolivia (Plurinational State of)" = "Bolivia",
@@ -440,23 +451,24 @@ name_corrections <- c(
   "Western Sahara" = "W. Sahara"
 )
 
-#Create a new column with the corrected country names 
+# Apply corrections by creating a new 'country' column with standardized names.
 data_countries$country <- ifelse(
   data_countries$Region %in% names(name_corrections),
   name_corrections[data_countries$Region],
   data_countries$Region
 )
 
-# ---- Aggregate numeric values by (country, Year): SUM for stocks/counts ----
-# Ensure Year exists and is numeric
+# ---- Aggregate Numeric Values by Country and Year ----
+# Ensure 'Year' column exists and is converted to integer.
 stopifnot("Year" %in% names(data_countries))
 data_countries <- data_countries %>%
   mutate(Year = suppressWarnings(as.integer(Year)))
 
-# Sum only numeric columns EXCEPT Year (intermediary step to rearrange counry data)
+# Identify numeric columns excluding 'Year'.
 num_cols <- names(data_countries)[sapply(data_countries, is.numeric)]
-num_cols <- setdiff(num_cols, "Year")  # <- critical line
+num_cols <- setdiff(num_cols, "Year")
 
+# Aggregate by summing numeric values for each country-year pair.
 data_countries <- data_countries %>%
   group_by(country, Year) %>%
   summarise(
@@ -467,33 +479,37 @@ data_countries <- data_countries %>%
     .groups = "drop"
   )
 
-# ---- Helper for safe division ----
+# ---- Safe Division Helper Function ----
+# Helper function to perform division safely, avoiding NA or division by zero.
 safe_div <- function(num, den, scale = 1) {
   ifelse(is.na(num) | is.na(den) | den == 0, NA_real_, (num / den) * scale)
 }
 
-# ---- RECOMPUTE derived variables from components (combination / weighted avg) ----
-dc <- data_countries # shorthand
-# Re-transform density and rates based on newly summed factors
-if (all(c("Inhabitants per km^2","Inhabitants in thousands","Area in km^2") %in% names(dc))) {
-  dc[["Inhabitants per km^2"]] <- round(safe_div(dc[["Inhabitants in thousands"]]*1000, dc[["Area in km^2"]]), 2)
+# ---- Recompute Derived Variables ----
+# Shorthand for data_countries to simplify recomputations.
+dc <- data_countries
+
+# Recompute densities and rates, rounding to 2 decimal places.
+if (all(c("Inhabitants per km^2", "Inhabitants in thousands", "Area in km^2") %in% names(dc))) {
+  dc[["Inhabitants per km^2"]] <- round(safe_div(dc[["Inhabitants in thousands"]] * 1000, dc[["Area in km^2"]]), 2)
 }
-if (all(c("Catholics per 100 inhabitants","Catholics in thousands","Inhabitants in thousands") %in% names(dc))) {
+if (all(c("Catholics per 100 inhabitants", "Catholics in thousands", "Inhabitants in thousands") %in% names(dc))) {
   dc[["Catholics per 100 inhabitants"]] <- round(safe_div(dc[["Catholics in thousands"]], dc[["Inhabitants in thousands"]], 100), 2)
 }
-if (all(c("Inhabitants per pastoral centre","Inhabitants in thousands","Pastoral centres (total)") %in% names(dc))) {
-  dc[["Inhabitants per pastoral centre"]] <- round(safe_div(dc[["Inhabitants in thousands"]]*1000, dc[["Pastoral centres (total)"]]), 2)
+if (all(c("Inhabitants per pastoral centre", "Inhabitants in thousands", "Pastoral centres (total)") %in% names(dc))) {
+  dc[["Inhabitants per pastoral centre"]] <- round(safe_div(dc[["Inhabitants in thousands"]] * 1000, dc[["Pastoral centres (total)"]]), 2)
 }
-if (all(c("Catholics per pastoral centre","Catholics in thousands","Pastoral centres (total)") %in% names(dc))) {
-  dc[["Catholics per pastoral centre"]] <- round(safe_div(dc[["Catholics in thousands"]]*1000, dc[["Pastoral centres (total)"]]), 2)
+if (all(c("Catholics per pastoral centre", "Catholics in thousands", "Pastoral centres (total)") %in% names(dc))) {
+  dc[["Catholics per pastoral centre"]] <- round(safe_div(dc[["Catholics in thousands"]] * 1000, dc[["Pastoral centres (total)"]]), 2)
 }
-if (all(c("Pastoral centres per diocese","Pastoral centres (total)","Ecclesiastical territories (total)") %in% names(dc))) {
+if (all(c("Pastoral centres per diocese", "Pastoral centres (total)", "Ecclesiastical territories (total)") %in% names(dc))) {
   dc[["Pastoral centres per diocese"]] <- round(safe_div(dc[["Pastoral centres (total)"]], dc[["Ecclesiastical territories (total)"]]), 2)
 }
-if (all(c("Parishes as share of total pastoral centres","Parishes (total)","Pastoral centres (total)") %in% names(dc))) {
+if (all(c("Parishes as share of total pastoral centres", "Parishes (total)", "Pastoral centres (total)") %in% names(dc))) {
   dc[["Parishes as share of total pastoral centres"]] <- round(safe_div(dc[["Parishes (total)"]], dc[["Pastoral centres (total)"]]), 2)
 }
-# Mission stations share
+
+# Recompute mission stations share.
 if (all(c("Mission stations with resident priest",
           "Mission stations without resident priest",
           "Pastoral centres (total)") %in% names(dc))) {
@@ -502,60 +518,64 @@ if (all(c("Mission stations with resident priest",
                      dc[["Mission stations without resident priest"]],
                    dc[["Pastoral centres (total)"]]), 2)
 }
-if (all(c("Number of other pastoral centres as share of total pastoral centres","Other pastoral centres","Pastoral centres (total)") %in% names(dc))) {
+if (all(c("Number of other pastoral centres as share of total pastoral centres", "Other pastoral centres", "Pastoral centres (total)") %in% names(dc))) {
   dc[["Number of other pastoral centres as share of total pastoral centres"]] <- round(safe_div(dc[["Other pastoral centres"]], dc[["Pastoral centres (total)"]]), 2)
 }
-# Priest burdens (use Priests (diocesan and religious) if present; else Diocesan + Religious)
+
+# Compute total priests for burdens.
 priests_total <- if ("Priests (diocesan and religious)" %in% names(dc)) {
   dc[["Priests (diocesan and religious)"]]
-} else if (all(c("Diocesan priests (total)","Religious priests") %in% names(dc))) {
+} else if (all(c("Diocesan priests (total)", "Religious priests") %in% names(dc))) {
   dc[["Diocesan priests (total)"]] + dc[["Religious priests"]]
 } else {
   NA_real_
 }
 if ("Inhabitants per priest" %in% names(dc) && !all(is.na(priests_total))) {
-  dc[["Inhabitants per priest"]] <- round(safe_div(dc[["Inhabitants in thousands"]]*1000, priests_total), 2)
+  dc[["Inhabitants per priest"]] <- round(safe_div(dc[["Inhabitants in thousands"]] * 1000, priests_total), 2)
 }
 if ("Catholics per priest" %in% names(dc) && !all(is.na(priests_total))) {
-  dc[["Catholics per priest"]] <- round(safe_div(dc[["Catholics in thousands"]]*1000, priests_total), 2)
+  dc[["Catholics per priest"]] <- round(safe_div(dc[["Catholics in thousands"]] * 1000, priests_total), 2)
 }
-# Sacraments per 1000 Catholics
+
+# Recompute sacraments per 1000 Catholics.
 if (all(c("Infant baptisms (people up to 7 years old) per 1000 Catholics",
-          "Infant baptisms (people up to 7 years old)","Catholics in thousands") %in% names(dc))) {
+          "Infant baptisms (people up to 7 years old)", "Catholics in thousands") %in% names(dc))) {
   dc[["Infant baptisms (people up to 7 years old) per 1000 Catholics"]] <-
-    round(safe_div(dc[["Infant baptisms (people up to 7 years old)"]], dc[["Catholics in thousands"]]*1000, 1000), 2)
+    round(safe_div(dc[["Infant baptisms (people up to 7 years old)"]], dc[["Catholics in thousands"]] * 1000, 1000), 2)
 }
-if (all(c("Marriages per 1000 Catholics","Marriages","Catholics in thousands") %in% names(dc))) {
-  dc[["Marriages per 1000 Catholics"]] <- round(safe_div(dc[["Marriages"]], dc[["Catholics in thousands"]]*1000, 1000), 2)
+if (all(c("Marriages per 1000 Catholics", "Marriages", "Catholics in thousands") %in% names(dc))) {
+  dc[["Marriages per 1000 Catholics"]] <- round(safe_div(dc[["Marriages"]], dc[["Catholics in thousands"]] * 1000, 1000), 2)
 }
-if (all(c("Confirmations per 1000 Catholics","Confirmations","Catholics in thousands") %in% names(dc))) {
-  dc[["Confirmations per 1000 Catholics"]] <- round(safe_div(dc[["Confirmations"]], dc[["Catholics in thousands"]]*1000, 1000), 2)
+if (all(c("Confirmations per 1000 Catholics", "Confirmations", "Catholics in thousands") %in% names(dc))) {
+  dc[["Confirmations per 1000 Catholics"]] <- round(safe_div(dc[["Confirmations"]], dc[["Catholics in thousands"]] * 1000, 1000), 2)
 }
-if (all(c("First Communions per 1000 Catholics","First Communions","Catholics in thousands") %in% names(dc))) {
-  dc[["First Communions per 1000 Catholics"]] <- round(safe_div(dc[["First Communions"]], dc[["Catholics in thousands"]]*1000, 1000), 2)
+if (all(c("First Communions per 1000 Catholics", "First Communions", "Catholics in thousands") %in% names(dc))) {
+  dc[["First Communions per 1000 Catholics"]] <- round(safe_div(dc[["First Communions"]], dc[["Catholics in thousands"]] * 1000, 1000), 2)
 }
-# Shares you keep in your data
-if (all(c("Share of adult baptisms (people over 7 years old)","Adult baptisms (people over 7 years old)","Baptisms") %in% names(dc))) {
+
+# Recompute shares.
+if (all(c("Share of adult baptisms (people over 7 years old)", "Adult baptisms (people over 7 years old)", "Baptisms") %in% names(dc))) {
   dc[["Share of adult baptisms (people over 7 years old)"]] <- round(safe_div(dc[["Adult baptisms (people over 7 years old)"]], dc[["Baptisms"]]), 2)
 }
-if (all(c("Share of mixed marriages (among those celebrated with ecclesiastical rite)","Mixed marriages","Marriages") %in% names(dc))) {
+if (all(c("Share of mixed marriages (among those celebrated with ecclesiastical rite)", "Mixed marriages", "Marriages") %in% names(dc))) {
   dc[["Share of mixed marriages (among those celebrated with ecclesiastical rite)"]] <- round(safe_div(dc[["Mixed marriages"]], dc[["Marriages"]]), 2)
 }
-# Vocation/ordination/departure rates
+
+# Recompute vocation/ordination/departure rates.
 if (all(c("Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants",
-          "Candidates for diocesan and religious clergy in philosophy+theology centres","Inhabitants in thousands") %in% names(dc))) {
+          "Candidates for diocesan and religious clergy in philosophy+theology centres", "Inhabitants in thousands") %in% names(dc))) {
   dc[["Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants"]] <-
     round(safe_div(dc[["Candidates for diocesan and religious clergy in philosophy+theology centres"]],
-                   dc[["Inhabitants in thousands"]]*1000, 100000), 2)
+                   dc[["Inhabitants in thousands"]] * 1000, 100000), 2)
 }
 if (all(c("Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics",
-          "Candidates for diocesan and religious clergy in philosophy+theology centres","Catholics in thousands") %in% names(dc))) {
+          "Candidates for diocesan and religious clergy in philosophy+theology centres", "Catholics in thousands") %in% names(dc))) {
   dc[["Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics"]] <-
     round(safe_div(dc[["Candidates for diocesan and religious clergy in philosophy+theology centres"]],
-                   dc[["Catholics in thousands"]]*1000, 100000), 2)
+                   dc[["Catholics in thousands"]] * 1000, 100000), 2)
 }
 if (all(c("Ordination rate - Yearly ordinations per 100 philosophy+theology students for diocesan priesthood",
-          "Yearly ordinations of diocesan priests","Candidates for diocesan clergy in philosophy+theology centres") %in% names(dc))) {
+          "Yearly ordinations of diocesan priests", "Candidates for diocesan clergy in philosophy+theology centres") %in% names(dc))) {
   dc[["Ordination rate - Yearly ordinations per 100 philosophy+theology students for diocesan priesthood"]] <-
     round(safe_div(dc[["Yearly ordinations of diocesan priests"]],
                    dc[["Candidates for diocesan clergy in philosophy+theology centres"]], 100), 2)
@@ -567,13 +587,15 @@ if (all(c("Departures per 100 enrolled students in philosophy+theology centres f
     round(safe_div(dc[["Students in philosophy+theology centres for diocesan clergy who left seminary"]],
                    dc[["Candidates for diocesan clergy in philosophy+theology centres"]], 100), 2)
 }
-# New: Philosophy+theology candidates per 100 priests
+
+# Recompute philosophy+theology candidates per 100 priests.
 if (all(c("Philosophy+theology candidates for diocesan and religious clergy per 100 priests",
           "Candidates for diocesan and religious clergy in philosophy+theology centres") %in% names(dc)) && !all(is.na(priests_total))) {
   dc[["Philosophy+theology candidates for diocesan and religious clergy per 100 priests"]] <-
     round(safe_div(dc[["Candidates for diocesan and religious clergy in philosophy+theology centres"]], priests_total, 100), 2)
 }
-# New lagged computations for shares
+
+# Compute lagged values for diocesan priest shares.
 dc <- dc %>%
   arrange(country, Year) %>%
   group_by(country) %>%
@@ -602,33 +624,39 @@ if (all(c("Yearly ordinations minus deaths and defections of diocesan priests as
   dc[["Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1"]] <-
     round(safe_div(net_ord, dc[["prev_inc_priests"]], 100), 2)
 }
-# Weighted averages (equivalent to combination)
-if (all(c("Average area of ecclesiastical territories in km^2","Area in km^2","Ecclesiastical territories (total)") %in% names(dc))) {
+
+# Recompute weighted averages.
+if (all(c("Average area of ecclesiastical territories in km^2", "Area in km^2", "Ecclesiastical territories (total)") %in% names(dc))) {
   dc[["Average area of ecclesiastical territories in km^2"]] <-
     round(safe_div(dc[["Area in km^2"]], dc[["Ecclesiastical territories (total)"]]), 2)
 }
-if (all(c("Average diocesan area (in km^2)","Area in km^2","Ecclesiastical territories (total)") %in% names(dc))) {
+if (all(c("Average diocesan area (in km^2)", "Area in km^2", "Ecclesiastical territories (total)") %in% names(dc))) {
   dc[["Average diocesan area (in km^2)"]] <-
     round(safe_div(dc[["Area in km^2"]], dc[["Ecclesiastical territories (total)"]]), 2)
 }
-# Apostolic workforce share
+
+# Recompute apostolic workforce share.
 if (all(c("Priests and bishops as share of apostolic workforce",
-          "Bishops (total)","Catechists","Lay missionaries") %in% names(dc)) &&
-    ( "Priests (diocesan and religious)" %in% names(dc) ||
-      all(c("Diocesan priests (total)","Religious priests") %in% names(dc)) )) {
+          "Bishops (total)", "Catechists", "Lay missionaries") %in% names(dc)) &&
+    ("Priests (diocesan and religious)" %in% names(dc) ||
+     all(c("Diocesan priests (total)", "Religious priests") %in% names(dc)))) {
   
-  priests_total <- if ("Priests (diocesan and religious)" %in% names(dc))
+  priests_total <- if ("Priests (diocesan and religious)" %in% names(dc)) {
     dc[["Priests (diocesan and religious)"]]
-  else
+  } else {
     dc[["Diocesan priests (total)"]] + dc[["Religious priests"]]
+  }
   
   workforce <- priests_total + dc[["Bishops (total)"]] + dc[["Catechists"]] + dc[["Lay missionaries"]]
   dc[["Priests and bishops as share of apostolic workforce"]] <-
     round(safe_div(priests_total + dc[["Bishops (total)"]], workforce), 2)
 }
-# Commit recomputed values
+
+# Commit all recomputed values back to data_countries.
 data_countries <- dc
-# Define variables to exclude from Map tab
+
+# ---- Define Excluded Variables for Map Tab ----
+# List variables to exclude from the "Map" tab's variable selection menu.
 excluded_vars <- c(
   "Area in km^2",
   "prev_inc_priests",
@@ -649,20 +677,25 @@ excluded_vars <- c(
   "Candidates for diocesan and religious clergy in philosophy+theology centres - index numbers (base 2013 = 100)",
   "Students for diocesan and religious clergy in secondary schools - index numbers (base 2013 = 100)"
 )
-# Only include numeric variables with country-level data and not excluded
+
+# ---- Define Allowed Variables for Map Tab ----
+# Select numeric variables excluding 'Year' and those in excluded_vars.
 allowed_variables <- setdiff(
   names(data_countries)[sapply(data_countries, is.numeric) & names(data_countries) != "Year"],
   excluded_vars
 )
 
-#Rematching
+# ---- Final Map Data Rematching ----
+# Re-merge the world map with corrected country data.
 map_data <- left_join(world, data_countries, by = c("name" = "country"))
 
-#Verification step 
+# ---- Verify Unmatched Countries After Corrections ----
+# Check for any remaining unmatched countries and print them.
 unmatched_after_fix <- anti_join(data_countries, world, by = c("country" = "name"))
 print(unique(unmatched_after_fix$country))
 
-# Keep only variables with data for more than one year
+# ---- Identify Time Series Variables ----
+# Filter variables that have data for more than one year for time series use.
 time_series_vars <- allowed_variables[
   sapply(allowed_variables, function(var) {
     years <- data_countries %>%
@@ -673,19 +706,15 @@ time_series_vars <- allowed_variables[
   })
 ]
 
-# ---- UI layout ----
-# 1. Get the list of unique, non-missing, non-empty country names from the data
+# ---- UI Layout ----
+# Prepare country choices for the search input.
 all_countries <- sort(unique(data_countries$country))
-# Remove any NA values or purely empty strings that might be in the country list
 all_countries <- all_countries[!is.na(all_countries) & all_countries != ""]
-# 2. Create a named list for selectizeInput choices
-# The 'names' of this list are what the user sees in the dropdown.
-# The 'values' of this list are what Shiny passes to the server logic.
-# For countries, it's common for them to be the same.
 country_choices_list <- as.list(all_countries)
-names(country_choices_list) <- all_countries # Assign each country name as its own list element's name
+names(country_choices_list) <- all_countries
 final_country_dropdown_choices <- c("Type to search..." = "", country_choices_list)
 
+# Define the Shiny UI with custom styles and layout.
 ui <- tagList(
   tags$head(
     tags$style(HTML("
@@ -703,8 +732,8 @@ ui <- tagList(
     left: 0;
     z-index: 1;
   }
-  .leaflet-container { 
-    background: #ececec !important; 
+  .leaflet-container {
+    background: #ececec !important;
     height: 100% !important;
     width: 100% !important;
   }
@@ -749,15 +778,14 @@ ui <- tagList(
   }
   .ts-wrap { height: calc(100vh - 150px); }
  .ts-sidebar {
-  max-height: calc(100vh - 190px); 
+  max-height: calc(100vh - 190px);
   overflow-y: auto;
-  background-color: #f8f9fa;         
+  background-color: #f8f9fa;
   border-radius: 8px;
   border: 1px solid #dee2e6;
   padding: 15px;
 }
-
-")),useShinyjs() 
+")), useShinyjs()
   ),
   
   navbarPage("Annuarium Statisticum Ecclesiae", id = "navbar", theme = shinytheme("flatly"),
@@ -818,8 +846,8 @@ ui <- tagList(
                           br()
                         )
                       )
-             ), 
-             #Time Serie TAB
+             ),
+             # Time Series TAB
              tabPanel("Time Series",
                       fluidRow(
                         column(
@@ -841,19 +869,16 @@ ui <- tagList(
                         column(
                           width = 9,
                           div(class = "ts-wrap",
-                              plotlyOutput("ts_plot", height = "100%")  
+                              plotlyOutput("ts_plot", height = "100%")
                           )
                         )
                       )
              )
   )
-             
-) 
+)
 
-# ---- Server logic ---- 
-
-# ---- Helper to standardize macroregion names ----
-
+# ---- Server Logic ----
+# Helper function to standardize macroregion names for consistency in plotting.
 TARGET_REGIONS <- c(
   "South and Far East Asia",
   "Africa",
@@ -864,15 +889,14 @@ TARGET_REGIONS <- c(
   "Central America",
   "Oceania"
 )
-
 standardize_macro <- function(df, col = "macroregion") {
   df %>%
-    filter(!.data[[col]] %in% c("World", "America", "Asia")) %>%   # drop aggregates
+    filter(!.data[[col]] %in% c("World", "America", "Asia")) %>% # drop aggregates
     mutate(
       macro_simplified = dplyr::case_when(
         .data[[col]] %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
-        .data[[col]] %in% c("South East and Far East Asia", "South & Far East Asia")    ~ "South and Far East Asia",
-        .data[[col]] == "Middle East"                                                    ~ "Middle East Asia",
+        .data[[col]] %in% c("South East and Far East Asia", "South & Far East Asia") ~ "South and Far East Asia",
+        .data[[col]] == "Middle East" ~ "Middle East Asia",
         TRUE ~ .data[[col]]
       )
     ) %>%
@@ -880,25 +904,24 @@ standardize_macro <- function(df, col = "macroregion") {
     mutate(macro_simplified = factor(macro_simplified, levels = TARGET_REGIONS))
 }
 
-
-
+# Define the server function for the Shiny app.
 server <- function(input, output, session) {
   
-  # ---- Handle map download with full variable names ----
-  
+  # ---- Handle Map Download ----
+  # Generate filename and content for downloading the map as PNG.
   output$download_map <- downloadHandler(
     filename = function() {
       ml <- mode_label()
-      paste0("map_export_", input$variable, "_", input$year, 
-             switch(ml, 
-                    "absolute" = "", 
-                    "per_capita" = "_per_capita", 
+      paste0("map_export_", input$variable, "_", input$year,
+             switch(ml,
+                    "absolute" = "",
+                    "per_capita" = "_per_capita",
                     "per_catholic" = "_per_catholic"), ".png")
     },
     content = function(file) {
-      ml <- mode_label() 
+      ml <- mode_label()
       library(htmlwidgets)
-      # Filter data for the selected year and apply display mode
+      # Filter data for the selected year and apply display mode.
       filtered_data <- map_data %>% filter(Year == input$year)
       if (as.integer(input$year) == 2022 && input$display_mode == "per_capita") {
         filtered_data[[input$variable]] <- ifelse(
@@ -914,7 +937,7 @@ server <- function(input, output, session) {
         )
       }
       
-      # Ensure valid values for color palette to avoid domain errors
+      # Ensure valid values for color palette to avoid domain errors.
       valid_values <- filtered_data[[input$variable]][!is.na(filtered_data[[input$variable]])]
       pal <- if (length(valid_values) > 0) {
         colorNumeric(palette = viridisLite::plasma(256), domain = valid_values, na.color = "transparent")
@@ -922,7 +945,7 @@ server <- function(input, output, session) {
         colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
       }
       
-      leaflet_obj <-leaflet(filtered_data) %>%
+      leaflet_obj <- leaflet(filtered_data) %>%
         addProviderTiles("CartoDB.Positron") %>%
         fitBounds(-110, -40, 120, 65) %>%
         addPolygons(
@@ -938,12 +961,11 @@ server <- function(input, output, session) {
                                 "in", input$year),
                   position = "bottomright")
       
-      # Create a title overlay using prependContent
-      # Add title directly inside the map using leaflet::addControl()
+      # Add title directly inside the map using leaflet::addControl().
       leaflet_obj <- leaflet_obj %>%
         addControl(
-          html = paste0("<div style='font-size:20px; font-weight:bold; background-color:rgba(255,255,255,0.7); 
-                  padding:6px 12px; border-radius:6px;'>", 
+          html = paste0("<div style='font-size:20px; font-weight:bold; background-color:rgba(255,255,255,0.7);
+                  padding:6px 12px; border-radius:6px;'>",
                         switch(ml,
                                "absolute" = input$variable, # Use full variable name
                                "per_capita" = paste(input$variable, "per thousand inhabitants"),
@@ -952,7 +974,7 @@ server <- function(input, output, session) {
           position = "topright"
         ) %>%
         addControl(
-          html = "<div style='font-size:13px; background-color:rgba(255,255,255,0.6); padding:4px 10px; 
+          html = "<div style='font-size:13px; background-color:rgba(255,255,255,0.6); padding:4px 10px;
             border-radius:5px;'>Source: Annuarium Statisticum Ecclesiae</div>",
           position = "bottomleft"
         )
@@ -963,20 +985,23 @@ server <- function(input, output, session) {
     }
   )
   
-  # ---- Initialize reactive values for selections ----
+  # ---- Initialize Reactive Values ----
+  # Reactive value for selected country.
   selected_country <- reactiveVal(NULL)
+  # Reactive values for synchronizing selections across tabs.
   selections <- reactiveValues(
-    variable = NULL, 
+    variable = NULL,
     year = NULL,
-    from_tab = NULL  # Track which tab triggered the change
+    from_tab = NULL # Track which tab triggered the change
   )
   
+  # Reactive for display mode label.
   mode_label <- reactive({
     if (isTRUE(as.integer(input$year) == 2022)) input$display_mode else "absolute"
   })
   
   
-  # Helper function to update time series selections
+  # Helper function to update time series for a selected country.
   update_time_series_for_country <- function(country) {
     req(country)
     if (country %in% data_countries$country) {
@@ -986,8 +1011,9 @@ server <- function(input, output, session) {
       })
     }
   }
-  # ---- Synchronize variable and year selections ----
-  # Update selections from Map tab
+  
+  # ---- Synchronize Variable and Year Selections ----
+  # Update from Map tab.
   observeEvent(input$variable, {
     if (is.null(selections$from_tab) || selections$from_tab != "explorer") {
       selections$variable <- input$variable
@@ -1001,7 +1027,7 @@ server <- function(input, output, session) {
     }
   })
   
-  # Update selections from Data Explorer tab
+  # Update from Data Explorer tab.
   observeEvent(input$explorer_variable, {
     req(input$explorer_variable)
     if (input$explorer_variable != "" && (is.null(selections$from_tab) || selections$from_tab != "map")) {
@@ -1016,7 +1042,7 @@ server <- function(input, output, session) {
     }
   })
   
-  # Update selections from Time Series tab
+  # Update from Time Series tab.
   observeEvent(input$ts_variable, {
     if (is.null(selections$from_tab) || selections$from_tab != "map") {
       selections$variable <- input$ts_variable
@@ -1026,7 +1052,7 @@ server <- function(input, output, session) {
     }
   })
   
-  # Year synchronization
+  # Synchronize years from Map tab.
   observeEvent(input$year, {
     if (is.null(selections$from_tab) || selections$from_tab != "explorer") {
       selections$year <- input$year
@@ -1034,13 +1060,16 @@ server <- function(input, output, session) {
     }
   })
   
+  # Synchronize years from Data Explorer tab.
   observeEvent(input$explorer_year, {
     if (is.null(selections$from_tab) || selections$from_tab != "map") {
       selections$year <- input$explorer_year
       updateSelectInput(session, "year", selected = input$explorer_year)
     }
   })
-  # ---- Update available years based on variable selection ----
+  
+  # ---- Update Available Years Based on Variable ----
+  # Dynamically update year choices based on data availability for the selected variable.
   observeEvent(input$variable, {
     available_years <- sort(unique(data_countries %>%
                                      filter(!is.na(.data[[input$variable]])) %>%
@@ -1048,7 +1077,8 @@ server <- function(input, output, session) {
     updateSelectInput(session, "year", choices = available_years, selected = max(available_years))
   })
   
-  #---- Limit display modes to 2022 only ----
+  # ---- Limit Display Modes to 2022 ----
+  # Restrict per capita/per Catholic modes to 2022 data only.
   observeEvent(input$year, {
     if (isTRUE(as.integer(input$year) == 2022)) {
       updateRadioButtons(
@@ -1056,7 +1086,7 @@ server <- function(input, output, session) {
         choices = list("Absolute values" = "absolute",
                        "Per thousand inhabitants" = "per_capita",
                        "Per thousand Catholics" = "per_catholic"),
-        selected = if (input$display_mode %in% c("absolute","per_capita","per_catholic")) input$display_mode else "absolute"
+        selected = if (input$display_mode %in% c("absolute", "per_capita", "per_catholic")) input$display_mode else "absolute"
       )
     } else {
       updateRadioButtons(
@@ -1068,9 +1098,8 @@ server <- function(input, output, session) {
   })
   
   
-  # ---- Render the interactive world map with abbreviated names in legend ----
- 
-  
+  # ---- Render Interactive World Map ----
+  # Create the Leaflet map with selected variable data.
   output$map <- renderLeaflet({
     ml <- mode_label()
     req(input$variable, input$year)
@@ -1088,7 +1117,7 @@ server <- function(input, output, session) {
         NA_real_
       )
     }
-    # Ensure valid values for color palette
+    # Ensure valid values for color palette.
     valid_values <- filtered_data[[input$variable]][!is.na(filtered_data[[input$variable]])]
     pal <- if (length(valid_values) > 0) {
       colorNumeric(palette = viridisLite::plasma(256), domain = valid_values, na.color = "transparent")
@@ -1097,9 +1126,9 @@ server <- function(input, output, session) {
     }
     
     leaflet(filtered_data, options = leafletOptions(
-      maxBounds = list(c(-120, -240), c(120, 240)), 
+      maxBounds = list(c(-120, -240), c(120, 240)),
       maxBoundsViscosity = 1,
-      zoomControl = FALSE  # disable default (top-left)
+      zoomControl = FALSE # disable default (top-left)
     )) %>%
       addProviderTiles("CartoDB.Voyager", options = providerTileOptions(noWrap = TRUE)) %>%
       setView(lng = 0, lat = 30, zoom = 3) %>%
@@ -1118,26 +1147,28 @@ server <- function(input, output, session) {
         dashArray = "3",
         fillOpacity = 0.6,
         layerId = ~name,
-        label = ~lapply(paste0("<strong>", name, "</strong><br/>", 
+        label = ~lapply(paste0("<strong>", name, "</strong><br/>",
                                switch(ml,
                                       "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
                                       "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
-                                      "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")), 
-                               ": ", 
+                                      "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
+                               ": ",
                                ifelse(ml != "absolute" & filtered_data[[input$variable]] == 0,
                                       "<0.01",
                                       formatC(filtered_data[[input$variable]], format = "f", digits = 2, big.mark = ","))), htmltools::HTML),
         highlight = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.8, bringToFront = TRUE)
       ) %>%
-      addLegend(pal = pal, values = filtered_data[[input$variable]], 
+      addLegend(pal = pal, values = filtered_data[[input$variable]],
                 title = paste(switch(ml,
                                      "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
                                      "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
                                      "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
-                              "in", input$year), 
+                              "in", input$year),
                 position = "bottomright")
   })
-  #---- Time series output ----
+  
+  # ---- Time Series Region Selector UI ----
+  # Dynamically render region selector based on level (Country or Macroregion).
   output$ts_region_selector <- renderUI({
     if (input$ts_level == "Country") {
       selectInput("ts_regions", "Select country/countries:",
@@ -1151,7 +1182,8 @@ server <- function(input, output, session) {
     }
   })
   
-  # ---- Handle map click events to highlight countries ----
+  # ---- Handle Map Click Events ----
+  # Highlight clicked country and update selections.
   observeEvent(input$map_shape_click, {
     req(input$map_shape_click$id, input$year)
     clicked_country <- input$map_shape_click$id
@@ -1165,7 +1197,7 @@ server <- function(input, output, session) {
     selected_country(clicked_country)
     updateSelectInput(session, "country_search", selected = clicked_country)
     
-    # Update time series only if variable is valid
+    # Update time series only if variable is valid.
     if (input$variable %in% time_series_vars) {
       update_time_series_for_country(clicked_country)
       showNotification(
@@ -1194,12 +1226,13 @@ server <- function(input, output, session) {
       )
   })
   
-  # ---- Handle country search selection ----
+  # ---- Handle Country Search Selection ----
+  # Highlight selected country from search and update view.
   observeEvent(input$country_search, {
     req(input$country_search, input$year)
     selected_country(input$country_search)
     
-    # Update time series only if variable is valid
+    # Update time series only if variable is valid.
     if (input$variable %in% time_series_vars) {
       update_time_series_for_country(input$country_search)
     }
@@ -1222,21 +1255,22 @@ server <- function(input, output, session) {
       )
   })
   
-#---- When switching to time series tab, ensure proper selections are applied ----
+  # ---- Sync Selections on Tab Switch to Time Series ----
+  # Ensure time series tab reflects current selections when activated.
   observeEvent(input$navbar, {
     if (input$navbar == "Time Series") {
-      # Ensure variable is valid for time series
+      # Ensure variable is valid for time series.
       valid_variable <- if (!is.null(input$variable) && input$variable %in% time_series_vars) {
         input$variable
       } else {
-        time_series_vars[1]  # Fallback to first valid time series variable
+        time_series_vars[1] # Fallback to first valid time series variable
       }
       
-      # Update variable and level
+      # Update variable and level.
       updateSelectInput(session, "ts_variable", selected = valid_variable)
       if (!is.null(selected_country()) && selected_country() %in% data_countries$country) {
         updateRadioButtons(session, "ts_level", selected = "Country")
-        # Use a longer delay to ensure UI is ready
+        # Use a longer delay to ensure UI is ready.
         shinyjs::delay(500, {
           updateSelectInput(session, "ts_regions", selected = selected_country())
         })
@@ -1248,7 +1282,9 @@ server <- function(input, output, session) {
       }
     }
   })
-  # ---- Reset map view and clear selections ----
+  
+  # ---- Reset Map View and Selections ----
+  # Clear highlights and reset view on reset button click.
   observeEvent(input$reset_map, {
     selected_country(NULL)
     leafletProxy("map") %>%
@@ -1257,17 +1293,18 @@ server <- function(input, output, session) {
     updateSelectInput(session, "country_search", selected = "")
     updateRadioButtons(session, "display_mode", selected = "absolute")
     
-    # Reset time series to default
+    # Reset time series to default.
     updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
     updateRadioButtons(session, "ts_level", selected = "Macroregion")
     updateSelectInput(session, "ts_regions", selected = TARGET_REGIONS)
     
-    # Reset data explorer
+    # Reset data explorer.
     updateSelectInput(session, "explorer_variable", selected = "")
     updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
   })
-  # ---- Display country-specific information with full variable names ----
- 
+  
+  # ---- Display Country-Specific Information ----
+  # Render HTML with country info based on selection.
   output$country_info <- renderUI({
     ml <- mode_label()
     req(selected_country())
@@ -1294,17 +1331,17 @@ server <- function(input, output, session) {
       } else {
         format(round(as.numeric(value), ifelse(ml == "absolute", 0, 2)), big.mark = ",", scientific = FALSE)
       }
-      HTML(paste0("<strong>", selected_country(), "</strong><br/>", 
+      HTML(paste0("<strong>", selected_country(), "</strong><br/>",
                   switch(ml,
                          "absolute" = input$variable, # Use full variable name
                          "per_capita" = paste(input$variable, "per thousand inhabitants"),
-                         "per_catholic" = paste(input$variable, "per thousand Catholics")), 
+                         "per_catholic" = paste(input$variable, "per thousand Catholics")),
                   " in ", input$year, ": ", formatted))
     }
   })
   
-  # ---- Render macroregion histogram with abbreviated name in caption ----
-  
+  # ---- Render Macroregion Histogram ----
+  # Generate bar plot for continent-level distribution.
   output$varPlot <- renderPlot({
     
     ml <- mode_label()
@@ -1342,9 +1379,9 @@ server <- function(input, output, session) {
     }
     
     ggplot(filtered_macro, aes(x = reorder(macroregion, value), y = value)) +
-      geom_col(fill = "#f7f7f7", color = "gray80", linewidth = 0.3, alpha = 1)+
+      geom_col(fill = "#f7f7f7", color = "gray80", linewidth = 0.3, alpha = 1) +
       geom_text(
-        aes(label = ifelse(ml != "absolute" & value == 0, "<0.01", 
+        aes(label = ifelse(ml != "absolute" & value == 0, "<0.01",
                            scales::comma(value, accuracy = ifelse(ml == "absolute", 1, 0.01)))),
         hjust = -0.05, size = 2.9
       ) +
@@ -1367,13 +1404,14 @@ server <- function(input, output, session) {
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         panel.grid.major.x = element_blank(),
-        panel.grid.major.y = element_line(colour = "#CCCCCC1A"),  # More transparent (~0.25 alpha)
-        panel.grid.minor = element_line(colour = "#CCCCCC1A"),    # More transparent (~0.1 alpha)
+        panel.grid.major.y = element_line(colour = "#CCCCCC1A"), # More transparent (~0.25 alpha)
+        panel.grid.minor = element_line(colour = "#CCCCCC1A"), # More transparent (~0.1 alpha)
         axis.text.y = element_text(size = 8)
       )
   })
   
-  #---- Time Series plot ---- 
+  # ---- Render Time Series Plot ----
+  # Generate Plotly line chart for time series data.
   output$ts_plot <- renderPlotly({
     req(input$ts_variable, input$ts_regions, input$ts_level)
     
@@ -1384,7 +1422,7 @@ server <- function(input, output, session) {
       filter(.data[[region_col]] %in% input$ts_regions) %>%
       select(Year, !!sym(region_col), !!sym(input$ts_variable)) %>%
       rename(region = !!sym(region_col), value = !!sym(input$ts_variable)) %>%
-      filter(!is.na(value))  # Remove NA values
+      filter(!is.na(value)) # Remove NA values
     
     if (input$ts_level == "Macroregion") {
       plot_data <- data_macroregions %>%
@@ -1413,15 +1451,15 @@ server <- function(input, output, session) {
       y = ~value,
       color = ~region,
       colors = RColorBrewer::brewer.pal(max(3, length(unique(plot_data$region))), "Set2"),
-      type = "scatter",  # Explicitly specify trace type
-      mode = "lines+markers",  # Explicitly specify mode
+      type = "scatter", # Explicitly specify trace type
+      mode = "lines+markers", # Explicitly specify mode
       hoverinfo = "text",
       text = ~paste0(
         "<b>", region, "</b><br>",
         "Year: ", Year, "<br>",
         "Value: ", round(value, 2)
       ),
-      line = list(width = 2),  # Corrected typo: removed 'list10:'
+      line = list(width = 2), # Corrected typo: removed 'list10:'
       marker = list(size = 6, opacity = 0.8)
     ) %>%
       layout(
@@ -1433,24 +1471,26 @@ server <- function(input, output, session) {
       ) %>%
       config(displayModeBar = FALSE, responsive = TRUE)
   })
-  #--- Reset Button ---- 
+  
+  # ---- Time Series Reset Button ----
+  # Reset time series selections to defaults.
   observeEvent(input$reset_ts, {
     updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
     updateRadioButtons(session, "ts_level", selected = "Macroregion")
     updateSelectInput(session, "ts_regions", selected = TARGET_REGIONS)
     
-    # Clear country selection
+    # Clear country selection.
     selected_country(NULL)
     leafletProxy("map") %>% clearGroup("highlight")
     updateSelectInput(session, "country_search", selected = "")
     
-    # Reset data explorer
+    # Reset data explorer.
     updateSelectInput(session, "explorer_variable", selected = "")
     updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
   })
-  #---- Download Button ---- 
   
-  # Create a static plot for the download 
+  # ---- Time Series Download Button ----
+  # Create a static ggplot for downloading the time series plot.
   plot_ts_static <- reactive({
     req(input$ts_variable, input$ts_regions, input$ts_level)
     
@@ -1494,7 +1534,8 @@ server <- function(input, output, session) {
   )
   
   
-  # ---- Render data table for explorer tab ----
+  # ---- Render Data Table for Explorer Tab ----
+  # Display data table with optional per capita calculations for 2022.
   output$table <- renderDT({
     if (is.null(input$explorer_variable) || input$explorer_variable == "") {
       return(datatable(data.frame(Message = "Please select a variable to explore.")))
@@ -1520,10 +1561,10 @@ server <- function(input, output, session) {
             NA_real_
           )
         ) %>%
-        select(-`Inhabitants in thousands`, -`Catholics in thousands`)   # 🔥 drop context cols
+        select(-`Inhabitants in thousands`, -`Catholics in thousands`) # drop context cols
     } else {
       filtered <- base_cols %>%
-        select(-`Inhabitants in thousands`, -`Catholics in thousands`)   # 🔥 drop context cols
+        select(-`Inhabitants in thousands`, -`Catholics in thousands`) # drop context cols
     }
     
     if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
@@ -1532,7 +1573,8 @@ server <- function(input, output, session) {
     datatable(filtered, options = list(pageLength = 20))
   })
   
-  # ---- Update available years for explorer tab ----
+  # ---- Update Available Years for Explorer Tab ----
+  # Dynamically update years based on variable data availability.
   observeEvent(input$explorer_variable, {
     req(input$explorer_variable)
     available_years <- sort(unique(data_countries %>%
@@ -1541,17 +1583,20 @@ server <- function(input, output, session) {
     updateSelectInput(session, "explorer_year", choices = available_years, selected = max(available_years))
   })
   
-  # ---- Reset table filters ----
+  # ---- Reset Table Filters ----
+  # Clear selections in data explorer tab.
   observeEvent(input$reset_table, {
     updateSelectInput(session, "explorer_variable", selected = "")
     updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
     selected_country(NULL)
     
-    # Clear map highlight
+    # Clear map highlight.
     leafletProxy("map") %>% clearGroup("highlight")
     updateSelectInput(session, "country_search", selected = "")
   })
-  # ---- Download data as CSV ----
+  
+  # ---- Download Data as CSV ----
+  # Handler for CSV download from data explorer.
   output$download_csv <- downloadHandler(
     filename = function() {
       paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".csv")
@@ -1568,7 +1613,8 @@ server <- function(input, output, session) {
     }
   )
   
-  # ---- Download data as Excel ----
+  # ---- Download Data as Excel ----
+  # Handler for Excel download from data explorer.
   output$download_excel <- downloadHandler(
     filename = function() {
       paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".xlsx")
@@ -1586,6 +1632,5 @@ server <- function(input, output, session) {
   )
 }
 
-# ---- Launch the app ----
+# ---- Launch the Shiny App ----
 shinyApp(ui, server)
-
