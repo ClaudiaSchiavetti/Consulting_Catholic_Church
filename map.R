@@ -3,9 +3,9 @@
 # It checks if each package is installed and installs it if not, then loads them.
 
 required_packages <- c(
-  "shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", 
-  "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "mapview", 
-  "webshot", "writexl", "plotly", "shinyjs"
+  "shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes",
+  "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "webshot",
+  "writexl", "plotly", "shinyjs", "viridisLite", "ggplot2", "htmlwidgets"
 )
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
@@ -13,29 +13,13 @@ for (pkg in required_packages) {
   }
 }
 
+# Load the libraries after ensuring they are installed.
+lapply(required_packages, library, character.only = TRUE)
+useShinyjs()
 # Ensure PhantomJS is installed for webshot functionality (used for map downloads).
 if (!webshot::is_phantomjs_installed()) {
   webshot::install_phantomjs()
 }
-
-# Load the libraries after ensuring they are installed.
-library(shiny)
-library(leaflet)
-library(dplyr)
-library(readr)
-library(sf)
-library(DT)
-library(shinythemes)
-library(rnaturalearth)
-library(rnaturalearthdata)
-library(viridisLite)
-library(ggplot2)
-library(RColorBrewer)
-library(webshot)
-library(writexl)
-library(plotly)
-library(shinyjs)
-useShinyjs()
 
 
 # ---- Docker Instructions ----
@@ -128,8 +112,7 @@ map_data <- left_join(world, data_countries, by = c("name" = "Region"))
 # Identify countries in data that do not match the world map.
 
 unmatched_in_data <- anti_join(data_countries, world, by = c("Region" = "name"))
-print(unmatched_in_data$Region)
-
+#print(unmatched_in_data$Region)
 
 # ---- Manual Country Name Corrections ----
 # Define a vector of corrections for mismatched country names.
@@ -221,7 +204,7 @@ data_countries <- data_countries %>%
     across(
       all_of(num_cols),
       ~ if (all(is.na(.))) NA_real_ else sum(., na.rm = TRUE)
-    ), 
+    ),
     .groups = "drop"
   )
 
@@ -302,7 +285,6 @@ if (all(c("Confirmations per 1000 Catholics", "Confirmations", "Catholics in tho
 if (all(c("First Communions per 1000 Catholics", "First Communions", "Catholics in thousands") %in% names(dc))) {
   dc[["First Communions per 1000 Catholics"]] <- round(safe_div(dc[["First Communions"]], dc[["Catholics in thousands"]] * 1000, 1000), 2)
 }
-
 # Recompute shares.
 if (all(c("Share of adult baptisms (people over 7 years old)", "Adult baptisms (people over 7 years old)", "Baptisms") %in% names(dc))) {
   dc[["Share of adult baptisms (people over 7 years old)"]] <- round(safe_div(dc[["Adult baptisms (people over 7 years old)"]], dc[["Baptisms"]]), 2)
@@ -390,7 +372,6 @@ if (all(c("Priests and bishops as share of apostolic workforce",
           "Bishops (total)", "Catechists", "Lay missionaries") %in% names(dc)) &&
     ("Priests (diocesan and religious)" %in% names(dc) ||
      all(c("Diocesan priests (total)", "Religious priests") %in% names(dc)))) {
-  
   priests_total <- if ("Priests (diocesan and religious)" %in% names(dc)) {
     dc[["Priests (diocesan and religious)"]]
   } else {
@@ -446,8 +427,7 @@ map_data <- left_join(world, data_countries, by = c("name" = "country"))
 
 # Check for any remaining unmatched countries and print them.
 unmatched_after_fix <- anti_join(data_countries, world, by = c("country" = "name"))
-#print(unique(unmatched_after_fix$country))
-
+# print(unique(unmatched_after_fix$country))
 
 # ---- Identify Time Series Variables ----
 # Filter variables that have data for more than one year for time series use.
@@ -476,74 +456,74 @@ final_country_dropdown_choices <- c("Type to search..." = "", country_choices_li
 ui <- tagList(
   tags$head(
     tags$style(HTML("
-  html, body {
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-  }
-  #map {
-    height: 100vh !important;
-    width: 100vw !important;
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 1;
-  }
-  .leaflet-container {
-    background: #ececec !important;
-    height: 100% !important;
-    width: 100% !important;
-  }
-  .leaflet-tile-pane { filter: grayscale(10%) brightness(1.15); }
-  .leaflet-control { font-size: 14px; }
-  .panel-default {
-    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-    border-radius: 10px;
-    z-index: 1000 !important;
-  }
-  .panel-default > .panel-heading {
-    background-color: #4e73df;
-    color: white;
-    font-weight: bold;
-  }
-  .navbar {
-    z-index: 1001 !important;
-  }
-  body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  }
-  .plotly, .js-plotly-plot, .plotly text {
-  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  }
-  .shiny-plot-output {
-    margin-top: 10px;
-  }
-   .panel-default .form-group {
-    margin-bottom: 15px;
-  }
-  div.tab-pane[data-value='Data Explorer'] .data-explorer-main {
-    overflow-y: auto !important;
-    max-height: 80vh !important;
-    padding: 15px;
-  }
-  .leaflet-top {
-    margin-top: 70px !important;
-  }
-  .panel-default hr {
-    margin-top: 5px;
-    margin-bottom: 5px;
-  }
-  .ts-wrap { height: calc(100vh - 150px); }
- .ts-sidebar {
-  max-height: calc(100vh - 190px);
-  overflow-y: auto;
-  background-color: #f8f9fa;
-  border-radius: 8px;
-  border: 1px solid #dee2e6;
-  padding: 15px;
-}
-")), useShinyjs()
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      #map {
+        height: 100vh !important;
+        width: 100vw !important;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 1;
+      }
+      .leaflet-container {
+        background: #ececec !important;
+        height: 100% !important;
+        width: 100% !important;
+      }
+      .leaflet-tile-pane { filter: grayscale(10%) brightness(1.15); }
+      .leaflet-control { font-size: 14px; }
+      .panel-default {
+        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+        border-radius: 10px;
+        z-index: 1000 !important;
+      }
+      .panel-default > .panel-heading {
+        background-color: #4e73df;
+        color: white;
+        font-weight: bold;
+      }
+      .navbar {
+        z-index: 1001 !important;
+      }
+      body {
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      }
+      .plotly, .js-plotly-plot, .plotly text {
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      }
+      .shiny-plot-output {
+        margin-top: 10px;
+      }
+      .panel-default .form-group {
+        margin-bottom: 15px;
+      }
+      div.tab-pane[data-value='Data Explorer'] .data-explorer-main {
+        overflow-y: auto !important;
+        max-height: 80vh !important;
+        padding: 15px;
+      }
+      .leaflet-top {
+        margin-top: 70px !important;
+      }
+      .panel-default hr {
+        margin-top: 5px;
+        margin-bottom: 5px;
+      }
+      .ts-wrap { height: calc(100vh - 150px); }
+      .ts-sidebar {
+        max-height: calc(100vh - 190px);
+        overflow-y: auto;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        padding: 15px;
+      }
+    ")), useShinyjs()
   ),
   
   navbarPage("Annuarium Statisticum Ecclesiae", id = "navbar", theme = shinytheme("flatly"),
@@ -587,7 +567,7 @@ ui <- tagList(
                           width = 3,
                           tags$div(
                             style = "background-color: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #dee2e6; font-size: 14px;",
-                            selectInput("explorer_variable", "Select variable:", choices = c("Select a variable..." = "", allowed_variables)), # Use full variable names
+                            selectInput("explorer_variable", "Select variable:", choices = c("Select a variable..." = "", allowed_variables)),
                             selectInput("explorer_year", "Select year:", choices = sort(unique(data_countries$Year))),
                             div(style = "margin-top: 10px;",
                                 downloadButton("download_csv", "CSV", class = "btn btn-sm btn-success"),
@@ -667,84 +647,6 @@ standardize_macro <- function(df, col = "macroregion") {
 # Define the server function for the Shiny app.
 server <- function(input, output, session) {
   
-  # ---- Handle Map Download ----
-  # Generate filename and content for downloading the map as PNG.
-  output$download_map <- downloadHandler(
-    filename = function() {
-      ml <- mode_label()
-      paste0("map_export_", input$variable, "_", input$year,
-             switch(ml,
-                    "absolute" = "",
-                    "per_capita" = "_per_capita",
-                    "per_catholic" = "_per_catholic"), ".png")
-    },
-    content = function(file) {
-      ml <- mode_label()
-      library(htmlwidgets)
-      # Filter data for the selected year and apply display mode.
-      filtered_data <- map_data %>% filter(Year == input$year)
-      if (as.integer(input$year) == 2022 && input$display_mode == "per_capita") {
-        filtered_data[[input$variable]] <- ifelse(
-          !is.na(filtered_data[["Inhabitants in thousands"]]) & filtered_data[["Inhabitants in thousands"]] > 0,
-          filtered_data[[input$variable]] / filtered_data[["Inhabitants in thousands"]],
-          NA_real_
-        )
-      } else if (as.integer(input$year) == 2022 && input$display_mode == "per_catholic") {
-        filtered_data[[input$variable]] <- ifelse(
-          !is.na(filtered_data[["Catholics in thousands"]]) & filtered_data[["Catholics in thousands"]] > 0,
-          filtered_data[[input$variable]] / filtered_data[["Catholics in thousands"]],
-          NA_real_
-        )
-      }
-      
-      # Ensure valid values for color palette to avoid domain errors.
-      valid_values <- filtered_data[[input$variable]][!is.na(filtered_data[[input$variable]])]
-      pal <- if (length(valid_values) > 0) {
-        colorNumeric(palette = viridisLite::plasma(256), domain = valid_values, na.color = "transparent")
-      } else {
-        colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
-      }
-      
-      leaflet_obj <- leaflet(filtered_data) %>%
-        addProviderTiles("CartoDB.Positron") %>%
-        fitBounds(-110, -40, 120, 65) %>%
-        addPolygons(
-          fillColor = ~pal(filtered_data[[input$variable]]),
-          color = "white", weight = 1, opacity = 0.45, fillOpacity = 0.6,
-          label = ~name
-        ) %>%
-        addLegend(pal = pal, values = filtered_data[[input$variable]],
-                  title = paste(switch(ml,
-                                       "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
-                                       "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
-                                       "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
-                                "in", input$year),
-                  position = "bottomright")
-      
-      # Add title directly inside the map using leaflet::addControl().
-      leaflet_obj <- leaflet_obj %>%
-        addControl(
-          html = paste0("<div style='font-size:20px; font-weight:bold; background-color:rgba(255,255,255,0.7);
-                  padding:6px 12px; border-radius:6px;'>",
-                        switch(ml,
-                               "absolute" = input$variable, # Use full variable name
-                               "per_capita" = paste(input$variable, "per thousand inhabitants"),
-                               "per_catholic" = paste(input$variable, "per thousand Catholics")),
-                        " - ", input$year, "</div>"),
-          position = "topright"
-        ) %>%
-        addControl(
-          html = "<div style='font-size:13px; background-color:rgba(255,255,255,0.6); padding:4px 10px;
-            border-radius:5px;'>Source: Annuarium Statisticum Ecclesiae</div>",
-          position = "bottomleft"
-        )
-      temp_html <- tempfile(fileext = ".html")
-      saveWidget(leaflet_obj, temp_html, selfcontained = TRUE)
-      # Take screenshot
-      webshot::webshot(temp_html, file = file, vwidth = 1600, vheight = 1000)
-    }
-  )
-  
   # ---- Initialize Reactive Values ----
   # Reactive value for selected country.
   selected_country <- reactiveVal(NULL)
@@ -760,6 +662,25 @@ server <- function(input, output, session) {
     if (isTRUE(as.integer(input$year) == 2022)) input$display_mode else "absolute"
   })
   
+  # Reactive for filtered map data
+  filtered_map_data <- reactive({
+    req(input$variable, input$year)
+    data <- map_data %>% filter(Year == input$year)
+    if (as.integer(input$year) == 2022 && input$display_mode == "per_capita") {
+      data[[input$variable]] <- ifelse(
+        !is.na(data[["Inhabitants in thousands"]]) & data[["Inhabitants in thousands"]] > 0,
+        data[[input$variable]] / data[["Inhabitants in thousands"]],
+        NA_real_
+      )
+    } else if (as.integer(input$year) == 2022 && input$display_mode == "per_catholic") {
+      data[[input$variable]] <- ifelse(
+        !is.na(data[["Catholics in thousands"]]) & data[["Catholics in thousands"]] > 0,
+        data[[input$variable]] / data[["Catholics in thousands"]],
+        NA_real_
+      )
+    }
+    data
+  })
   
   # Helper function to update time series for a selected country.
   update_time_series_for_country <- function(country) {
@@ -861,22 +782,9 @@ server <- function(input, output, session) {
   # ---- Render Interactive World Map ----
   # Create the Leaflet map with selected variable data.
   output$map <- renderLeaflet({
-    ml <- mode_label()
     req(input$variable, input$year)
-    filtered_data <- map_data %>% filter(Year == input$year)
-    if (as.integer(input$year) == 2022 && input$display_mode == "per_capita"){
-      filtered_data[[input$variable]] <- ifelse(
-        !is.na(filtered_data[["Inhabitants in thousands"]]) & filtered_data[["Inhabitants in thousands"]] > 0,
-        filtered_data[[input$variable]] / filtered_data[["Inhabitants in thousands"]],
-        NA_real_
-      )
-    } else if (as.integer(input$year) == 2022 && input$display_mode == "per_catholic") {
-      filtered_data[[input$variable]] <- ifelse(
-        !is.na(filtered_data[["Catholics in thousands"]]) & filtered_data[["Catholics in thousands"]] > 0,
-        filtered_data[[input$variable]] / filtered_data[["Catholics in thousands"]],
-        NA_real_
-      )
-    }
+    ml <- mode_label()
+    filtered_data <- filtered_map_data()
     # Ensure valid values for color palette.
     valid_values <- filtered_data[[input$variable]][!is.na(filtered_data[[input$variable]])]
     pal <- if (length(valid_values) > 0) {
@@ -893,12 +801,11 @@ server <- function(input, output, session) {
       addProviderTiles("CartoDB.Voyager", options = providerTileOptions(noWrap = TRUE)) %>%
       setView(lng = 0, lat = 30, zoom = 3) %>%
       htmlwidgets::onRender("
-    function(el, x) {
-      var map = this;
-      L.control.zoom({ position: 'topright' }).addTo(map);
-    }
-  ") %>%
-      
+        function(el, x) {
+          var map = this;
+          L.control.zoom({ position: 'topright' }).addTo(map);
+        }
+      ") %>%
       addPolygons(
         fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
@@ -909,23 +816,79 @@ server <- function(input, output, session) {
         layerId = ~name,
         label = ~lapply(paste0("<strong>", name, "</strong><br/>",
                                switch(ml,
-                                      "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
-                                      "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
+                                      "absolute" = variable_abbreviations[input$variable],
+                                      "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
                                       "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
                                ": ",
                                ifelse(ml != "absolute" & filtered_data[[input$variable]] == 0,
                                       "<0.01",
-                                      formatC(filtered_data[[input$variable]], format = "f", digits = 2, big.mark = ","))), htmltools::HTML),
+                                      formatC(filtered_data[[input$variable]], format = "f", digits = ifelse(ml == "absolute", 0, 2), big.mark = ","))), htmltools::HTML),
         highlight = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.8, bringToFront = TRUE)
       ) %>%
       addLegend(pal = pal, values = filtered_data[[input$variable]],
                 title = paste(switch(ml,
-                                     "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
-                                     "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
+                                     "absolute" = variable_abbreviations[input$variable],
+                                     "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
                                      "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
                               "in", input$year),
                 position = "bottomright")
   })
+  
+  # ---- Handle Map Download ----
+  # Generate filename and content for downloading the map as PNG.
+  output$download_map <- downloadHandler(
+    filename = function() {
+      ml <- mode_label()
+      paste0("map_export_", input$variable, "_", input$year,
+             switch(ml,
+                    "absolute" = "",
+                    "per_capita" = "_per_capita",
+                    "per_catholic" = "_per_catholic"), ".png")
+    },
+    content = function(file) {
+      ml <- mode_label()
+      filtered_data <- filtered_map_data()
+      valid_values <- filtered_data[[input$variable]][!is.na(filtered_data[[input$variable]])]
+      pal <- if (length(valid_values) > 0) {
+        colorNumeric(palette = viridisLite::plasma(256), domain = valid_values, na.color = "transparent")
+      } else {
+        colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
+      }
+      leaflet_obj <- leaflet(filtered_data) %>%
+        addProviderTiles("CartoDB.Positron") %>%
+        fitBounds(-110, -40, 120, 65) %>%
+        addPolygons(
+          fillColor = ~pal(filtered_data[[input$variable]]),
+          color = "white", weight = 1, opacity = 0.45, fillOpacity = 0.6,
+          label = ~name
+        ) %>%
+        addLegend(pal = pal, values = filtered_data[[input$variable]],
+                  title = paste(switch(ml,
+                                       "absolute" = variable_abbreviations[input$variable],
+                                       "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
+                                       "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
+                                "in", input$year),
+                  position = "bottomright") %>%
+        addControl(
+          html = paste0("<div style='font-size:20px; font-weight:bold; background-color:rgba(255,255,255,0.7);
+                  padding:6px 12px; border-radius:6px;'>",
+                        switch(ml,
+                               "absolute" = input$variable,
+                               "per_capita" = paste(input$variable, "per thousand inhabitants"),
+                               "per_catholic" = paste(input$variable, "per thousand Catholics")),
+                        " - ", input$year, "</div>"),
+          position = "topright"
+        ) %>%
+        addControl(
+          html = "<div style='font-size:13px; background-color:rgba(255,255,255,0.6); padding:4px 10px;
+            border-radius:5px;'>Source: Annuarium Statisticum Ecclesiae</div>",
+          position = "bottomleft"
+        )
+      temp_html <- tempfile(fileext = ".html")
+      saveWidget(leaflet_obj, temp_html, selfcontained = TRUE)
+      webshot::webshot(temp_html, file = file, vwidth = 1600, vheight = 1000)
+    }
+  )
   
   # ---- Time Series Region Selector UI ----
   # Dynamically render region selector based on level (Country or Macroregion).
@@ -1068,20 +1031,7 @@ server <- function(input, output, session) {
   output$country_info <- renderUI({
     ml <- mode_label()
     req(selected_country())
-    info <- map_data %>% filter(name == selected_country(), Year == input$year)
-    if (as.integer(input$year) == 2022 && input$display_mode == "per_capita") {
-      info[[input$variable]] <- ifelse(
-        !is.na(info[["Inhabitants in thousands"]]) & info[["Inhabitants in thousands"]] > 0,
-        info[[input$variable]] / info[["Inhabitants in thousands"]],
-        NA_real_
-      )
-    } else if (as.integer(input$year) == 2022 && input$display_mode == "per_catholic") {
-      info[[input$variable]] <- ifelse(
-        !is.na(info[["Catholics in thousands"]]) & info[["Catholics in thousands"]] > 0,
-        info[[input$variable]] / info[["Catholics in thousands"]],
-        NA_real_
-      )
-    }
+    info <- filtered_map_data() %>% filter(name == selected_country())
     if (nrow(info) == 0 || is.na(info[[input$variable]][1])) {
       HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
     } else {
@@ -1093,7 +1043,7 @@ server <- function(input, output, session) {
       }
       HTML(paste0("<strong>", selected_country(), "</strong><br/>",
                   switch(ml,
-                         "absolute" = input$variable, # Use full variable name
+                         "absolute" = input$variable,
                          "per_capita" = paste(input$variable, "per thousand inhabitants"),
                          "per_catholic" = paste(input$variable, "per thousand Catholics")),
                   " in ", input$year, ": ", formatted))
@@ -1151,8 +1101,8 @@ server <- function(input, output, session) {
         y = NULL,
         title = paste("Continent-level distribution", "in", input$year),
         caption = switch(ml,
-                         "absolute" = variable_abbreviations[input$variable], # Use abbreviated name
-                         "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."), # Adjusted for brevity
+                         "absolute" = variable_abbreviations[input$variable],
+                         "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
                          "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath."))
       ) +
       scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +
@@ -1164,8 +1114,8 @@ server <- function(input, output, session) {
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         panel.grid.major.x = element_blank(),
-        panel.grid.major.y = element_line(colour = "#CCCCCC1A"), # More transparent (~0.25 alpha)
-        panel.grid.minor = element_line(colour = "#CCCCCC1A"), # More transparent (~0.1 alpha)
+        panel.grid.major.y = element_line(colour = "#CCCCCC1A"),
+        panel.grid.minor = element_line(colour = "#CCCCCC1A"),
         axis.text.y = element_text(size = 8)
       )
   })
@@ -1182,8 +1132,7 @@ server <- function(input, output, session) {
       filter(.data[[region_col]] %in% input$ts_regions) %>%
       select(Year, !!sym(region_col), !!sym(input$ts_variable)) %>%
       rename(region = !!sym(region_col), value = !!sym(input$ts_variable)) %>%
-      filter(!is.na(value)) # Remove NA values
-    
+      filter(!is.na(value))
     if (input$ts_level == "Macroregion") {
       plot_data <- data_macroregions %>%
         standardize_macro("macroregion") %>%
@@ -1211,15 +1160,15 @@ server <- function(input, output, session) {
       y = ~value,
       color = ~region,
       colors = RColorBrewer::brewer.pal(max(3, length(unique(plot_data$region))), "Set2"),
-      type = "scatter", # Explicitly specify trace type
-      mode = "lines+markers", # Explicitly specify mode
+      type = "scatter",
+      mode = "lines+markers",
       hoverinfo = "text",
       text = ~paste0(
         "<b>", region, "</b><br>",
         "Year: ", Year, "<br>",
         "Value: ", round(value, 2)
       ),
-      line = list(width = 2), # Corrected typo: removed 'list10:'
+      line = list(width = 2),
       marker = list(size = 6, opacity = 0.8)
     ) %>%
       layout(
@@ -1243,7 +1192,6 @@ server <- function(input, output, session) {
     selected_country(NULL)
     leafletProxy("map") %>% clearGroup("highlight")
     updateSelectInput(session, "country_search", selected = "")
-    
     # Reset data explorer.
     updateSelectInput(session, "explorer_variable", selected = "")
     updateSelectInput(session, "explorer_year", selected = max(data_countries$Year))
@@ -1271,7 +1219,6 @@ server <- function(input, output, session) {
         group_by(Year, region) %>%
         summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
     }
-    
     
     ggplot(plot_data, aes(x = Year, y = value, color = region)) +
       geom_line(linewidth = 1) +
@@ -1321,10 +1268,10 @@ server <- function(input, output, session) {
             NA_real_
           )
         ) %>%
-        select(-`Inhabitants in thousands`, -`Catholics in thousands`) # drop context cols
+        select(-`Inhabitants in thousands`, -`Catholics in thousands`)
     } else {
       filtered <- base_cols %>%
-        select(-`Inhabitants in thousands`, -`Catholics in thousands`) # drop context cols
+        select(-`Inhabitants in thousands`, -`Catholics in thousands`)
     }
     
     if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
@@ -1391,7 +1338,6 @@ server <- function(input, output, session) {
     }
   )
 }
-
 
 # ---- Launch the Shiny App ----
 shinyApp(ui, server)
