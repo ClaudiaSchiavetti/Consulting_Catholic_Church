@@ -88,6 +88,7 @@ data_macroregions <- data_filtered %>%
 data_countries <- data_filtered %>%
   filter(`Region type` == "Country")
 
+
 # ---- Load and Prepare World Map ----
 # Load world map data from Natural Earth as an sf object.
 
@@ -103,6 +104,7 @@ world <- world %>%
   filter(!admin %in% c("Somalia", "Somaliland")) %>%
   bind_rows(somalia_unified)
 
+
 # ---- Initial Map Data Merge ----
 # Merge country data with the world map using country names.
 
@@ -112,7 +114,8 @@ map_data <- left_join(world, data_countries, by = c("name" = "Region"))
 # Identify countries in data that do not match the world map.
 
 unmatched_in_data <- anti_join(data_countries, world, by = c("Region" = "name"))
-#print(unmatched_in_data$Region)
+print(unmatched_in_data$Region)
+
 
 # ---- Manual Country Name Corrections ----
 # Define a vector of corrections for mismatched country names.
@@ -222,7 +225,7 @@ safe_div <- function(num, den, scale = 1) {
 
 dc <- data_countries
 
-# Recompute densities and rates, rounding to 2 decimal places.
+# Recompute density and rates, rounding to 2 decimal places.
 if (all(c("Inhabitants per km^2", "Inhabitants in thousands", "Area in km^2") %in% names(dc))) {
   dc[["Inhabitants per km^2"]] <- round(safe_div(dc[["Inhabitants in thousands"]] * 1000, dc[["Area in km^2"]]), 2)
 }
@@ -285,6 +288,7 @@ if (all(c("Confirmations per 1000 Catholics", "Confirmations", "Catholics in tho
 if (all(c("First Communions per 1000 Catholics", "First Communions", "Catholics in thousands") %in% names(dc))) {
   dc[["First Communions per 1000 Catholics"]] <- round(safe_div(dc[["First Communions"]], dc[["Catholics in thousands"]] * 1000, 1000), 2)
 }
+
 # Recompute shares.
 if (all(c("Share of adult baptisms (people over 7 years old)", "Adult baptisms (people over 7 years old)", "Baptisms") %in% names(dc))) {
   dc[["Share of adult baptisms (people over 7 years old)"]] <- round(safe_div(dc[["Adult baptisms (people over 7 years old)"]], dc[["Baptisms"]]), 2)
@@ -452,78 +456,74 @@ country_choices_list <- as.list(all_countries)
 names(country_choices_list) <- all_countries
 final_country_dropdown_choices <- c("Type to search..." = "", country_choices_list)
 
+# ---- Helper Functions for UI ----
+# Helper function to create select inputs for variables, years, or countries.
+create_select_input <- function(id, label, choices, selected = NULL, multiple = FALSE, placeholder = NULL) {
+  if (!is.null(placeholder)) {
+    selectizeInput(
+      inputId = id,
+      label = label,
+      choices = choices,
+      selected = selected,
+      multiple = multiple,
+      options = list(placeholder = placeholder)
+    )
+  } else {
+    selectInput(
+      inputId = id,
+      label = label,
+      choices = choices,
+      selected = selected,
+      multiple = multiple
+    )
+  }
+}
+
+# Helper function to create download buttons for CSV and Excel.
+create_download_buttons <- function() {
+  div(
+    style = "margin-top: 10px;",
+    downloadButton("download_csv", "CSV", class = "btn btn-sm btn-success"),
+    downloadButton("download_excel", "Excel", class = "btn btn-sm btn-info")
+  )
+}
+
+# ---- Helper Functions for Server Logic ----
+# Helper function to format values for display (e.g., map hover labels, country info).
+format_value <- function(value, mode) {
+  if (mode != "absolute" && value == 0) {
+    "<0.01"
+  } else {
+    format(round(as.numeric(value), ifelse(mode == "absolute", 0, 2)), big.mark = ",", scientific = FALSE)
+  }
+}
+
+# Helper function to create color palette for map visualizations.
+create_pal <- function(values) {
+  valid_values <- values[!is.na(values)]
+  if (length(valid_values) > 0) {
+    colorNumeric(palette = viridisLite::plasma(256), domain = valid_values, na.color = "transparent")
+  } else {
+    colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
+  }
+}
+
+# Helper function to create download data for CSV/Excel handlers.
+create_download_data <- function(data, year, variable, selected_country) {
+  filtered <- data %>%
+    filter(Year == year) %>%
+    select(country, Year, all_of(variable))
+  if (!is.null(selected_country) && selected_country %in% filtered$country) {
+    filtered <- filtered %>% filter(country = selected_country)
+  }
+  filtered
+}
+
 # Define the Shiny UI with custom styles and layout.
 ui <- tagList(
   tags$head(
-    tags$style(HTML("
-      html, body {
-        height: 100%;
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-      }
-      #map {
-        height: 100vh !important;
-        width: 100vw !important;
-        position: absolute;
-        top: 0;
-        left: 0;
-        z-index: 1;
-      }
-      .leaflet-container {
-        background: #ececec !important;
-        height: 100% !important;
-        width: 100% !important;
-      }
-      .leaflet-tile-pane { filter: grayscale(10%) brightness(1.15); }
-      .leaflet-control { font-size: 14px; }
-      .panel-default {
-        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-        border-radius: 10px;
-        z-index: 1000 !important;
-      }
-      .panel-default > .panel-heading {
-        background-color: #4e73df;
-        color: white;
-        font-weight: bold;
-      }
-      .navbar {
-        z-index: 1001 !important;
-      }
-      body {
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      }
-      .plotly, .js-plotly-plot, .plotly text {
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      }
-      .shiny-plot-output {
-        margin-top: 10px;
-      }
-      .panel-default .form-group {
-        margin-bottom: 15px;
-      }
-      div.tab-pane[data-value='Data Explorer'] .data-explorer-main {
-        overflow-y: auto !important;
-        max-height: 80vh !important;
-        padding: 15px;
-      }
-      .leaflet-top {
-        margin-top: 70px !important;
-      }
-      .panel-default hr {
-        margin-top: 5px;
-        margin-bottom: 5px;
-      }
-      .ts-wrap { height: calc(100vh - 150px); }
-      .ts-sidebar {
-        max-height: calc(100vh - 190px);
-        overflow-y: auto;
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
-        padding: 15px;
-      }
-    ")), useShinyjs()
+    includeCSS("styles.css"),
+    useShinyjs()
   ),
   
   navbarPage("Annuarium Statisticum Ecclesiae", id = "navbar", theme = shinytheme("flatly"),
@@ -536,19 +536,14 @@ ui <- tagList(
                           draggable = TRUE, top = 60, left = 0, right = "auto", bottom = "auto",
                           width = 300, height = "auto",
                           style = "background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px; overflow-y: auto; max-height: 90vh;",
-                          selectInput("variable", "Select variable to display:",
-                                      choices = allowed_variables),
-                          selectInput("year", "Select year:",
-                                      choices = sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
+                          create_select_input("variable", "Select variable to display:", allowed_variables),
+                          create_select_input("year", "Select year:", sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
                           radioButtons("display_mode", "Display mode:",
                                        choices = list("Absolute values" = "absolute",
                                                       "Per thousand inhabitants" = "per_capita",
                                                       "Per thousand Catholics" = "per_catholic"),
                                        selected = "absolute"),
-                          selectizeInput("country_search", "Search for a country:",
-                                         choices = final_country_dropdown_choices,
-                                         selected = "", multiple = FALSE,
-                                         options = list(placeholder = 'Type to search...')),
+                          create_select_input("country_search", "Search for a country:", final_country_dropdown_choices, selected = "", multiple = FALSE, placeholder = "Type to search..."),
                           plotOutput("varPlot", height = 150),
                           hr(),
                           div(style = "margin-bottom: 15px;", htmlOutput("country_info")),
@@ -567,12 +562,9 @@ ui <- tagList(
                           width = 3,
                           tags$div(
                             style = "background-color: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #dee2e6; font-size: 14px;",
-                            selectInput("explorer_variable", "Select variable:", choices = c("Select a variable..." = "", allowed_variables)),
-                            selectInput("explorer_year", "Select year:", choices = sort(unique(data_countries$Year))),
-                            div(style = "margin-top: 10px;",
-                                downloadButton("download_csv", "CSV", class = "btn btn-sm btn-success"),
-                                downloadButton("download_excel", "Excel", class = "btn btn-sm btn-info")
-                            ),
+                            create_select_input("explorer_variable", "Select variable:", c("Select a variable..." = "", allowed_variables)),
+                            create_select_input("explorer_year", "Select year:", sort(unique(data_countries$Year))),
+                            create_download_buttons(),
                             br(),
                             actionButton("reset_table", "Reset Filters", icon = icon("redo"), class = "btn btn-sm btn-secondary")
                           )
@@ -585,6 +577,7 @@ ui <- tagList(
                         )
                       )
              ),
+             
              # Time Series TAB
              tabPanel("Time Series",
                       fluidRow(
@@ -592,9 +585,7 @@ ui <- tagList(
                           width = 3,
                           class = "ts-sidebar",
                           style = "background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;",
-                          selectInput("ts_variable", "Select variable:",
-                                      choices = time_series_vars,
-                                      selected = time_series_vars[1]),
+                          create_select_input("ts_variable", "Select variable:", time_series_vars, selected = time_series_vars[1]),
                           radioButtons("ts_level", "Region level:",
                                        choices = c("Continent" = "Macroregion", "Country" = "Country"),
                                        selected = "Macroregion"),
@@ -778,7 +769,6 @@ server <- function(input, output, session) {
     }
   })
   
-  
   # ---- Render Interactive World Map ----
   # Create the Leaflet map with selected variable data.
   output$map <- renderLeaflet({
@@ -786,12 +776,7 @@ server <- function(input, output, session) {
     ml <- mode_label()
     filtered_data <- filtered_map_data()
     # Ensure valid values for color palette.
-    valid_values <- filtered_data[[input$variable]][!is.na(filtered_data[[input$variable]])]
-    pal <- if (length(valid_values) > 0) {
-      colorNumeric(palette = viridisLite::plasma(256), domain = valid_values, na.color = "transparent")
-    } else {
-      colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
-    }
+    pal <- create_pal(filtered_data[[input$variable]])
     
     leaflet(filtered_data, options = leafletOptions(
       maxBounds = list(c(-120, -240), c(120, 240)),
@@ -820,9 +805,7 @@ server <- function(input, output, session) {
                                       "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
                                       "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
                                ": ",
-                               ifelse(ml != "absolute" & filtered_data[[input$variable]] == 0,
-                                      "<0.01",
-                                      formatC(filtered_data[[input$variable]], format = "f", digits = ifelse(ml == "absolute", 0, 2), big.mark = ","))), htmltools::HTML),
+                               format_value(filtered_data[[input$variable]], ml)), htmltools::HTML),
         highlight = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.8, bringToFront = TRUE)
       ) %>%
       addLegend(pal = pal, values = filtered_data[[input$variable]],
@@ -848,12 +831,7 @@ server <- function(input, output, session) {
     content = function(file) {
       ml <- mode_label()
       filtered_data <- filtered_map_data()
-      valid_values <- filtered_data[[input$variable]][!is.na(filtered_data[[input$variable]])]
-      pal <- if (length(valid_values) > 0) {
-        colorNumeric(palette = viridisLite::plasma(256), domain = valid_values, na.color = "transparent")
-      } else {
-        colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
-      }
+      pal <- create_pal(filtered_data[[input$variable]])
       leaflet_obj <- leaflet(filtered_data) %>%
         addProviderTiles("CartoDB.Positron") %>%
         fitBounds(-110, -40, 120, 65) %>%
@@ -894,14 +872,9 @@ server <- function(input, output, session) {
   # Dynamically render region selector based on level (Country or Macroregion).
   output$ts_region_selector <- renderUI({
     if (input$ts_level == "Country") {
-      selectInput("ts_regions", "Select country/countries:",
-                  choices = sort(unique(data_countries$country)),
-                  multiple = TRUE)
+      create_select_input("ts_regions", "Select country/countries:", sort(unique(data_countries$country)), multiple = TRUE)
     } else {
-      selectInput("ts_regions", "Select continent(s):",
-                  choices = TARGET_REGIONS,
-                  selected = TARGET_REGIONS,
-                  multiple = TRUE)
+      create_select_input("ts_regions", "Select continent(s):", TARGET_REGIONS, selected = TARGET_REGIONS, multiple = TRUE)
     }
   })
   
@@ -910,7 +883,7 @@ server <- function(input, output, session) {
   observeEvent(input$map_shape_click, {
     req(input$map_shape_click$id, input$year)
     clicked_country <- input$map_shape_click$id
-    filtered_data <- map_data %>% filter(name == clicked_country, Year == input$year)
+    filtered_data <- map_data %>% filter(name == clicked_country, Year = input$year)
     
     if (nrow(filtered_data) == 0 || is.na(filtered_data$geometry[1])) {
       showNotification("No data available for this country in the selected year.", type = "warning")
@@ -963,15 +936,15 @@ server <- function(input, output, session) {
     leafletProxy("map") %>%
       clearGroup("highlight") %>%
       addPolygons(
-        data = map_data %>% filter(name == input$country_search, Year == input$year),
+        data = map_data %>% filter(name = input$country_search, Year = input$year),
         fill = FALSE, color = "red", weight = 3, opacity = 1, group = "highlight") %>%
       setView(
         lng = tryCatch(
-          st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$country_search))))[1],
+          st_coordinates(st_centroid(st_union(map_data %>% filter(name = input$country_search))))[1],
           error = function(e) 0
         ),
         lat = tryCatch(
-          st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$country_search))))[2],
+          st_coordinates(st_centroid(st_union(map_data %>% filter(name = input$country_search))))[2],
           error = function(e) 30
         ),
         zoom = 4
@@ -1031,22 +1004,16 @@ server <- function(input, output, session) {
   output$country_info <- renderUI({
     ml <- mode_label()
     req(selected_country())
-    info <- filtered_map_data() %>% filter(name == selected_country())
+    info <- filtered_map_data() %>% filter(name = selected_country())
     if (nrow(info) == 0 || is.na(info[[input$variable]][1])) {
       HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
     } else {
-      value <- info[[input$variable]][1]
-      formatted <- if (ml != "absolute" && value == 0) {
-        "<0.01"
-      } else {
-        format(round(as.numeric(value), ifelse(ml == "absolute", 0, 2)), big.mark = ",", scientific = FALSE)
-      }
       HTML(paste0("<strong>", selected_country(), "</strong><br/>",
                   switch(ml,
                          "absolute" = input$variable,
                          "per_capita" = paste(input$variable, "per thousand inhabitants"),
                          "per_catholic" = paste(input$variable, "per thousand Catholics")),
-                  " in ", input$year, ": ", formatted))
+                  " in ", input$year, ": ", format_value(info[[input$variable]][1], ml)))
     }
   })
   
@@ -1240,7 +1207,6 @@ server <- function(input, output, session) {
     }
   )
   
-  
   # ---- Render Data Table for Explorer Tab ----
   # Display data table with optional per capita calculations for 2022.
   output$table <- renderDT({
@@ -1275,7 +1241,7 @@ server <- function(input, output, session) {
     }
     
     if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
-      filtered <- filtered %>% filter(country == selected_country())
+      filtered <- filtered %>% filter(country = selected_country())
     }
     datatable(filtered, options = list(pageLength = 20))
   })
@@ -1310,13 +1276,7 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       req(input$explorer_variable, input$explorer_year)
-      filtered <- data_countries %>%
-        filter(Year == input$explorer_year) %>%
-        select(country, Year, all_of(input$explorer_variable))
-      if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
-        filtered <- filtered %>% filter(country == selected_country())
-      }
-      write.csv(filtered, file, row.names = FALSE)
+      write.csv(create_download_data(data_countries, input$explorer_year, input$explorer_variable, selected_country()), file, row.names = FALSE)
     }
   )
   
@@ -1328,16 +1288,11 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       req(input$explorer_variable, input$explorer_year)
-      filtered <- data_countries %>%
-        filter(Year == input$explorer_year) %>%
-        select(country, Year, all_of(input$explorer_variable))
-      if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
-        filtered <- filtered %>% filter(country == selected_country())
-      }
-      writexl::write_xlsx(filtered, path = file)
+      writexl::write_xlsx(create_download_data(data_countries, input$explorer_year, input$explorer_variable, selected_country()), path = file)
     }
   )
 }
+
 
 # ---- Launch the Shiny App ----
 shinyApp(ui, server)
