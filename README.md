@@ -4,4 +4,4 @@ Repository for the LMU Consulting project on "Cluster Analysis and Visualization
 
 ## Software versions
 
-R 4.5.0 / R Studio 2025.05.0+496 / Git 2.49.0 
+R 4.5.1 / Git 2.49.0 
