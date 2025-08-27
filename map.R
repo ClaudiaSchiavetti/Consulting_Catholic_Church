@@ -114,7 +114,7 @@ map_data <- left_join(world, data_countries, by = c("name" = "Region"))
 # Identify countries in data that do not match the world map.
 
 unmatched_in_data <- anti_join(data_countries, world, by = c("Region" = "name"))
-print(unmatched_in_data$Region)
+#print(unmatched_in_data$Region)
 
 
 # ---- Manual Country Name Corrections ----
@@ -491,11 +491,9 @@ create_download_buttons <- function() {
 # ---- Helper Functions for Server Logic ----
 # Helper function to format values for display (e.g., map hover labels, country info).
 format_value <- function(value, mode) {
-  if (mode != "absolute" && value == 0) {
-    "<0.01"
-  } else {
-    format(round(as.numeric(value), ifelse(mode == "absolute", 0, 2)), big.mark = ",", scientific = FALSE)
-  }
+  ifelse(mode != "absolute" & value == 0,
+         "<0.01",
+         formatC(round(as.numeric(value), ifelse(mode == "absolute", 0, 2)), format = "f", digits = ifelse(mode == "absolute", 0, 2), big.mark = ","))
 }
 
 # Helper function to create color palette for map visualizations.
@@ -650,25 +648,27 @@ server <- function(input, output, session) {
   
   # Reactive for display mode label.
   mode_label <- reactive({
-    if (isTRUE(as.integer(input$year) == 2022)) input$display_mode else "absolute"
+    if (as.integer(input$year) == 2022) input$display_mode else "absolute"
   })
   
   # Reactive for filtered map data
   filtered_map_data <- reactive({
     req(input$variable, input$year)
     data <- map_data %>% filter(Year == input$year)
-    if (as.integer(input$year) == 2022 && input$display_mode == "per_capita") {
-      data[[input$variable]] <- ifelse(
-        !is.na(data[["Inhabitants in thousands"]]) & data[["Inhabitants in thousands"]] > 0,
-        data[[input$variable]] / data[["Inhabitants in thousands"]],
-        NA_real_
-      )
-    } else if (as.integer(input$year) == 2022 && input$display_mode == "per_catholic") {
-      data[[input$variable]] <- ifelse(
-        !is.na(data[["Catholics in thousands"]]) & data[["Catholics in thousands"]] > 0,
-        data[[input$variable]] / data[["Catholics in thousands"]],
-        NA_real_
-      )
+    if (as.integer(input$year) == 2022) {
+      if (input$display_mode == "per_capita") {
+        data[[input$variable]] <- ifelse(
+          !is.na(data[["Inhabitants in thousands"]]) & data[["Inhabitants in thousands"]] > 0,
+          data[[input$variable]] / data[["Inhabitants in thousands"]],
+          NA_real_
+        )
+      } else if (input$display_mode == "per_catholic") {
+        data[[input$variable]] <- ifelse(
+          !is.na(data[["Catholics in thousands"]]) & data[["Catholics in thousands"]] > 0,
+          data[[input$variable]] / data[["Catholics in thousands"]],
+          NA_real_
+        )
+      }
     }
     data
   })
@@ -752,7 +752,7 @@ server <- function(input, output, session) {
   # ---- Limit Display Modes to 2022 ----
   # Restrict per capita/per Catholic modes to 2022 data only.
   observeEvent(input$year, {
-    if (isTRUE(as.integer(input$year) == 2022)) {
+    if (as.integer(input$year) == 2022) {
       updateRadioButtons(
         session, "display_mode",
         choices = list("Absolute values" = "absolute",
@@ -768,6 +768,7 @@ server <- function(input, output, session) {
       )
     }
   })
+  
   
   # ---- Render Interactive World Map ----
   # Create the Leaflet map with selected variable data.
@@ -1004,7 +1005,7 @@ server <- function(input, output, session) {
   output$country_info <- renderUI({
     ml <- mode_label()
     req(selected_country())
-    info <- filtered_map_data() %>% filter(name = selected_country())
+    info <- filtered_map_data() %>% filter(name == selected_country())
     if (nrow(info) == 0 || is.na(info[[input$variable]][1])) {
       HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
     } else {
@@ -1206,6 +1207,7 @@ server <- function(input, output, session) {
       ggsave(file, plot = plot_ts_static(), width = 10, height = 6, dpi = 300)
     }
   )
+  
   
   # ---- Render Data Table for Explorer Tab ----
   # Display data table with optional per capita calculations for 2022.
