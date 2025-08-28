@@ -28,8 +28,8 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # Set your working directory and read the data file.
 
 # Define the data file path and set it as your working directory.
-#path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
-path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
+path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
+#path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
 setwd(path_outputs)
 
 # Read the CSV file containing the data
@@ -147,6 +147,9 @@ ui <- tagList(
       div.tab-pane[data-value='Time Series'] .ts-wrap {
         height: calc(100vh - 150px);
       }
+      div.tab-pane[data-value='Yearly Snapshot'] .ts-wrap {
+        height: calc(100vh - 150px);
+      }
       .ts-sidebar {
         max-height: calc(100vh - 100px);
         overflow-y: auto;
@@ -160,7 +163,7 @@ ui <- tagList(
         max-height: 80vh !important;
         padding: 15px;
       }
-      #ts_variable {
+      #ts_variable, #ys_variable {
         size: 15; /* Show more options in dropdown */
         max-height: 400px;
         overflow-y: auto;
@@ -211,6 +214,28 @@ ui <- tagList(
                           width = 9,
                           DTOutput("table"),
                           br()
+                        )
+                      )
+             ),
+             
+             # Yearly Snapshot Tab
+             tabPanel("Yearly Snapshot",
+                      fluidRow(
+                        column(
+                          width = 3,
+                          class = "ts-sidebar",
+                          style = "background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;",
+                          create_select_input("ys_variable", "Select variable:", time_series_vars, selected = time_series_vars[1]),
+                          div(style = "margin-top: 10px;",
+                              downloadButton("download_ys_plot", "Download Plot", class = "btn btn-sm btn-primary"),
+                              actionButton("reset_ys", "Reset", icon = icon("undo"), class = "btn btn-sm btn-secondary")
+                          )
+                        ),
+                        column(
+                          width = 9,
+                          div(class = "ts-wrap",
+                              plotlyOutput("ys_plot", height = "100%")
+                          )
                         )
                       )
              )
@@ -313,6 +338,88 @@ server <- function(input, output, session) {
     }
   )
   
+  # ---- Yearly Snapshot Plot Data ----
+  ys_plot_data_reactive <- reactive({
+    req(input$ys_variable)
+    
+    filtered_data <- data %>%
+      filter(Year == 2022) %>%
+      select(`Categories of Institutes`, Year, !!sym(input$ys_variable)) %>%
+      rename(category = `Categories of Institutes`, value = !!sym(input$ys_variable)) %>%
+      filter(!is.na(value))
+    
+    filtered_data
+  })
+  
+  # ---- Render Yearly Snapshot Histogram ----
+  # Generate Plotly bar chart for 2022 data.
+  output$ys_plot <- renderPlotly({
+    plot_data <- ys_plot_data_reactive()
+    
+    if (nrow(plot_data) == 0) {
+      return(
+        plot_ly() %>%
+          add_bars(x = character(0), y = numeric(0),
+                   showlegend = FALSE, hoverinfo = "skip") %>%
+          layout(title = "No data available for the selected variable in 2022")
+      )
+    }
+    
+    plot_ly(
+      data = plot_data,
+      x = ~category,
+      y = ~value,
+      type = "bar",
+      color = ~category,
+      colors = RColorBrewer::brewer.pal(max(3, length(unique(plot_data$category))), "Set2"),
+      hoverinfo = "text",
+      text = ~paste0(
+        "<b>", category, "</b><br>",
+        "Year: 2022<br>",
+        "Value: ", round(value, 2)
+      ),
+      textposition = "none",
+      showlegend = TRUE
+    ) %>%
+      layout(
+        title = paste("Yearly Snapshot of", input$ys_variable, "in 2022"),
+        hovermode = "closest",
+        xaxis = list(title = "Categories of Institutes"),
+        yaxis = list(title = "Absolute Value"),
+        legend = list(title = list(text = "Categories"), x = 1.02, y = 1, xanchor = "left", yanchor = "top"),
+        margin = list(r = 150)
+      ) %>%
+      config(displayModeBar = FALSE, responsive = TRUE)
+  })
+  
+  # ---- Yearly Snapshot Download Button ----
+  # Create a static ggplot for downloading the yearly snapshot histogram.
+  ys_plot_static <- reactive({
+    plot_data <- ys_plot_data_reactive()
+    
+    if (nrow(plot_data) == 0) return(NULL)
+    
+    ggplot(plot_data, aes(x = category, y = value, fill = category)) +
+      geom_bar(stat = "identity") +
+      scale_fill_brewer(palette = "Set2") +
+      labs(title = paste("Yearly Snapshot of", input$ys_variable, "in 2022"),
+           x = "Categories of Institutes", y = "Absolute Value") +
+      theme_minimal(base_size = 13) +
+      theme(plot.background = element_rect(fill = "white", colour = "white"),
+            panel.background = element_rect(fill = "white", colour = "white"),
+            legend.position = "none",
+            axis.text.x = element_text(angle = 45, hjust = 1))
+  })
+  
+  output$download_ys_plot <- downloadHandler(
+    filename = function() {
+      paste0("yearly_snapshot_", input$ys_variable, "_2022_", Sys.Date(), ".png")
+    },
+    content = function(file) {
+      ggsave(file, plot = ys_plot_static(), width = 10, height = 6, dpi = 300)
+    }
+  )
+  
   # ---- Render Data Table for Explorer Tab ----
   # Display data table for selected variable, year, and optional category.
   output$table <- renderDT({
@@ -335,42 +442,49 @@ server <- function(input, output, session) {
   # ---- Synchronize Variable and Year Selections ----
   # Update from Time Series tab.
   observeEvent(input$ts_variable, {
-    if (is.null(selections$from_tab) || selections$from_tab != "explorer") {
+    if (is.null(selections$from_tab) || selections$from_tab != "time_series") {
       selections$variable <- input$ts_variable
       selections$from_tab <- "time_series"
       updateSelectInput(session, "explorer_variable", selected = input$ts_variable)
+      updateSelectInput(session, "ys_variable", selected = input$ts_variable)
     }
   })
   
   # Update from Data Explorer tab.
   observeEvent(input$explorer_variable, {
     req(input$explorer_variable)
-    if (input$explorer_variable != "" && (is.null(selections$from_tab) || selections$from_tab != "time_series")) {
+    if (input$explorer_variable != "" && (is.null(selections$from_tab) || selections$from_tab != "explorer")) {
       selections$variable <- input$explorer_variable
       selections$from_tab <- "explorer"
       updateSelectInput(session, "ts_variable", selected = input$explorer_variable)
+      updateSelectInput(session, "ys_variable", selected = input$explorer_variable)
     }
   })
   
-  # Synchronize years from Data Explorer tab.
-  observeEvent(input$explorer_year, {
-    if (is.null(selections$from_tab) || selections$from_tab != "time_series") {
-      selections$year <- input$explorer_year
+  # Update from Yearly Snapshot tab.
+  observeEvent(input$ys_variable, {
+    if (is.null(selections$from_tab) || selections$from_tab != "yearly_snapshot") {
+      selections$variable <- input$ys_variable
+      selections$from_tab <- "yearly_snapshot"
+      updateSelectInput(session, "explorer_variable", selected = input$ys_variable)
+      updateSelectInput(session, "ts_variable", selected = input$ys_variable)
     }
   })
   
-  # ---- Sync Selections on Tab Switch to Time Series ----
-  # Ensure Time Series tab reflects Data Explorer selections when activated.
+  # ---- Sync Selections on Tab Switch ----
+  # Ensure tabs reflect the latest variable selection when activated.
   observeEvent(input$navbar, {
+    valid_variable <- if (!is.null(selections$variable) && selections$variable %in% time_series_vars) {
+      selections$variable
+    } else {
+      time_series_vars[1]
+    }
     if (input$navbar == "Time Series") {
-      # Ensure variable is valid for time series.
-      valid_variable <- if (!is.null(input$explorer_variable) && input$explorer_variable %in% time_series_vars) {
-        input$explorer_variable
-      } else {
-        time_series_vars[1] # Fallback to first valid time series variable
-      }
-      
       updateSelectInput(session, "ts_variable", selected = valid_variable)
+    } else if (input$navbar == "Yearly Snapshot") {
+      updateSelectInput(session, "ys_variable", selected = valid_variable)
+    } else if (input$navbar == "Data Explorer") {
+      updateSelectInput(session, "explorer_variable", selected = valid_variable)
     }
   })
   
@@ -402,6 +516,13 @@ server <- function(input, output, session) {
   # Reset time series selections to defaults.
   observeEvent(input$reset_ts, {
     updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
+    shiny::invalidateLater(100, session)
+  })
+  
+  # ---- Yearly Snapshot Reset Button ----
+  # Reset yearly snapshot selections to defaults.
+  observeEvent(input$reset_ys, {
+    updateSelectInput(session, "ys_variable", selected = time_series_vars[1])
     shiny::invalidateLater(100, session)
   })
   
