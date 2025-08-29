@@ -33,7 +33,7 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # Set your working directory and read the data file.
 
 # Define the data file path and set it as your working directory.
-path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
+path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
 #path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
 setwd(path_outputs)
 
@@ -577,29 +577,60 @@ ui <- tagList(
              ),
              
              # Time Series TAB
-             tabPanel("Time Series",
-                      fluidRow(
-                        column(
-                          width = 3,
-                          class = "ts-sidebar",
-                          style = "background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;",
-                          create_select_input("ts_variable", "Select variable:", time_series_vars, selected = time_series_vars[1]),
-                          radioButtons("ts_level", "Region level:",
-                                       choices = c("Continent" = "Macroregion", "Country" = "Country"),
-                                       selected = "Macroregion"),
-                          uiOutput("ts_region_selector"),
-                          div(style = "margin-top: 10px;",
-                              downloadButton("download_ts_plot", "Download Plot", class = "btn btn-sm btn-primary"),
-                              actionButton("reset_ts", "Reset", icon = icon("undo"), class = "btn btn-sm btn-secondary")
-                          )
-                        ),
-                        column(
-                          width = 9,
-                          div(class = "ts-wrap",
-                              plotlyOutput("ts_plot", height = "100%")
-                          )
-                        )
-                      )
+             tabPanel(
+               "Time Series",
+               tags$style(HTML("
+    .ts-container {
+      min-height: calc(100vh - 50px); /* Adjust 50px based on navbar height */
+      display: flex;
+      align-items: stretch;
+      margin: 0;
+      padding: 0;
+    }
+    .ts-sidebar {
+      height: 100%;
+      overflow-y: auto;
+      background-color: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #dee2e6;
+    }
+    .ts-main {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .ts-plot {
+      flex: 1 1 auto;
+      height: 100%;
+    }
+  ")),
+               fluidRow(
+                 class = "ts-container",
+                 column(
+                   width = 3,
+                   class = "ts-sidebar",
+                   create_select_input("ts_variable", "Select variable:", time_series_vars, selected = time_series_vars[1]),
+                   radioButtons("ts_level", "Region level:",
+                                choices = c("Continent" = "Macroregion", "Country" = "Country"),
+                                selected = "Macroregion"),
+                   uiOutput("ts_region_selector"),
+                   div(
+                     style = "margin-top: 10px;",
+                     downloadButton("download_ts_plot", "Download Plot", class = "btn btn-sm btn-primary"),
+                     actionButton("reset_ts", "Reset", icon = icon("undo"), class = "btn btn-sm btn-secondary")
+                   )
+                 ),
+                 column(
+                   width = 9,
+                   class = "ts-main",
+                   div(
+                     class = "ts-plot",
+                     plotlyOutput("ts_plot", height = "100%")
+                   )
+                 )
+               )
              )
   )
 )
@@ -875,7 +906,7 @@ server <- function(input, output, session) {
     if (input$ts_level == "Country") {
       create_select_input("ts_regions", "Select country/countries:", sort(unique(data_countries$country)), multiple = TRUE)
     } else {
-      create_select_input("ts_regions", "Select continent(s):", TARGET_REGIONS, selected = TARGET_REGIONS, multiple = TRUE)
+      create_select_input("ts_regions", "Displayed continents (remove any to filter):", TARGET_REGIONS, selected = TARGET_REGIONS, multiple = TRUE)
     }
   })
   
