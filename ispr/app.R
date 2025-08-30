@@ -16,6 +16,7 @@ lapply(required_packages, library, character.only = TRUE)
 useShinyjs()
 
 # ---- Docker Instructions ----
+# Last updated: August 30, 2025
 # Set Shiny app to listen on all interfaces and a specific port for Docker compatibility.
 options(shiny.host = "0.0.0.0")
 options(shiny.port = 3838) # Also 8180 is a valid option
@@ -64,6 +65,21 @@ time_series_vars <- num_cols[
   })
 ]
 
+# Identify variables with non-NA data for congregations in 2022
+congregations <- c(
+  "Congr. for the Inst. of Cons. Life and Soc. of Apos. Life",
+  "Congregation for the Eastern Churches",
+  "Congregation for the Evangelization of Peoples",
+  "Congregations (total)"
+)
+congregation_vars <- num_cols[
+  sapply(num_cols, function(var) {
+    any(!is.na(data %>%
+                 filter(Year == 2022, `Categories of Institutes` %in% congregations) %>%
+                 pull(.data[[var]])))
+  })
+]
+
 # ---- UI Layout ----
 # Prepare category choices for the selector.
 all_categories <- sort(unique(data$`Categories of Institutes`))
@@ -103,10 +119,15 @@ create_download_buttons <- function() {
 }
 
 # Helper function to create download data for CSV/Excel handlers.
-create_download_data <- function(data, year, variable, selected_category) {
+create_download_data <- function(data, year, variable, selected_category, view_by_congregation) {
   filtered <- data %>%
     filter(Year == year) %>%
     select(`Categories of Institutes`, Year, all_of(variable))
+  if (view_by_congregation) {
+    filtered <- filtered %>% filter(`Categories of Institutes` %in% congregations)
+  } else {
+    filtered <- filtered %>% filter(!(`Categories of Institutes` %in% congregations))
+  }
   if (!is.null(selected_category) && selected_category %in% filtered$`Categories of Institutes`) {
     filtered <- filtered %>% filter(`Categories of Institutes` == selected_category)
   }
@@ -195,6 +216,7 @@ ui <- tagList(
                             create_select_input("explorer_variable", "Select variable:", c("Select a variable..." = "", all_vars)),
                             create_select_input("explorer_year", "Select year:", sort(unique(data$Year))),
                             create_select_input("explorer_category", "Search for a category:", c("Type to search..." = "", final_category_dropdown_choices), selected = "", multiple = FALSE, placeholder = "Type to search..."),
+                            checkboxInput("explorer_view_congregation", "View by congregation", value = FALSE),
                             create_download_buttons(),
                             br(),
                             actionButton("reset_table", "Reset Filters", icon = icon("redo"), class = "btn btn-sm btn-secondary")
@@ -218,6 +240,7 @@ ui <- tagList(
                           style = "background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;",
                           create_select_input("ys_variable", "Select variable:", all_vars, selected = all_vars[1]),
                           create_select_input("ys_year", "Select year:", sort(unique(data$Year))),
+                          checkboxInput("ys_view_congregation", "View by congregation", value = FALSE),
                           div(style = "margin-top: 10px;",
                               downloadButton("download_ys_plot", "Download Plot", class = "btn btn-sm btn-primary"),
                               actionButton("reset_ys", "Reset", icon = icon("undo"), class = "btn btn-sm btn-secondary")
@@ -239,14 +262,17 @@ ui <- tagList(
 server <- function(input, output, session) {
   
   # ---- Initialize Reactive Values ----
-  # Reactive value for selected category.
+  # Reactive value for selected category and view type.
   selected_category <- reactiveVal(NULL)
+  view_by_congregation <- reactiveVal(FALSE)
   # Reactive values for synchronizing selections across tabs.
   selections <- reactiveValues(
     variable = NULL,
     year = NULL,
+    category = NULL,
     from_tab_var = NULL, # Track which tab triggered the change for variable
-    from_tab_year = NULL # Track which tab triggered the change for year
+    from_tab_year = NULL, # Track which tab triggered the change for year
+    from_tab_view = NULL # Track which tab triggered the change for view type
   )
   
   # ---- Time Series Plot Data ----
@@ -298,7 +324,8 @@ server <- function(input, output, session) {
         hovermode = "closest",
         xaxis = list(title = "Year"),
         yaxis = list(title = "Absolute Value"),
-        legend = list(title = list(text = "Categories"))
+        legend = list(title = list(text = "Categories"), x = 1.02, y = 1, xanchor = "left", yanchor = "top"),
+        margin = list(r = 150)
       ) %>%
       config(displayModeBar = FALSE, responsive = TRUE)
   })
@@ -340,6 +367,12 @@ server <- function(input, output, session) {
       select(`Categories of Institutes`, Year, !!sym(input$ys_variable)) %>%
       rename(category = `Categories of Institutes`, value = !!sym(input$ys_variable)) %>%
       filter(!is.na(value))
+    
+    if (input$ys_view_congregation) {
+      filtered_data <- filtered_data %>% filter(category %in% congregations)
+    } else {
+      filtered_data <- filtered_data %>% filter(!(category %in% congregations))
+    }
     
     filtered_data
   })
@@ -425,6 +458,12 @@ server <- function(input, output, session) {
       filter(Year == input$explorer_year) %>%
       select(`Categories of Institutes`, Year, !!input$explorer_variable)
     
+    if (input$explorer_view_congregation) {
+      filtered <- filtered %>% filter(`Categories of Institutes` %in% congregations)
+    } else {
+      filtered <- filtered %>% filter(!(`Categories of Institutes` %in% congregations))
+    }
+    
     if (!is.null(input$explorer_category) && input$explorer_category != "" && input$explorer_category %in% filtered$`Categories of Institutes`) {
       filtered <- filtered %>% filter(`Categories of Institutes` == input$explorer_category)
     }
@@ -438,8 +477,20 @@ server <- function(input, output, session) {
     if (is.null(selections$from_tab_var) || selections$from_tab_var != "time_series") {
       selections$variable <- input$ts_variable
       selections$from_tab_var <- "time_series"
-      updateSelectInput(session, "explorer_variable", selected = input$ts_variable)
-      updateSelectInput(session, "ys_variable", selected = input$ts_variable)
+      if (input$explorer_view_congregation) {
+        if (input$ts_variable %in% congregation_vars) {
+          updateSelectInput(session, "explorer_variable", selected = input$ts_variable)
+        }
+      } else {
+        updateSelectInput(session, "explorer_variable", selected = input$ts_variable)
+      }
+      if (input$ys_view_congregation) {
+        if (input$ts_variable %in% congregation_vars) {
+          updateSelectInput(session, "ys_variable", selected = input$ts_variable)
+        }
+      } else {
+        updateSelectInput(session, "ys_variable", selected = input$ts_variable)
+      }
     }
   })
   
@@ -449,7 +500,13 @@ server <- function(input, output, session) {
     if (input$explorer_variable != "" && (is.null(selections$from_tab_var) || selections$from_tab_var != "explorer")) {
       selections$variable <- input$explorer_variable
       selections$from_tab_var <- "explorer"
-      updateSelectInput(session, "ys_variable", selected = input$explorer_variable)
+      if (input$ys_view_congregation) {
+        if (input$explorer_variable %in% congregation_vars) {
+          updateSelectInput(session, "ys_variable", selected = input$explorer_variable)
+        }
+      } else {
+        updateSelectInput(session, "ys_variable", selected = input$explorer_variable)
+      }
       if (input$explorer_variable %in% time_series_vars) {
         updateSelectInput(session, "ts_variable", selected = input$explorer_variable)
       }
@@ -461,7 +518,13 @@ server <- function(input, output, session) {
     if (is.null(selections$from_tab_var) || selections$from_tab_var != "yearly_snapshot") {
       selections$variable <- input$ys_variable
       selections$from_tab_var <- "yearly_snapshot"
-      updateSelectInput(session, "explorer_variable", selected = input$ys_variable)
+      if (input$explorer_view_congregation) {
+        if (input$ys_variable %in% congregation_vars) {
+          updateSelectInput(session, "explorer_variable", selected = input$ys_variable)
+        }
+      } else {
+        updateSelectInput(session, "explorer_variable", selected = input$ys_variable)
+      }
       if (input$ys_variable %in% time_series_vars) {
         updateSelectInput(session, "ts_variable", selected = input$ys_variable)
       }
@@ -502,6 +565,25 @@ server <- function(input, output, session) {
     }
   })
   
+  # ---- Synchronize View Type (Congregation/ISPR) ----
+  # Update from Data Explorer tab.
+  observeEvent(input$explorer_view_congregation, {
+    if (is.null(selections$from_tab_view) || selections$from_tab_view != "explorer") {
+      view_by_congregation(input$explorer_view_congregation)
+      selections$from_tab_view <- "explorer"
+      updateCheckboxInput(session, "ys_view_congregation", value = input$explorer_view_congregation)
+    }
+  })
+  
+  # Update from Yearly Snapshot tab.
+  observeEvent(input$ys_view_congregation, {
+    if (is.null(selections$from_tab_view) || selections$from_tab_view != "yearly_snapshot") {
+      view_by_congregation(input$ys_view_congregation)
+      selections$from_tab_view <- "yearly_snapshot"
+      updateCheckboxInput(session, "explorer_view_congregation", value = input$ys_view_congregation)
+    }
+  })
+  
   # ---- Sync Selections on Tab Switch ----
   # Ensure tabs reflect the latest selections when activated.
   observeEvent(input$navbar, {
@@ -513,10 +595,10 @@ server <- function(input, output, session) {
       }
       updateSelectInput(session, "ts_variable", selected = valid_var)
     } else if (input$navbar == "Yearly Snapshot") {
-      valid_var <- if (!is.null(selections$variable) && selections$variable %in% all_vars) {
+      valid_var <- if (!is.null(selections$variable) && selections$variable %in% (if (view_by_congregation()) congregation_vars else all_vars)) {
         selections$variable
       } else {
-        all_vars[1]
+        (if (view_by_congregation()) congregation_vars else all_vars)[1]
       }
       valid_year <- if (!is.null(selections$year) && selections$year %in% sort(unique(data$Year))) {
         selections$year
@@ -525,20 +607,52 @@ server <- function(input, output, session) {
       }
       updateSelectInput(session, "ys_variable", selected = valid_var)
       updateSelectInput(session, "ys_year", selected = valid_year)
+      updateCheckboxInput(session, "ys_view_congregation", value = view_by_congregation())
     } else if (input$navbar == "Data Explorer") {
-      valid_var <- if (!is.null(selections$variable) && selections$variable %in% all_vars) {
+      valid_var <- if (!is.null(selections$variable) && selections$variable %in% (if (view_by_congregation()) congregation_vars else all_vars)) {
         selections$variable
       } else {
-        all_vars[1]
+        (if (view_by_congregation()) congregation_vars else all_vars)[1]
       }
       valid_year <- if (!is.null(selections$year) && selections$year %in% sort(unique(data$Year))) {
         selections$year
       } else {
         max(sort(unique(data$Year)))
       }
+      valid_category <- if (!is.null(selections$category)) selections$category else ""
       updateSelectInput(session, "explorer_variable", selected = valid_var)
       updateSelectInput(session, "explorer_year", selected = valid_year)
+      updateSelectInput(session, "explorer_category", selected = valid_category)
+      updateCheckboxInput(session, "explorer_view_congregation", value = view_by_congregation())
     }
+  })
+  
+  # ---- Update Available Variables for Explorer Tab ----
+  # Dynamically update variables based on view type.
+  observeEvent(input$explorer_view_congregation, {
+    available_vars <- if (input$explorer_view_congregation) congregation_vars else all_vars
+    selected_var <- if (!is.null(selections$variable) && selections$variable %in% available_vars) {
+      selections$variable
+    } else {
+      available_vars[1]
+    }
+    updateSelectInput(session, "explorer_variable",
+                      choices = c("Select a variable..." = "", available_vars),
+                      selected = selected_var)
+  })
+  
+  # ---- Update Available Variables for Yearly Snapshot Tab ----
+  # Dynamically update variables based on view type.
+  observeEvent(input$ys_view_congregation, {
+    available_vars <- if (input$ys_view_congregation) congregation_vars else all_vars
+    selected_var <- if (!is.null(selections$variable) && selections$variable %in% available_vars) {
+      selections$variable
+    } else {
+      available_vars[1]
+    }
+    updateSelectInput(session, "ys_variable",
+                      choices = available_vars,
+                      selected = selected_var)
   })
   
   # ---- Update Available Years for Explorer Tab ----
@@ -571,18 +685,36 @@ server <- function(input, output, session) {
     updateSelectInput(session, "ys_year", choices = available_years, selected = selected_year)
   })
   
+  # ---- Update Category Choices for Explorer Tab ----
+  # Dynamically update categories based on view type.
+  observeEvent(input$explorer_view_congregation, {
+    available_categories <- if (input$explorer_view_congregation) {
+      sort(intersect(congregations, unique(data$`Categories of Institutes`)))
+    } else {
+      sort(setdiff(unique(data$`Categories of Institutes`), congregations))
+    }
+    updateSelectizeInput(session, "explorer_category",
+                         choices = c("Type to search..." = "", available_categories),
+                         selected = "")
+    selected_category(NULL)
+  })
+  
   # ---- Handle Category Search Selection ----
   observeEvent(input$explorer_category, {
     req(input$explorer_category)
     selected_category(input$explorer_category)
+    selections$category <- input$explorer_category
   })
   
   # ---- Reset Table Filters ----
   observeEvent(input$reset_table, {
-    updateSelectInput(session, "explorer_variable", selected = "")
+    available_vars <- if (view_by_congregation()) congregation_vars else all_vars
+    updateSelectInput(session, "explorer_variable", selected = "", choices = c("Select a variable..." = "", available_vars))
     updateSelectInput(session, "explorer_year", selected = max(data$Year))
     updateSelectInput(session, "explorer_category", selected = "")
+    updateCheckboxInput(session, "explorer_view_congregation", value = FALSE)
     selected_category(NULL)
+    view_by_congregation(FALSE)
   })
   
   # ---- Time Series Reset Button ----
@@ -595,8 +727,11 @@ server <- function(input, output, session) {
   # ---- Yearly Snapshot Reset Button ----
   # Reset yearly snapshot selections to defaults.
   observeEvent(input$reset_ys, {
-    updateSelectInput(session, "ys_variable", selected = all_vars[1])
+    available_vars <- if (view_by_congregation()) congregation_vars else all_vars
+    updateSelectInput(session, "ys_variable", selected = available_vars[1])
     updateSelectInput(session, "ys_year", selected = max(data$Year))
+    updateCheckboxInput(session, "ys_view_congregation", value = FALSE)
+    view_by_congregation(FALSE)
     shiny::invalidateLater(100, session)
   })
   
@@ -607,7 +742,7 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       req(input$explorer_variable, input$explorer_year)
-      write.csv(create_download_data(data, input$explorer_year, input$explorer_variable, selected_category()), file, row.names = FALSE)
+      write.csv(create_download_data(data, input$explorer_year, input$explorer_variable, selected_category(), input$explorer_view_congregation), file, row.names = FALSE)
     }
   )
   
@@ -618,7 +753,7 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       req(input$explorer_variable, input$explorer_year)
-      writexl::write_xlsx(create_download_data(data, input$explorer_year, input$explorer_variable, selected_category()), path = file)
+      writexl::write_xlsx(create_download_data(data, input$explorer_year, input$explorer_variable, selected_category(), input$explorer_view_congregation), path = file)
     }
   )
 }
