@@ -1,7 +1,6 @@
 # ---- Load Required Libraries ----
 # This section installs and loads all necessary packages for the Shiny app.
 # It checks if each package is installed and installs it if not, then loads them.
-
 required_packages <- c(
   "shiny", "dplyr", "readr", "DT", "shinythemes",
   "RColorBrewer", "writexl", "plotly", "shinyjs", "ggplot2"
@@ -16,17 +15,13 @@ for (pkg in required_packages) {
 lapply(required_packages, library, character.only = TRUE)
 useShinyjs()
 
-
 # ---- Docker Instructions ----
 # Set Shiny app to listen on all interfaces and a specific port for Docker compatibility.
-
 options(shiny.host = "0.0.0.0")
 options(shiny.port = 3838) # Also 8180 is a valid option
 
-
 # ---- Load the Data ----
 # Set your working directory and read the data file.
-
 # Define the data file path and set it as your working directory.
 path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
 #path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
@@ -35,18 +30,15 @@ setwd(path_outputs)
 # Read the CSV file containing the data
 data <- read.csv("final_ispr_men_table.csv", check.names = FALSE)
 
-
 # ---- Define Variable Abbreviations ----
 # Read variable abbreviations from a CSV file and create a named vector.
 # The CSV file should have two columns: 'variable_name' and 'abbreviation'.
-
 abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
 if (!file.exists(abbreviations_file)) {
   stop("Variable abbreviations CSV file not found at: ", abbreviations_file)
 }
 abbreviations_df <- read.csv(abbreviations_file, stringsAsFactors = FALSE, check.names = FALSE)
 variable_abbreviations <- setNames(abbreviations_df$abbreviation, abbreviations_df$variable_name)
-
 
 # ---- Data Processing ----
 # Identify numeric columns excluding 'Year' and 'Categories of Institutes'.
@@ -58,10 +50,10 @@ num_cols <- setdiff(num_cols, "Year")
 data <- data %>%
   mutate(Year = as.integer(Year))
 
+# ---- Identify All Variables and Time Series Variables ----
+all_vars <- num_cols
 
-# ---- Identify Time Series Variables ----
 # Filter variables that have data for more than one year for time series use.
-
 time_series_vars <- num_cols[
   sapply(num_cols, function(var) {
     years <- data %>%
@@ -71,7 +63,6 @@ time_series_vars <- num_cols[
     length(years) > 1
   })
 ]
-
 
 # ---- UI Layout ----
 # Prepare category choices for the selector.
@@ -201,7 +192,7 @@ ui <- tagList(
                           width = 3,
                           tags$div(
                             style = "background-color: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #dee2e6; font-size: 14px;",
-                            create_select_input("explorer_variable", "Select variable:", c("Select a variable..." = "", time_series_vars)),
+                            create_select_input("explorer_variable", "Select variable:", c("Select a variable..." = "", all_vars)),
                             create_select_input("explorer_year", "Select year:", sort(unique(data$Year))),
                             create_select_input("explorer_category", "Search for a category:", c("Type to search..." = "", final_category_dropdown_choices), selected = "", multiple = FALSE, placeholder = "Type to search..."),
                             create_download_buttons(),
@@ -225,7 +216,8 @@ ui <- tagList(
                           width = 3,
                           class = "ts-sidebar",
                           style = "background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;",
-                          create_select_input("ys_variable", "Select variable:", time_series_vars, selected = time_series_vars[1]),
+                          create_select_input("ys_variable", "Select variable:", all_vars, selected = all_vars[1]),
+                          create_select_input("ys_year", "Select year:", sort(unique(data$Year))),
                           div(style = "margin-top: 10px;",
                               downloadButton("download_ys_plot", "Download Plot", class = "btn btn-sm btn-primary"),
                               actionButton("reset_ys", "Reset", icon = icon("undo"), class = "btn btn-sm btn-secondary")
@@ -242,7 +234,6 @@ ui <- tagList(
   )
 )
 
-
 # ---- Server Logic ----
 # Define the server function for the Shiny app.
 server <- function(input, output, session) {
@@ -254,7 +245,8 @@ server <- function(input, output, session) {
   selections <- reactiveValues(
     variable = NULL,
     year = NULL,
-    from_tab = NULL # Track which tab triggered the change
+    from_tab_var = NULL, # Track which tab triggered the change for variable
+    from_tab_year = NULL # Track which tab triggered the change for year
   )
   
   # ---- Time Series Plot Data ----
@@ -341,9 +333,10 @@ server <- function(input, output, session) {
   # ---- Yearly Snapshot Plot Data ----
   ys_plot_data_reactive <- reactive({
     req(input$ys_variable)
+    req(input$ys_year)
     
     filtered_data <- data %>%
-      filter(Year == 2022) %>%
+      filter(Year == input$ys_year) %>%
       select(`Categories of Institutes`, Year, !!sym(input$ys_variable)) %>%
       rename(category = `Categories of Institutes`, value = !!sym(input$ys_variable)) %>%
       filter(!is.na(value))
@@ -352,7 +345,7 @@ server <- function(input, output, session) {
   })
   
   # ---- Render Yearly Snapshot Histogram ----
-  # Generate Plotly bar chart for 2022 data.
+  # Generate Plotly bar chart for selected year data.
   output$ys_plot <- renderPlotly({
     plot_data <- ys_plot_data_reactive()
     
@@ -361,7 +354,7 @@ server <- function(input, output, session) {
         plot_ly() %>%
           add_bars(x = character(0), y = numeric(0),
                    showlegend = FALSE, hoverinfo = "skip") %>%
-          layout(title = "No data available for the selected variable in 2022")
+          layout(title = "No data available for the selected variable and year")
       )
     }
     
@@ -375,14 +368,14 @@ server <- function(input, output, session) {
       hoverinfo = "text",
       text = ~paste0(
         "<b>", category, "</b><br>",
-        "Year: 2022<br>",
+        "Year: ", input$ys_year, "<br>",
         "Value: ", round(value, 2)
       ),
       textposition = "none",
       showlegend = TRUE
     ) %>%
       layout(
-        title = paste("Yearly Snapshot of", input$ys_variable, "in 2022"),
+        title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
         hovermode = "closest",
         xaxis = list(title = "Categories of Institutes"),
         yaxis = list(title = "Absolute Value"),
@@ -402,7 +395,7 @@ server <- function(input, output, session) {
     ggplot(plot_data, aes(x = category, y = value, fill = category)) +
       geom_bar(stat = "identity") +
       scale_fill_brewer(palette = "Set2") +
-      labs(title = paste("Yearly Snapshot of", input$ys_variable, "in 2022"),
+      labs(title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
            x = "Categories of Institutes", y = "Absolute Value") +
       theme_minimal(base_size = 13) +
       theme(plot.background = element_rect(fill = "white", colour = "white"),
@@ -413,7 +406,7 @@ server <- function(input, output, session) {
   
   output$download_ys_plot <- downloadHandler(
     filename = function() {
-      paste0("yearly_snapshot_", input$ys_variable, "_2022_", Sys.Date(), ".png")
+      paste0("yearly_snapshot_", input$ys_variable, "_", input$ys_year, "_", Sys.Date(), ".png")
     },
     content = function(file) {
       ggsave(file, plot = ys_plot_static(), width = 10, height = 6, dpi = 300)
@@ -439,12 +432,12 @@ server <- function(input, output, session) {
     datatable(filtered, options = list(pageLength = 20))
   })
   
-  # ---- Synchronize Variable and Year Selections ----
+  # ---- Synchronize Variable Selections ----
   # Update from Time Series tab.
   observeEvent(input$ts_variable, {
-    if (is.null(selections$from_tab) || selections$from_tab != "time_series") {
+    if (is.null(selections$from_tab_var) || selections$from_tab_var != "time_series") {
       selections$variable <- input$ts_variable
-      selections$from_tab <- "time_series"
+      selections$from_tab_var <- "time_series"
       updateSelectInput(session, "explorer_variable", selected = input$ts_variable)
       updateSelectInput(session, "ys_variable", selected = input$ts_variable)
     }
@@ -453,38 +446,98 @@ server <- function(input, output, session) {
   # Update from Data Explorer tab.
   observeEvent(input$explorer_variable, {
     req(input$explorer_variable)
-    if (input$explorer_variable != "" && (is.null(selections$from_tab) || selections$from_tab != "explorer")) {
+    if (input$explorer_variable != "" && (is.null(selections$from_tab_var) || selections$from_tab_var != "explorer")) {
       selections$variable <- input$explorer_variable
-      selections$from_tab <- "explorer"
-      updateSelectInput(session, "ts_variable", selected = input$explorer_variable)
+      selections$from_tab_var <- "explorer"
       updateSelectInput(session, "ys_variable", selected = input$explorer_variable)
+      if (input$explorer_variable %in% time_series_vars) {
+        updateSelectInput(session, "ts_variable", selected = input$explorer_variable)
+      }
     }
   })
   
   # Update from Yearly Snapshot tab.
   observeEvent(input$ys_variable, {
-    if (is.null(selections$from_tab) || selections$from_tab != "yearly_snapshot") {
+    if (is.null(selections$from_tab_var) || selections$from_tab_var != "yearly_snapshot") {
       selections$variable <- input$ys_variable
-      selections$from_tab <- "yearly_snapshot"
+      selections$from_tab_var <- "yearly_snapshot"
       updateSelectInput(session, "explorer_variable", selected = input$ys_variable)
-      updateSelectInput(session, "ts_variable", selected = input$ys_variable)
+      if (input$ys_variable %in% time_series_vars) {
+        updateSelectInput(session, "ts_variable", selected = input$ys_variable)
+      }
+    }
+  })
+  
+  # ---- Synchronize Year Selections ----
+  # Update from Data Explorer tab.
+  observeEvent(input$explorer_year, {
+    if (is.null(selections$from_tab_year) || selections$from_tab_year != "explorer") {
+      selections$year <- input$explorer_year
+      selections$from_tab_year <- "explorer"
+      # Update ys_year if the year is available for ys_variable
+      req(input$ys_variable)
+      available_ys <- sort(unique(data %>%
+                                    filter(!is.na(.data[[input$ys_variable]])) %>%
+                                    pull(Year)))
+      if (input$explorer_year %in% available_ys) {
+        updateSelectInput(session, "ys_year", selected = input$explorer_year)
+      }
+    }
+  })
+  
+  # Update from Yearly Snapshot tab.
+  observeEvent(input$ys_year, {
+    if (is.null(selections$from_tab_year) || selections$from_tab_year != "yearly_snapshot") {
+      selections$year <- input$ys_year
+      selections$from_tab_year <- "yearly_snapshot"
+      # Update explorer_year if the year is available for explorer_variable
+      req(input$explorer_variable)
+      req(input$explorer_variable != "")
+      available_explorer <- sort(unique(data %>%
+                                          filter(!is.na(.data[[input$explorer_variable]])) %>%
+                                          pull(Year)))
+      if (input$ys_year %in% available_explorer) {
+        updateSelectInput(session, "explorer_year", selected = input$ys_year)
+      }
     }
   })
   
   # ---- Sync Selections on Tab Switch ----
-  # Ensure tabs reflect the latest variable selection when activated.
+  # Ensure tabs reflect the latest selections when activated.
   observeEvent(input$navbar, {
-    valid_variable <- if (!is.null(selections$variable) && selections$variable %in% time_series_vars) {
-      selections$variable
-    } else {
-      time_series_vars[1]
-    }
     if (input$navbar == "Time Series") {
-      updateSelectInput(session, "ts_variable", selected = valid_variable)
+      valid_var <- if (!is.null(selections$variable) && selections$variable %in% time_series_vars) {
+        selections$variable
+      } else {
+        time_series_vars[1]
+      }
+      updateSelectInput(session, "ts_variable", selected = valid_var)
     } else if (input$navbar == "Yearly Snapshot") {
-      updateSelectInput(session, "ys_variable", selected = valid_variable)
+      valid_var <- if (!is.null(selections$variable) && selections$variable %in% all_vars) {
+        selections$variable
+      } else {
+        all_vars[1]
+      }
+      valid_year <- if (!is.null(selections$year) && selections$year %in% sort(unique(data$Year))) {
+        selections$year
+      } else {
+        max(sort(unique(data$Year)))
+      }
+      updateSelectInput(session, "ys_variable", selected = valid_var)
+      updateSelectInput(session, "ys_year", selected = valid_year)
     } else if (input$navbar == "Data Explorer") {
-      updateSelectInput(session, "explorer_variable", selected = valid_variable)
+      valid_var <- if (!is.null(selections$variable) && selections$variable %in% all_vars) {
+        selections$variable
+      } else {
+        all_vars[1]
+      }
+      valid_year <- if (!is.null(selections$year) && selections$year %in% sort(unique(data$Year))) {
+        selections$year
+      } else {
+        max(sort(unique(data$Year)))
+      }
+      updateSelectInput(session, "explorer_variable", selected = valid_var)
+      updateSelectInput(session, "explorer_year", selected = valid_year)
     }
   })
   
@@ -495,7 +548,27 @@ server <- function(input, output, session) {
     available_years <- sort(unique(data %>%
                                      filter(!is.na(.data[[input$explorer_variable]])) %>%
                                      pull(Year)))
-    updateSelectInput(session, "explorer_year", choices = available_years, selected = max(available_years))
+    selected_year <- if (!is.null(selections$year) && selections$year %in% available_years) {
+      selections$year
+    } else {
+      max(available_years)
+    }
+    updateSelectInput(session, "explorer_year", choices = available_years, selected = selected_year)
+  })
+  
+  # ---- Update Available Years for Yearly Snapshot Tab ----
+  # Dynamically update years based on variable data availability.
+  observeEvent(input$ys_variable, {
+    req(input$ys_variable)
+    available_years <- sort(unique(data %>%
+                                     filter(!is.na(.data[[input$ys_variable]])) %>%
+                                     pull(Year)))
+    selected_year <- if (!is.null(selections$year) && selections$year %in% available_years) {
+      selections$year
+    } else {
+      max(available_years)
+    }
+    updateSelectInput(session, "ys_year", choices = available_years, selected = selected_year)
   })
   
   # ---- Handle Category Search Selection ----
@@ -522,7 +595,8 @@ server <- function(input, output, session) {
   # ---- Yearly Snapshot Reset Button ----
   # Reset yearly snapshot selections to defaults.
   observeEvent(input$reset_ys, {
-    updateSelectInput(session, "ys_variable", selected = time_series_vars[1])
+    updateSelectInput(session, "ys_variable", selected = all_vars[1])
+    updateSelectInput(session, "ys_year", selected = max(data$Year))
     shiny::invalidateLater(100, session)
   })
   
@@ -548,7 +622,6 @@ server <- function(input, output, session) {
     }
   )
 }
-
 
 # ---- Launch the Shiny App ----
 shinyApp(ui, server)
