@@ -3,7 +3,7 @@
 # It checks if each package is installed and installs it if not, then loads them.
 required_packages <- c(
   "shiny", "dplyr", "readr", "DT", "shinythemes",
-  "RColorBrewer", "writexl", "plotly", "shinyjs", "ggplot2"
+  "RColorBrewer", "writexl", "plotly", "shinyjs", "ggplot2", "viridis"
 )
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
@@ -24,8 +24,8 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # ---- Load the Data ----
 # Set your working directory and read the data file.
 # Define the data file path and set it as your working directory.
-path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
-#path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
+#path_outputs <- "C:/Users/schia/Documents/LMU/Consulting/App"
+path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
 setwd(path_outputs)
 
 # Read the CSV file containing the data
@@ -307,7 +307,7 @@ server <- function(input, output, session) {
       x = ~Year,
       y = ~value,
       color = ~category,
-      colors = RColorBrewer::brewer.pal(max(3, length(unique(plot_data$category))), "Set2"),
+      colors = viridis::viridis(n = length(unique(plot_data$category))),
       type = "scatter",
       mode = "lines+markers",
       hoverinfo = "text",
@@ -340,6 +340,7 @@ server <- function(input, output, session) {
     ggplot(plot_data, aes(x = Year, y = value, color = category)) +
       geom_line(linewidth = 1) +
       geom_point(size = 2) +
+      scale_color_viridis_d() +
       labs(title = paste("Time Series of", input$ts_variable),
            x = "Year", y = "Absolute Value", color = "Categories") +
       theme_minimal(base_size = 13) +
@@ -397,7 +398,7 @@ server <- function(input, output, session) {
       y = ~value,
       type = "bar",
       color = ~category,
-      colors = RColorBrewer::brewer.pal(max(3, length(unique(plot_data$category))), "Set2"),
+      colors = viridis::viridis(n = length(unique(plot_data$category))),
       hoverinfo = "text",
       text = ~paste0(
         "<b>", category, "</b><br>",
@@ -427,7 +428,7 @@ server <- function(input, output, session) {
     
     ggplot(plot_data, aes(x = category, y = value, fill = category)) +
       geom_bar(stat = "identity") +
-      scale_fill_brewer(palette = "Set2") +
+      scale_fill_viridis_d() +
       labs(title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
            x = "Categories of Institutes", y = "Absolute Value") +
       theme_minimal(base_size = 13) +
@@ -693,10 +694,15 @@ server <- function(input, output, session) {
     } else {
       sort(setdiff(unique(data$`Categories of Institutes`), congregations))
     }
+    selected_category_val <- if (!is.null(selections$category) && selections$category %in% available_categories) {
+      selections$category
+    } else {
+      ""
+    }
     updateSelectizeInput(session, "explorer_category",
                          choices = c("Type to search..." = "", available_categories),
-                         selected = "")
-    selected_category(NULL)
+                         selected = selected_category_val)
+    selected_category(selected_category_val)
   })
   
   # ---- Handle Category Search Selection ----
@@ -715,6 +721,7 @@ server <- function(input, output, session) {
     updateCheckboxInput(session, "explorer_view_congregation", value = FALSE)
     selected_category(NULL)
     view_by_congregation(FALSE)
+    selections$category <- NULL
   })
   
   # ---- Time Series Reset Button ----
