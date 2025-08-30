@@ -273,7 +273,7 @@ ui <- tagList(
 
 # ---- Server Logic ----
 
-# ---------- DRILLDOWN HIERARCHY (EDIT THESE VECTORS TO MATCH YOUR DATA) ----------
+# ---- DRILLDOWN HIERARCHY  ----
 # Leaves of the hierarchy (exact strings as they appear in `Categories of Institutes`)
 C_RI_ORDERS <- c(
   "Orders - monastic",
@@ -291,15 +291,12 @@ C_RI_CONG_LAY <- c(
 )
 
 C_SOCIETIES <- c(
-  # sembra che tu abbia solo il totale per le Società
   "Societies of apostolic life (total)"
 )
 
-# ---- Eventuali righe di totale (se presenti nel file) ----
 C_RI_TOTAL_ROW <- c("Religious institutes (total)")
 C_SOCIETIES_TOTAL_ROW <- c("Societies of apostolic life (total)")
 
-# (Extra, probabilmente non ti serve per il drilldown)
 C_ISPR_TOTAL_ROW <- c("ISPRs (total)")
 
 # Helper: a named list for level labels (do NOT change the names L1/L2/L3)
@@ -309,7 +306,7 @@ YS_LEVELS <- list(
   L3_ORDERS = c("Monastic orders", "Canons regular", "Mendicant orders", "Clerics regular")
 )
 
-# ---------- STATE FOR DRILLDOWN ----------
+# ---- STATE FOR DRILLDOWN ----
 ys_state <- reactiveValues(
   level = "L1",     # "L1" | "L2_RI" | "L3_ORDERS"
   parent = NULL,    # used when going down (e.g., "Religious institutes" or "Orders")
@@ -598,14 +595,9 @@ server <- function(input, output, session) {
     
     # Case B: NOT BY CONGREGATION ➜ Drilldown bars
     dd <- ys_drill_data(input$ys_year, input$ys_variable)
-    
     if (nrow(dd) == 0) {
-      return(
-        plot_ly() %>%
-          add_bars(x = character(0), y = numeric(0),
-                   showlegend = FALSE, hoverinfo = "skip") %>%
-          layout(title = "No data available for the selected variable and year")
-      )
+      return(plot_ly() %>% add_bars(x=character(0), y=numeric(0), showlegend=FALSE, hoverinfo="skip") %>%
+               layout(title="No data available for the selected variable and year"))
     }
     
     subtitle <- switch(
@@ -622,25 +614,25 @@ server <- function(input, output, session) {
       type = "bar",
       color = ~label,
       colors = viridis::viridis(length(unique(dd$label))),
-      text = NULL,                   # no text on bars
+      text = NULL,
       hovertemplate = "<b>%{x}</b><br>Value: %{y:,}<extra></extra>",
-      source = "ys_drill"            # IMPORTANT for click capture
+      source = "ys_drill"   # this is the source you listen to
     ) %>%
       layout(
-        title = list(
-          text = paste0("Yearly Snapshot of ", input$ys_variable, " in ", input$ys_year,
-                        "<br><sup>", subtitle, "</sup>")
-        ),
+        title = list(text = paste0(
+          "Yearly Snapshot of ", input$ys_variable, " in ", input$ys_year,
+          "<br><sup>", subtitle, "</sup>"
+        )),
         hovermode = "closest",
-        showlegend = FALSE,          # legend off (x-axis already tells categories)
+        showlegend = FALSE,
         xaxis = list(title = "", tickangle = -15),
         yaxis = list(title = "Absolute Value"),
         margin = list(r = 20, t = 60, b = 60, l = 60)
       )
     
-    p %>%
-      event_register('plotly_click') %>%  # <-- this fixes the warning
+    p %>% event_register('plotly_click') %>%   # <-- REQUIRED
       config(displayModeBar = FALSE, responsive = TRUE)
+    
     
   })
   
@@ -648,21 +640,58 @@ server <- function(input, output, session) {
   # ---- Yearly Snapshot Download Button ----
   # Create a static ggplot for downloading the yearly snapshot histogram.
   ys_plot_static <- reactive({
-    plot_data <- ys_plot_data_reactive()
+    req(input$ys_variable, input$ys_year)
     
-    if (nrow(plot_data) == 0) return(NULL)
-    
-    ggplot(plot_data, aes(x = category, y = value, fill = category)) +
-      geom_bar(stat = "identity") +
-      scale_fill_viridis_d() +
-      labs(title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
-           x = "Categories of Institutes", y = "Absolute Value") +
-      theme_minimal(base_size = 13) +
-      theme(plot.background = element_rect(fill = "white", colour = "white"),
+    if (input$ys_view_congregation) {
+      # Mirror the BY CONGREGATION bars
+      plot_data <- data %>%
+        filter(Year == input$ys_year) %>%
+        select(`Categories of Institutes`, Year, !!sym(input$ys_variable)) %>%
+        rename(category = `Categories of Institutes`, value = !!sym(input$ys_variable)) %>%
+        filter(!is.na(value), category %in% congregations)
+      
+      if (nrow(plot_data) == 0) return(NULL)
+      
+      plot_data$category <- factor(plot_data$category, levels = plot_data$category)
+      
+      return(
+        ggplot(plot_data, aes(x = category, y = value, fill = category)) +
+          geom_col() +
+          scale_fill_viridis_d(guide = "none") +
+          labs(
+            title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
+            x = "Categories of Institutes", y = "Absolute Value"
+          ) +
+          theme_minimal(base_size = 13) +
+          theme(
+            plot.background = element_rect(fill = "white", colour = "white"),
             panel.background = element_rect(fill = "white", colour = "white"),
-            legend.position = "none",
-            axis.text.x = element_text(angle = 45, hjust = 1))
+            axis.text.x = element_text(angle = 15, hjust = 1)
+          )
+      )
+    }
+    
+    # Mirror the DRILLDOWN bars (NOT by congregation)
+    dd <- ys_drill_data(input$ys_year, input$ys_variable)
+    if (nrow(dd) == 0) return(NULL)
+    
+    dd$label <- factor(dd$label, levels = dd$label)
+    
+    ggplot(dd, aes(x = label, y = value, fill = label)) +
+      geom_col() +
+      scale_fill_viridis_d(guide = "none") +
+      labs(
+        title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
+        x = NULL, y = "Absolute Value"
+      ) +
+      theme_minimal(base_size = 13) +
+      theme(
+        plot.background = element_rect(fill = "white", colour = "white"),
+        panel.background = element_rect(fill = "white", colour = "white"),
+        axis.text.x = element_text(angle = 15, hjust = 1)
+      )
   })
+
   
   output$download_ys_plot <- downloadHandler(
     filename = function() {
