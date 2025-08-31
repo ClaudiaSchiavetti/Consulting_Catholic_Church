@@ -3,7 +3,7 @@
 # It checks if each package is installed and installs it if not, then loads them.
 required_packages <- c(
   "shiny", "dplyr", "readr", "DT", "shinythemes",
-  "RColorBrewer", "writexl", "plotly", "shinyjs", 
+  "RColorBrewer", "writexl", "plotly", "shinyjs",
   "ggplot2", "viridis", "tibble", "tidyr"
 )
 for (pkg in required_packages) {
@@ -286,7 +286,7 @@ ui <- tagList(
 
 # ---- Server Logic ----
 
-# ---- DRILLDOWN HIERARCHY  ----
+# ---- DRILLDOWN HIERARCHY ----
 # Leaves of the hierarchy (exact strings as they appear in `Categories of Institutes`)
 C_RI_ORDERS <- c(
   "Orders - monastic",
@@ -321,8 +321,8 @@ YS_LEVELS <- list(
 
 # ---- STATE FOR DRILLDOWN ----
 ys_state <- reactiveValues(
-  level = "L1",     # "L1" | "L2_RI" | "L3_ORDERS"
-  parent = NULL,    # used when going down (e.g., "Religious institutes" or "Orders")
+  level = "L1", # "L1" | "L2_RI" | "L3_ORDERS"
+  parent = NULL, # used when going down (e.g., "Religious institutes" or "Orders")
   path = character() # breadcrumb path (character vector)
 )
 # ---- STATE FOR TIME SERIES DRILLDOWN ----
@@ -334,7 +334,6 @@ ts_state <- reactiveValues(
 # Define the server function for the Shiny app.
 server <- function(input, output, session) {
   
-  # Sum helper for a set of leaf categories
   # Sum helper for a set of leaf categories
   sum_for <- function(values, categories, leaves) {
     if (length(leaves) == 0) return(0)
@@ -354,15 +353,15 @@ server <- function(input, output, session) {
       # L1: RI, Societies, Total
       # Use total if present; otherwise sum leaves
       ri_sum <- if (any(base$category %in% C_RI_TOTAL_ROW)) {
-        sum_for(base, C_RI_TOTAL_ROW)
+        sum_for(base$value, base$category, C_RI_TOTAL_ROW)
       } else {
-        sum_for(base, c(C_RI_ORDERS, C_RI_CONG_CLERICS, C_RI_CONG_LAY))
+        sum_for(base$value, base$category, c(C_RI_ORDERS, C_RI_CONG_CLERICS, C_RI_CONG_LAY))
       }
       
       so_sum <- if (any(base$category %in% C_SOCIETIES_TOTAL_ROW)) {
-        sum_for(base, C_SOCIETIES_TOTAL_ROW)
+        sum_for(base$value, base$category, C_SOCIETIES_TOTAL_ROW)
       } else {
-        sum_for(base, C_SOCIETIES)
+        sum_for(base$value, base$category, C_SOCIETIES)
       }
       
       tot_sum <- ri_sum + so_sum
@@ -375,9 +374,9 @@ server <- function(input, output, session) {
       tibble::tibble(
         label = YS_LEVELS$L2_RI,
         value = c(
-          sum_for(base, C_RI_ORDERS),
-          sum_for(base, C_RI_CONG_CLERICS),
-          sum_for(base, C_RI_CONG_LAY)
+          sum_for(base$value, base$category, C_RI_ORDERS),
+          sum_for(base$value, base$category, C_RI_CONG_CLERICS),
+          sum_for(base$value, base$category, C_RI_CONG_LAY)
         )
       )
     } else if (ys_state$level == "L3_ORDERS") {
@@ -385,10 +384,10 @@ server <- function(input, output, session) {
       tibble::tibble(
         label = YS_LEVELS$L3_ORDERS,
         value = c(
-          sum_for(base, C_RI_ORDERS[grep("Monastic", C_RI_ORDERS, ignore.case = TRUE)]),
-          sum_for(base, C_RI_ORDERS[grep("Canons", C_RI_ORDERS,  ignore.case = TRUE)]),
-          sum_for(base, C_RI_ORDERS[grep("Mendicant", C_RI_ORDERS, ignore.case = TRUE)]),
-          sum_for(base, C_RI_ORDERS[grep("Clerics regular", C_RI_ORDERS, ignore.case = TRUE)])
+          sum_for(base$value, base$category, C_RI_ORDERS[grep("monastic", C_RI_ORDERS, ignore.case = TRUE)]),
+          sum_for(base$value, base$category, C_RI_ORDERS[grep("Canons", C_RI_ORDERS, ignore.case = TRUE)]),
+          sum_for(base$value, base$category, C_RI_ORDERS[grep("Mendicant", C_RI_ORDERS, ignore.case = TRUE)]),
+          sum_for(base$value, base$category, C_RI_ORDERS[grep("Clerics regular", C_RI_ORDERS, ignore.case = TRUE)])
         )
       )
     } else {
@@ -404,7 +403,6 @@ server <- function(input, output, session) {
   })
   output$ys_breadcrumb <- renderUI(ys_breadcrumb_html())
   
-  # Time Series Breadcrumb HTML
   # Time Series Breadcrumb HTML
   ts_breadcrumb_html <- reactive({
     if (length(ts_state$path) == 0) return(HTML("<b>Path:</b> Time Series"))
@@ -436,13 +434,13 @@ server <- function(input, output, session) {
     
     if (ts_state$level == "L1") {
       base %>% summarise(
-        `Religious institutes` = if (any(category %in% C_RI_TOTAL_ROW)) 
-          sum_for(value, category, C_RI_TOTAL_ROW) 
-        else 
+        `Religious institutes` = if (any(category %in% C_RI_TOTAL_ROW))
+          sum_for(value, category, C_RI_TOTAL_ROW)
+        else
           sum_for(value, category, c(C_RI_ORDERS, C_RI_CONG_CLERICS, C_RI_CONG_LAY)),
-        `Societies of apostolic life` = if (any(category %in% C_SOCIETIES_TOTAL_ROW)) 
-          sum_for(value, category, C_SOCIETIES_TOTAL_ROW) 
-        else 
+        `Societies of apostolic life` = if (any(category %in% C_SOCIETIES_TOTAL_ROW))
+          sum_for(value, category, C_SOCIETIES_TOTAL_ROW)
+        else
           sum_for(value, category, C_SOCIETIES),
         Total = `Religious institutes` + `Societies of apostolic life`
       ) %>% ungroup() %>% pivot_longer(-Year, names_to = "label", values_to = "value")
@@ -477,10 +475,10 @@ server <- function(input, output, session) {
     if (input$ys_view_congregation) return(NULL)
     if (ys_state$level == "L3_ORDERS") {
       ys_state$level <- "L2_RI"
-      ys_state$path  <- ys_state$path[1:max(0, length(ys_state$path)-1)]
+      ys_state$path <- ys_state$path[1:max(0, length(ys_state$path)-1)]
     } else if (ys_state$level == "L2_RI") {
       ys_state$level <- "L1"
-      ys_state$path  <- character()
+      ys_state$path <- character()
     } # L1: no-op
   })
   
@@ -512,13 +510,13 @@ server <- function(input, output, session) {
     if (ys_state$level == "L1") {
       if (clicked == "Religious institutes") {
         ys_state$level <- "L2_RI"
-        ys_state$path  <- c("Religious institutes")
+        ys_state$path <- c("Religious institutes")
       }
       # clicking "Societies of apostolic life" or "Total" does not drill further
     } else if (ys_state$level == "L2_RI") {
       if (clicked == "Orders") {
         ys_state$level <- "L3_ORDERS"
-        ys_state$path  <- c("Religious institutes", "Orders")
+        ys_state$path <- c("Religious institutes", "Orders")
       }
       # other L2 items (Congregations…) stop here
     }
@@ -551,10 +549,8 @@ server <- function(input, output, session) {
     if (nrow(plot_data) == 0) {
       return(
         plot_ly() %>%
-          add_trace(x = numeric(0), y = numeric(0),
-                    type = "scatter", mode = "lines+markers",
-                    showlegend = FALSE, hoverinfo = "skip") %>%
-          layout(title = "No data available for the selected variable")
+          layout(title = "No data available for the selected variable") %>%
+          config(displayModeBar = FALSE, responsive = TRUE)
       )
     }
     
@@ -664,9 +660,8 @@ server <- function(input, output, session) {
       if (nrow(plot_data) == 0) {
         return(
           plot_ly() %>%
-            add_bars(x = character(0), y = numeric(0),
-                     showlegend = FALSE, hoverinfo = "skip") %>%
-            layout(title = "No data available for the selected variable and year")
+            layout(title = "No data available for the selected variable and year") %>%
+            config(displayModeBar = FALSE, responsive = TRUE)
         )
       }
       
@@ -678,13 +673,13 @@ server <- function(input, output, session) {
           type = "bar",
           color = ~category,
           colors = viridis::viridis(length(unique(plot_data$category))),
-          text = NULL,  # no labels on bars
+          text = NULL, # no labels on bars
           hovertemplate = "<b>%{x}</b><br>Value: %{y:,}<extra></extra>"
         ) %>%
           layout(
             title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
             hovermode = "closest",
-            showlegend = FALSE,  # legend off (x-axis already tells categories)
+            showlegend = FALSE, # legend off (x-axis already tells categories)
             xaxis = list(title = "Categories of Institutes", tickangle = -15),
             yaxis = list(title = "Absolute Value"),
             margin = list(r = 20, t = 60, b = 60, l = 60)
@@ -697,14 +692,15 @@ server <- function(input, output, session) {
     # Case B: NOT BY CONGREGATION ➜ Drilldown bars
     dd <- ys_drill_data(input$ys_year, input$ys_variable)
     if (nrow(dd) == 0) {
-      return(plot_ly() %>% add_bars(x=character(0), y=numeric(0), showlegend=FALSE, hoverinfo="skip") %>%
-               layout(title="No data available for the selected variable and year"))
+      return(plot_ly() %>%
+               layout(title="No data available for the selected variable and year") %>%
+               config(displayModeBar = FALSE, responsive = TRUE))
     }
     
     subtitle <- switch(
       ys_state$level,
-      "L1"        = "Click 'Religious institutes' to drill down",
-      "L2_RI"     = "Click 'Orders' to drill down",
+      "L1" = "Click 'Religious institutes' to drill down",
+      "L2_RI" = "Click 'Orders' to drill down",
       "L3_ORDERS" = "Deepest level"
     )
     
@@ -717,7 +713,7 @@ server <- function(input, output, session) {
       colors = viridis::viridis(length(unique(dd$label))),
       text = NULL,
       hovertemplate = "<b>%{x}</b><br>Value: %{y:,}<extra></extra>",
-      source = "ys_drill"   # this is the source you listen to
+      source = "ys_drill" # this is the source you listen to
     ) %>%
       layout(
         title = list(text = paste0(
@@ -731,9 +727,8 @@ server <- function(input, output, session) {
         margin = list(r = 20, t = 60, b = 60, l = 60)
       )
     
-    p %>% event_register('plotly_click') %>%   # <-- REQUIRED
+    p %>% event_register('plotly_click') %>% # <-- REQUIRED
       config(displayModeBar = FALSE, responsive = TRUE)
-    
     
   })
   
@@ -828,6 +823,42 @@ server <- function(input, output, session) {
     datatable(filtered, options = list(pageLength = 20))
   })
   
+  # ---- Compute Available Variables for Yearly Snapshot Tab ----
+  # Dynamically compute variables that have data for the selected year and view type
+  ys_available_vars <- reactive({
+    req(input$ys_year)
+    if (input$ys_view_congregation) {
+      # Variables with non-NA data for congregations in the selected year
+      num_cols[
+        sapply(num_cols, function(var) {
+          any(!is.na(data %>%
+                       filter(Year == input$ys_year, `Categories of Institutes` %in% congregations) %>%
+                       pull(.data[[var]])))
+        })
+      ]
+    } else {
+      # All variables with non-NA data for non-congregations in the selected year
+      num_cols[
+        sapply(num_cols, function(var) {
+          any(!is.na(data %>%
+                       filter(Year == input$ys_year, !(`Categories of Institutes` %in% congregations)) %>%
+                       pull(.data[[var]])))
+        })
+      ]
+    }
+  })
+  
+  # ---- Update Available Variables for Yearly Snapshot Tab ----
+  observeEvent(list(input$ys_view_congregation, input$ys_year), {
+    available_vars <- ys_available_vars()
+    selected_var <- if (!is.null(selections$variable) && selections$variable %in% available_vars) {
+      selections$variable
+    } else {
+      available_vars[1]
+    }
+    updateSelectInput(session, "ys_variable", choices = available_vars, selected = selected_var)
+  })
+  
   # ---- Synchronize Variable Selections ----
   # Update from Time Series tab.
   observeEvent(input$ts_variable, {
@@ -842,11 +873,13 @@ server <- function(input, output, session) {
         updateSelectInput(session, "explorer_variable", selected = input$ts_variable)
       }
       if (input$ys_view_congregation) {
-        if (input$ts_variable %in% congregation_vars) {
+        if (input$ts_variable %in% ys_available_vars()) {
           updateSelectInput(session, "ys_variable", selected = input$ts_variable)
         }
       } else {
-        updateSelectInput(session, "ys_variable", selected = input$ts_variable)
+        if (input$ts_variable %in% ys_available_vars()) {
+          updateSelectInput(session, "ys_variable", selected = input$ts_variable)
+        }
       }
       ts_state$level <- "L1"
       ts_state$path <- character()
@@ -865,11 +898,13 @@ server <- function(input, output, session) {
       selections$variable <- input$explorer_variable
       selections$from_tab_var <- "explorer"
       if (input$ys_view_congregation) {
-        if (input$explorer_variable %in% congregation_vars) {
+        if (input$explorer_variable %in% ys_available_vars()) {
           updateSelectInput(session, "ys_variable", selected = input$explorer_variable)
         }
       } else {
-        updateSelectInput(session, "ys_variable", selected = input$explorer_variable)
+        if (input$explorer_variable %in% ys_available_vars()) {
+          updateSelectInput(session, "ys_variable", selected = input$explorer_variable)
+        }
       }
       if (input$explorer_variable %in% time_series_vars) {
         updateSelectInput(session, "ts_variable", selected = input$explorer_variable)
@@ -937,16 +972,9 @@ server <- function(input, output, session) {
       view_by_congregation(input$ys_view_congregation)
       selections$from_tab_view <- "yearly_snapshot"
       updateCheckboxInput(session, "explorer_view_congregation", value = input$ys_view_congregation)
-      updateCheckboxInput(session, "ts_view_congregation", value = input$ys_view_congregation)
-    }
-  })
-  
-  observeEvent(input$ts_view_congregation, {
-    if (is.null(selections$from_tab_view) || selections$from_tab_view != "time_series") {
-      view_by_congregation(input$ts_view_congregation)
-      selections$from_tab_view <- "time_series"
-      updateCheckboxInput(session, "ys_view_congregation", value = input$ts_view_congregation)
-      updateCheckboxInput(session, "explorer_view_congregation", value = input$ts_view_congregation)
+      if (input$ys_view_congregation) {
+        updateSelectInput(session, "ys_year", selected = "2022")
+      }
     }
   })
   
@@ -960,10 +988,10 @@ server <- function(input, output, session) {
       }
       updateSelectInput(session, "ts_variable", selected = valid_var)
     } else if (input$navbar == "Yearly Snapshot") {
-      valid_var <- if (!is.null(selections$variable) && selections$variable %in% (if (view_by_congregation()) congregation_vars else all_vars)) {
+      valid_var <- if (!is.null(selections$variable) && selections$variable %in% ys_available_vars()) {
         selections$variable
       } else {
-        (if (view_by_congregation()) congregation_vars else all_vars)[1]
+        ys_available_vars()[1]
       }
       valid_year <- if (!is.null(selections$year) && selections$year %in% sort(unique(data$Year))) {
         selections$year
@@ -1002,15 +1030,6 @@ server <- function(input, output, session) {
     }
   })
   
-  # ---- Update Available Variables for Yearly Snapshot Tab ----
-  # Dynamically update variables based on view type.
-  observeEvent(input$ys_view_congregation, {
-    if (is.null(selections$from_tab_view) || selections$from_tab_view != "yearly_snapshot") {
-      view_by_congregation(input$ys_view_congregation)
-      selections$from_tab_view <- "yearly_snapshot"
-      updateCheckboxInput(session, "explorer_view_congregation", value = input$ys_view_congregation)
-    }
-  })
   # ---- Update Available Years for Explorer Tab ----
   # Dynamically update years based on variable data availability.
   observeEvent(input$explorer_variable, {
@@ -1089,7 +1108,7 @@ server <- function(input, output, session) {
   # ---- Yearly Snapshot Reset Button ----
   # Reset yearly snapshot selections to defaults.
   observeEvent(input$reset_ys, {
-    available_vars <- if (view_by_congregation()) congregation_vars else all_vars
+    available_vars <- if (view_by_congregation()) ys_available_vars() else all_vars
     updateSelectInput(session, "ys_variable", selected = available_vars[1])
     updateSelectInput(session, "ys_year", selected = max(data$Year))
     updateCheckboxInput(session, "ys_view_congregation", value = FALSE)
