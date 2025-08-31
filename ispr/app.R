@@ -449,7 +449,9 @@ server <- function(input, output, session) {
         Orders = sum_for(value, category, C_RI_ORDERS),
         `Congregations of clerics` = sum_for(value, category, C_RI_CONG_CLERICS),
         `Congregations of lay` = sum_for(value, category, C_RI_CONG_LAY)
-      ) %>% ungroup() %>% pivot_longer(-Year, names_to = "label", values_to = "value")
+      ) %>% ungroup() %>% 
+        pivot_longer(-Year, names_to = "label", values_to = "value", 
+                     names_transform = list(label = ~factor(., levels = c("Orders", "Congregations of clerics", "Congregations of lay"))))
     } else if (ts_state$level == "L3_ORDERS") {
       base %>% summarise(
         `Monastic orders` = sum_for(value, category, C_RI_ORDERS[grep("monastic", C_RI_ORDERS, ignore.case = TRUE)]),
@@ -461,6 +463,7 @@ server <- function(input, output, session) {
       tibble::tibble(Year = integer(0), label = character(0), value = numeric(0))
     }
   })
+  
   # ---- Time Series Plot Data ----
   plot_data_reactive <- reactive({
     req(input$ts_variable)
@@ -485,10 +488,11 @@ server <- function(input, output, session) {
   # Time Series Drill-Down Click
   observeEvent(plotly::event_data("plotly_click", source = "ts_drill"), {
     ed <- plotly::event_data("plotly_click", source = "ts_drill")
-    if (is.null(ed) || is.null(ed$x)) return(NULL)
+    if (is.null(ed) || is.null(ed$curveNumber)) return(NULL)
     
     # Get unique labels in the order they appear in the plot
     labels <- unique(plot_data_reactive()$category)
+    if (ed$curveNumber + 1 > length(labels)) return(NULL) # Prevent index out of bounds
     clicked <- labels[ed$curveNumber + 1] # curveNumber is 0-based
     
     if (ts_state$level == "L1" && clicked == "Religious institutes") {
