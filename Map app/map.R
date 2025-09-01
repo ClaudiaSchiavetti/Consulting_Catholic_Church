@@ -77,20 +77,20 @@ cols_with_country_data <- sapply(names(data), function(col_name) {
 data_filtered <- data[, cols_with_country_data]
 
 
-# ---- Safe Division Helper Function ----
-# Helper function to perform division safely, avoiding NA or division by zero.
-
-safe_div <- function(num, den, scale = 1) {
-  ifelse(is.na(num) | is.na(den) | den == 0, NA_real_, (num / den) * scale)
-}
-
-
 # ---- Separate Data into Macroregions and Countries ----
 # Extract macroregion data and rename the region column for consistency.
 
 data_macroregions <- data_filtered %>%
   filter(`Region type` == "Macroregion") %>%
   rename(macroregion = Region)
+
+
+# ---- Safe Division Helper Function ----
+# Helper function to perform division safely, avoiding NA or division by zero.
+
+safe_div <- function(num, den, scale = 1) {
+  ifelse(is.na(num) | is.na(den) | den == 0, NA_real_, (num / den) * scale)
+}
 
 
 # ---- Process and Merge Macroregions ----
@@ -112,7 +112,6 @@ data_macroregions <- data_macroregions %>%
     ),
     .groups = "drop"
   )
-
 
 # ---- Recompute Derived Variables for Macroregions ----
 # Shorthand for data_macroregions to simplify recomputations.
@@ -271,7 +270,6 @@ if (all(c("Priests and bishops as share of apostolic workforce",
 }
 # Commit all recomputed values back to data_macroregions.
 data_macroregions <- dm
-
 
 # Extract country data.
 data_countries <- data_filtered %>%
