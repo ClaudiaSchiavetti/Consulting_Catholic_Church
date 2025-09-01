@@ -34,7 +34,7 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 
 # Define the data file path and set it as your working directory.
 path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
+#path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_outputs)
 
 # Read the CSV file containing the geographic data
@@ -77,12 +77,201 @@ cols_with_country_data <- sapply(names(data), function(col_name) {
 data_filtered <- data[, cols_with_country_data]
 
 
+# ---- Safe Division Helper Function ----
+# Helper function to perform division safely, avoiding NA or division by zero.
+
+safe_div <- function(num, den, scale = 1) {
+  ifelse(is.na(num) | is.na(den) | den == 0, NA_real_, (num / den) * scale)
+}
+
+
 # ---- Separate Data into Macroregions and Countries ----
 # Extract macroregion data and rename the region column for consistency.
 
 data_macroregions <- data_filtered %>%
   filter(`Region type` == "Macroregion") %>%
   rename(macroregion = Region)
+
+
+# ---- Process and Merge Macroregions ----
+# Standardize names, merge split regions, and filter out aggregates
+data_macroregions <- data_macroregions %>%
+  mutate(macroregion = case_when(
+    macroregion %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
+    macroregion %in% c("South East and Far East Asia", "South & Far East Asia") ~ "South and Far East Asia",
+    macroregion == "Middle East" ~ "Middle East Asia",
+    TRUE ~ macroregion
+  )) %>%
+  filter(!macroregion %in% c("World", "America", "Asia")) %>%
+  mutate(Year = suppressWarnings(as.integer(Year))) %>%  # Ensure Year is integer, matching country processing
+  group_by(macroregion, Year) %>%
+  summarise(
+    across(
+      where(is.numeric),
+      ~ if (all(is.na(.))) NA_real_ else sum(., na.rm = TRUE)
+    ),
+    .groups = "drop"
+  )
+
+
+# ---- Recompute Derived Variables for Macroregions ----
+# Shorthand for data_macroregions to simplify recomputations.
+dm <- data_macroregions
+# Recompute density and rates, rounding to 2 decimal places.
+if (all(c("Inhabitants per km^2", "Inhabitants in thousands", "Area in km^2") %in% names(dm))) {
+  dm[["Inhabitants per km^2"]] <- round(safe_div(dm[["Inhabitants in thousands"]] * 1000, dm[["Area in km^2"]]), 2)
+}
+if (all(c("Catholics per 100 inhabitants", "Catholics in thousands", "Inhabitants in thousands") %in% names(dm))) {
+  dm[["Catholics per 100 inhabitants"]] <- round(safe_div(dm[["Catholics in thousands"]], dm[["Inhabitants in thousands"]], 100), 2)
+}
+if (all(c("Inhabitants per pastoral centre", "Inhabitants in thousands", "Pastoral centres (total)") %in% names(dm))) {
+  dm[["Inhabitants per pastoral centre"]] <- round(safe_div(dm[["Inhabitants in thousands"]] * 1000, dm[["Pastoral centres (total)"]]), 2)
+}
+if (all(c("Catholics per pastoral centre", "Catholics in thousands", "Pastoral centres (total)") %in% names(dm))) {
+  dm[["Catholics per pastoral centre"]] <- round(safe_div(dm[["Catholics in thousands"]] * 1000, dm[["Pastoral centres (total)"]]), 2)
+}
+if (all(c("Pastoral centres per diocese", "Pastoral centres (total)", "Ecclesiastical territories (total)") %in% names(dm))) {
+  dm[["Pastoral centres per diocese"]] <- round(safe_div(dm[["Pastoral centres (total)"]], dm[["Ecclesiastical territories (total)"]]), 2)
+}
+if (all(c("Parishes as share of total pastoral centres", "Parishes (total)", "Pastoral centres (total)") %in% names(dm))) {
+  dm[["Parishes as share of total pastoral centres"]] <- round(safe_div(dm[["Parishes (total)"]], dm[["Pastoral centres (total)"]]), 2)
+}
+# Recompute mission stations share.
+if (all(c("Mission stations with resident priest",
+          "Mission stations without resident priest",
+          "Pastoral centres (total)") %in% names(dm))) {
+  dm[["Mission stations as share of total pastoral centres"]] <-
+    round(safe_div(dm[["Mission stations with resident priest"]] +
+                     dm[["Mission stations without resident priest"]],
+                   dm[["Pastoral centres (total)"]]), 2)
+}
+if (all(c("Number of other pastoral centres as share of total pastoral centres", "Other pastoral centres", "Pastoral centres (total)") %in% names(dm))) {
+  dm[["Number of other pastoral centres as share of total pastoral centres"]] <- round(safe_div(dm[["Other pastoral centres"]], dm[["Pastoral centres (total)"]]), 2)
+}
+# Compute total priests for burdens.
+priests_total <- if ("Priests (diocesan and religious)" %in% names(dm)) {
+  dm[["Priests (diocesan and religious)"]]
+} else if (all(c("Diocesan priests (total)", "Religious priests") %in% names(dm))) {
+  dm[["Diocesan priests (total)"]] + dm[["Religious priests"]]
+} else {
+  NA_real_
+}
+if ("Inhabitants per priest" %in% names(dm) && !all(is.na(priests_total))) {
+  dm[["Inhabitants per priest"]] <- round(safe_div(dm[["Inhabitants in thousands"]] * 1000, priests_total), 2)
+}
+if ("Catholics per priest" %in% names(dm) && !all(is.na(priests_total))) {
+  dm[["Catholics per priest"]] <- round(safe_div(dm[["Catholics in thousands"]] * 1000, priests_total), 2)
+}
+# Recompute sacraments per 1000 Catholics.
+if (all(c("Infant baptisms (people up to 7 years old) per 1000 Catholics",
+          "Infant baptisms (people up to 7 years old)", "Catholics in thousands") %in% names(dm))) {
+  dm[["Infant baptisms (people up to 7 years old) per 1000 Catholics"]] <-
+    round(safe_div(dm[["Infant baptisms (people up to 7 years old)"]], dm[["Catholics in thousands"]] * 1000, 1000), 2)
+}
+if (all(c("Marriages per 1000 Catholics", "Marriages", "Catholics in thousands") %in% names(dm))) {
+  dm[["Marriages per 1000 Catholics"]] <- round(safe_div(dm[["Marriages"]], dm[["Catholics in thousands"]] * 1000, 1000), 2)
+}
+if (all(c("Confirmations per 1000 Catholics", "Confirmations", "Catholics in thousands") %in% names(dm))) {
+  dm[["Confirmations per 1000 Catholics"]] <- round(safe_div(dm[["Confirmations"]], dm[["Catholics in thousands"]] * 1000, 1000), 2)
+}
+if (all(c("First Communions per 1000 Catholics", "First Communions", "Catholics in thousands") %in% names(dm))) {
+  dm[["First Communions per 1000 Catholics"]] <- round(safe_div(dm[["First Communions"]], dm[["Catholics in thousands"]] * 1000, 1000), 2)
+}
+# Recompute shares.
+if (all(c("Share of adult baptisms (people over 7 years old)", "Adult baptisms (people over 7 years old)", "Baptisms") %in% names(dm))) {
+  dm[["Share of adult baptisms (people over 7 years old)"]] <- round(safe_div(dm[["Adult baptisms (people over 7 years old)"]], dm[["Baptisms"]]), 2)
+}
+if (all(c("Share of mixed marriages (among those celebrated with ecclesiastical rite)", "Mixed marriages", "Marriages") %in% names(dm))) {
+  dm[["Share of mixed marriages (among those celebrated with ecclesiastical rite)"]] <- round(safe_div(dm[["Mixed marriages"]], dm[["Marriages"]]), 2)
+}
+# Recompute vocation/ordination/departure rates.
+if (all(c("Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants",
+          "Candidates for diocesan and religious clergy in philosophy+theology centres", "Inhabitants in thousands") %in% names(dm))) {
+  dm[["Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants"]] <-
+    round(safe_div(dm[["Candidates for diocesan and religious clergy in philosophy+theology centres"]],
+                   dm[["Inhabitants in thousands"]] * 1000, 100000), 2)
+}
+if (all(c("Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics",
+          "Candidates for diocesan and religious clergy in philosophy+theology centres", "Catholics in thousands") %in% names(dm))) {
+  dm[["Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics"]] <-
+    round(safe_div(dm[["Candidates for diocesan and religious clergy in philosophy+theology centres"]],
+                   dm[["Catholics in thousands"]] * 1000, 100000), 2)
+}
+if (all(c("Ordination rate - Yearly ordinations per 100 philosophy+theology students for diocesan priesthood",
+          "Yearly ordinations of diocesan priests", "Candidates for diocesan clergy in philosophy+theology centres") %in% names(dm))) {
+  dm[["Ordination rate - Yearly ordinations per 100 philosophy+theology students for diocesan priesthood"]] <-
+    round(safe_div(dm[["Yearly ordinations of diocesan priests"]],
+                   dm[["Candidates for diocesan clergy in philosophy+theology centres"]], 100), 2)
+}
+if (all(c("Departures per 100 enrolled students in philosophy+theology centres for diocesan clergy",
+          "Students in philosophy+theology centres for diocesan clergy who left seminary",
+          "Candidates for diocesan clergy in philosophy+theology centres") %in% names(dm))) {
+  dm[["Departures per 100 enrolled students in philosophy+theology centres for diocesan clergy"]] <-
+    round(safe_div(dm[["Students in philosophy+theology centres for diocesan clergy who left seminary"]],
+                   dm[["Candidates for diocesan clergy in philosophy+theology centres"]], 100), 2)
+}
+# Recompute philosophy+theology candidates per 100 priests.
+if (all(c("Philosophy+theology candidates for diocesan and religious clergy per 100 priests",
+          "Candidates for diocesan and religious clergy in philosophy+theology centres") %in% names(dm)) && !all(is.na(priests_total))) {
+  dm[["Philosophy+theology candidates for diocesan and religious clergy per 100 priests"]] <-
+    round(safe_div(dm[["Candidates for diocesan and religious clergy in philosophy+theology centres"]], priests_total, 100), 2)
+}
+# Compute lagged values for diocesan priest shares.
+dm <- dm %>%
+  arrange(macroregion, Year) %>%
+  group_by(macroregion) %>%
+  mutate(
+    prev_inc_priests = lag(`Incardinated diocesan priests on January 1`, n = 1)
+  ) %>%
+  ungroup()
+if (all(c("Yearly ordinations of diocesan priests as share of those incardinated on January 1",
+          "Yearly ordinations of diocesan priests") %in% names(dm))) {
+  dm[["Yearly ordinations of diocesan priests as share of those incardinated on January 1"]] <-
+    round(safe_div(dm[["Yearly ordinations of diocesan priests"]], dm[["prev_inc_priests"]], 100), 2)
+}
+if (all(c("Yearly deaths of diocesan priests as share of those incardinated on January 1",
+          "Yearly deaths of diocesan priests") %in% names(dm))) {
+  dm[["Yearly deaths of diocesan priests as share of those incardinated on January 1"]] <-
+    round(safe_div(dm[["Yearly deaths of diocesan priests"]], dm[["prev_inc_priests"]], 100), 2)
+}
+if (all(c("Yearly defections of diocesan priests as share of those incardinated at January 1",
+          "Yearly defections of diocesan priests") %in% names(dm))) {
+  dm[["Yearly defections of diocesan priests as share of those incardinated at January 1"]] <-
+    round(safe_div(dm[["Yearly defections of diocesan priests"]], dm[["prev_inc_priests"]], 100), 2)
+}
+if (all(c("Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1",
+          "Yearly ordinations of diocesan priests", "Yearly deaths of diocesan priests", "Yearly defections of diocesan priests") %in% names(dm))) {
+  net_ord <- dm[["Yearly ordinations of diocesan priests"]] - dm[["Yearly deaths of diocesan priests"]] - dm[["Yearly defections of diocesan priests"]]
+  dm[["Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1"]] <-
+    round(safe_div(net_ord, dm[["prev_inc_priests"]], 100), 2)
+}
+# Recompute weighted averages.
+if (all(c("Average area of ecclesiastical territories in km^2", "Area in km^2", "Ecclesiastical territories (total)") %in% names(dm))) {
+  dm[["Average area of ecclesiastical territories in km^2"]] <-
+    round(safe_div(dm[["Area in km^2"]], dm[["Ecclesiastical territories (total)"]]), 2)
+}
+if (all(c("Average diocesan area (in km^2)", "Area in km^2", "Ecclesiastical territories (total)") %in% names(dm))) {
+  dm[["Average diocesan area (in km^2)"]] <-
+    round(safe_div(dm[["Area in km^2"]], dm[["Ecclesiastical territories (total)"]]), 2)
+}
+# Recompute apostolic workforce share.
+if (all(c("Priests and bishops as share of apostolic workforce",
+          "Bishops (total)", "Catechists", "Lay missionaries") %in% names(dm)) &&
+    ("Priests (diocesan and religious)" %in% names(dm) ||
+     all(c("Diocesan priests (total)", "Religious priests") %in% names(dm)))) {
+  priests_total <- if ("Priests (diocesan and religious)" %in% names(dm)) {
+    dm[["Priests (diocesan and religious)"]]
+  } else {
+    dm[["Diocesan priests (total)"]] + dm[["Religious priests"]]
+  }
+  
+  workforce <- priests_total + dm[["Bishops (total)"]] + dm[["Catechists"]] + dm[["Lay missionaries"]]
+  dm[["Priests and bishops as share of apostolic workforce"]] <-
+    round(safe_div(priests_total + dm[["Bishops (total)"]], workforce), 2)
+}
+# Commit all recomputed values back to data_macroregions.
+data_macroregions <- dm
+
 
 # Extract country data.
 data_countries <- data_filtered %>%
@@ -210,14 +399,6 @@ data_countries <- data_countries %>%
     ),
     .groups = "drop"
   )
-
-
-# ---- Safe Division Helper Function ----
-# Helper function to perform division safely, avoiding NA or division by zero.
-
-safe_div <- function(num, den, scale = 1) {
-  ifelse(is.na(num) | is.na(den) | den == 0, NA_real_, (num / den) * scale)
-}
 
 
 # ---- Recompute Derived Variables ----
@@ -446,6 +627,194 @@ time_series_vars <- allowed_variables[
   })
 ]
 
+
+# ---- UI Layout ----
+# Prepare country choices for the search input.
+
+all_countries <- sort(unique(data_countries$country))
+all_countries <- all_countries[!is.na(all_countries) & all_countries != ""]
+country_choices_list <- as.list(all_countries)
+names(country_choices_list) <- all_countries
+final_country_dropdown_choices <- c("Type to search..." = "", country_choices_list)
+
+# ---- Helper Functions for UI ----
+# Helper function to create select inputs for variables, years, or countries.
+create_select_input <- function(id, label, choices, selected = NULL, multiple = FALSE, placeholder = NULL) {
+  if (!is.null(placeholder)) {
+    selectizeInput(
+      inputId = id,
+      label = label,
+      choices = choices,
+      selected = selected,
+      multiple = multiple,
+      options = list(placeholder = placeholder)
+    )
+  } else {
+    selectInput(
+      inputId = id,
+      label = label,
+      choices = choices,
+      selected = selected,
+      multiple = multiple
+    )
+  }
+}
+
+# Helper function to create download buttons for CSV and Excel.
+create_download_buttons <- function() {
+  div(
+    style = "margin-top: 10px;",
+    downloadButton("download_csv", "CSV", class = "btn btn-sm btn-success"),
+    downloadButton("download_excel", "Excel", class = "btn btn-sm btn-info")
+  )
+}
+
+# ---- Helper Functions for Server Logic ----
+# Helper function to format values for display (e.g., map hover labels, country info).
+format_value <- function(value, mode) {
+  ifelse(mode != "absolute" & value == 0,
+         "<0.01",
+         formatC(round(as.numeric(value), ifelse(mode == "absolute", 0, 2)), format = "f", digits = ifelse(mode == "absolute", 0, 2), big.mark = ","))
+}
+
+# Helper function to create color palette for map visualizations.
+create_pal <- function(values) {
+  valid_values <- values[!is.na(values)]
+  if (length(valid_values) > 0) {
+    colorNumeric(palette = viridisLite::plasma(256), domain = valid_values, na.color = "transparent")
+  } else {
+    colorNumeric(palette = viridisLite::plasma(256), domain = c(0, 1), na.color = "transparent")
+  }
+}
+
+# Helper function to create download data for CSV/Excel handlers.
+create_download_data <- function(data, year, variable, selected_country) {
+  filtered <- data %>%
+    filter(Year == year) %>%
+    select(country, Year, all_of(variable))
+  if (!is.null(selected_country) && selected_country %in% filtered$country) {
+    filtered <- filtered %>% filter(country = selected_country)
+  }
+  filtered
+}
+
+# Define the Shiny UI with custom styles and layout.
+ui <- tagList(
+  tags$head(
+    includeCSS("styles.css"),
+    useShinyjs()
+  ),
+  
+  navbarPage("Annuarium Statisticum Ecclesiae", id = "navbar", theme = shinytheme("flatly"),
+             
+             tabPanel("Map",
+                      div(
+                        leafletOutput("map", height = "100vh", width = "100%"),
+                        absolutePanel(
+                          id = "controls", class = "panel panel-default", fixed = TRUE,
+                          draggable = TRUE, top = 60, left = 0, right = "auto", bottom = "auto",
+                          width = 300, height = "auto",
+                          style = "background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px; overflow-y: auto; max-height: 90vh;",
+                          create_select_input("variable", "Select variable to display:", allowed_variables),
+                          create_select_input("year", "Select year:", sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
+                          radioButtons("display_mode", "Display mode:",
+                                       choices = list("Absolute values" = "absolute",
+                                                      "Per thousand inhabitants" = "per_capita",
+                                                      "Per thousand Catholics" = "per_catholic"),
+                                       selected = "absolute"),
+                          create_select_input("country_search", "Search for a country:", final_country_dropdown_choices, selected = "", multiple = FALSE, placeholder = "Type to search..."),
+                          plotOutput("varPlot", height = 150),
+                          hr(),
+                          div(style = "margin-bottom: 15px;", htmlOutput("country_info")),
+                          actionButton("reset_map", "Reset View", icon = icon("undo")),
+                          div(style = "margin-top: 15px;",
+                              downloadButton("download_map", "Download Map", class = "btn btn-primary")
+                          )
+                        )
+                      )
+             ),
+             
+             # DATA TABLE TAB
+             tabPanel("Data Explorer",
+                      sidebarLayout(
+                        sidebarPanel(
+                          width = 3,
+                          tags$div(
+                            style = "background-color: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #dee2e6; font-size: 14px;",
+                            create_select_input("explorer_variable", "Select variable:", c("Select a variable..." = "", allowed_variables)),
+                            create_select_input("explorer_year", "Select year:", sort(unique(data_countries$Year))),
+                            create_download_buttons(),
+                            br(),
+                            actionButton("reset_table", "Reset Filters", icon = icon("redo"), class = "btn btn-sm btn-secondary")
+                          )
+                        ),
+                        mainPanel(
+                          class = "data-explorer-main",
+                          width = 9,
+                          DTOutput("table"),
+                          br()
+                        )
+                      )
+             ),
+             
+             # Time Series TAB
+             tabPanel(
+               "Time Series",
+               tags$style(HTML("
+    .ts-container {
+      min-height: calc(100vh - 50px); /* Adjust 50px based on navbar height */
+      display: flex;
+      align-items: stretch;
+      margin: 0;
+      padding: 0;
+    }
+    .ts-sidebar {
+      height: 100%;
+      overflow-y: auto;
+      background-color: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #dee2e6;
+    }
+    .ts-main {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .ts-plot {
+      flex: 1 1 auto;
+      height: 100%;
+    }
+  ")),
+               fluidRow(
+                 class = "ts-container",
+                 column(
+                   width = 3,
+                   class = "ts-sidebar",
+                   create_select_input("ts_variable", "Select variable:", time_series_vars, selected = time_series_vars[1]),
+                   radioButtons("ts_level", "Region level:",
+                                choices = c("Continent" = "Macroregion", "Country" = "Country"),
+                                selected = "Macroregion"),
+                   uiOutput("ts_region_selector"),
+                   div(
+                     style = "margin-top: 10px;",
+                     downloadButton("download_ts_plot", "Download Plot", class = "btn btn-sm btn-primary"),
+                     actionButton("reset_ts", "Reset", icon = icon("undo"), class = "btn btn-sm btn-secondary")
+                   )
+                 ),
+                 column(
+                   width = 9,
+                   class = "ts-main",
+                   div(
+                     class = "ts-plot",
+                     plotlyOutput("ts_plot", height = "100%")
+                   )
+                 )
+               )
+             )
+  )
+)
 
 
 # ---- Server Logic ----
