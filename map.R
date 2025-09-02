@@ -28,15 +28,6 @@ if (!webshot::is_phantomjs_installed()) {
 options(shiny.host = "0.0.0.0")
 options(shiny.port = 3838) # Also 8180 is a valid option
 
-
-# ---- Load the Data ----
-# Set your working directory and read the data file.
-
-# Define the data file path and set it as your working directory.
-path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
-setwd(path_outputs)
-
 # Read the CSV file containing the geographic data
 data <- read.csv("final_geo_table.csv", check.names = FALSE)
 
@@ -446,5 +437,4 @@ time_series_vars <- allowed_variables[
   })
 ]
 
-# ---- Launch the Shiny App ----
-shinyApp(ui, server)
+
