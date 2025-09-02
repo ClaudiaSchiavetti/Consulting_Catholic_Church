@@ -26,7 +26,7 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # Set your working directory and read the data file.
 # Define the data file path and set it as your working directory.
 path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_outputs <- "C:\\Users\\soffi\\Desktop\\CONSULTING"
+#path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_outputs)
 
 # Read the CSV file containing the data
