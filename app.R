@@ -4,7 +4,7 @@ path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
 setwd(path_outputs)
 
 # app.R (nella stessa cartella)
-source("map.R", local = TRUE)   
+source("map_short.R", local = TRUE)   
 source("ui.R",     local = TRUE)   # definisce 'ui'
 source("server.R", local = TRUE)   # definisce 'server'
 
