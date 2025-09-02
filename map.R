@@ -691,7 +691,7 @@ create_download_data <- function(data, year, variable, selected_country) {
     filter(Year == year) %>%
     select(country, Year, all_of(variable))
   if (!is.null(selected_country) && selected_country %in% filtered$country) {
-    filtered <- filtered %>% filter(country = selected_country)
+    filtered <- filtered %>% filter(country == selected_country)
   }
   filtered
 }
@@ -1094,7 +1094,7 @@ server <- function(input, output, session) {
   observeEvent(input$map_shape_click, {
     req(input$map_shape_click$id, input$year)
     clicked_country <- input$map_shape_click$id
-    filtered_data <- map_data %>% filter(name == clicked_country, Year = input$year)
+    filtered_data <- map_data %>% filter(name == clicked_country, Year == input$year)
     
     if (nrow(filtered_data) == 0 || is.na(filtered_data$geometry[1])) {
       showNotification("No data available for this country in the selected year.", type = "warning")
@@ -1147,15 +1147,15 @@ server <- function(input, output, session) {
     leafletProxy("map") %>%
       clearGroup("highlight") %>%
       addPolygons(
-        data = map_data %>% filter(name = input$country_search, Year = input$year),
+        data = map_data %>% filter(name == input$country_search, Year == input$year),
         fill = FALSE, color = "red", weight = 3, opacity = 1, group = "highlight") %>%
       setView(
         lng = tryCatch(
-          st_coordinates(st_centroid(st_union(map_data %>% filter(name = input$country_search))))[1],
+          st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$country_search))))[1],
           error = function(e) 0
         ),
         lat = tryCatch(
-          st_coordinates(st_centroid(st_union(map_data %>% filter(name = input$country_search))))[2],
+          st_coordinates(st_centroid(st_union(map_data %>% filter(name == input$country_search))))[2],
           error = function(e) 30
         ),
         zoom = 4
@@ -1453,7 +1453,7 @@ server <- function(input, output, session) {
     }
     
     if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
-      filtered <- filtered %>% filter(country = selected_country())
+      filtered <- filtered %>% filter(country == selected_country())
     }
     datatable(filtered, options = list(pageLength = 20))
   })
