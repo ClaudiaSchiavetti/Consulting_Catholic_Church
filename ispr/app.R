@@ -11,7 +11,6 @@ for (pkg in required_packages) {
     install.packages(pkg)
   }
 }
-
 # Load the libraries after ensuring they are installed.
 lapply(required_packages, library, character.only = TRUE)
 useShinyjs()
@@ -25,10 +24,9 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # ---- Load the Data ----
 # Set your working directory and read the data file.
 # Define the data file path and set it as your working directory.
-path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+#path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_outputs)
-
 # Read the CSV file containing the data
 data <- read.csv("final_ispr_men_table.csv", check.names = FALSE)
 
@@ -46,7 +44,6 @@ variable_abbreviations <- setNames(abbreviations_df$abbreviation, abbreviations_
 # Identify numeric columns excluding 'Year' and 'Categories of Institutes'.
 num_cols <- names(data)[sapply(data, is.numeric)]
 num_cols <- setdiff(num_cols, "Year")
-
 # Aggregate or clean data if needed, but since no countries, use as is.
 # Ensure 'Year' is integer.
 data <- data %>%
@@ -54,7 +51,6 @@ data <- data %>%
 
 # ---- Identify All Variables and Time Series Variables ----
 all_vars <- num_cols
-
 # Filter variables that have data for more than one year for time series use.
 time_series_vars <- num_cols[
   sapply(num_cols, function(var) {
@@ -65,7 +61,6 @@ time_series_vars <- num_cols[
     length(years) > 1
   })
 ]
-
 # Identify variables with non-NA data for congregations in 2022
 congregations <- c(
   "Congr. for the Inst. of Cons. Life and Soc. of Apos. Life",
@@ -87,7 +82,6 @@ all_categories <- sort(unique(data$`Categories of Institutes`))
 category_choices_list <- as.list(all_categories)
 names(category_choices_list) <- all_categories
 final_category_dropdown_choices <- category_choices_list
-
 # Helper function to create select inputs for variables, years, or categories.
 create_select_input <- function(id, label, choices, selected = NULL, multiple = FALSE, placeholder = NULL) {
   if (!is.null(placeholder)) {
@@ -109,7 +103,6 @@ create_select_input <- function(id, label, choices, selected = NULL, multiple = 
     )
   }
 }
-
 # Helper function to create download buttons for CSV and Excel.
 create_download_buttons <- function() {
   div(
@@ -118,7 +111,6 @@ create_download_buttons <- function() {
     downloadButton("download_excel", "Excel", class = "btn btn-sm btn-info")
   )
 }
-
 # Helper function to create download data for CSV/Excel handlers.
 create_download_data <- function(data, year, variable, selected_category, view_by_congregation) {
   filtered <- data %>%
@@ -134,7 +126,6 @@ create_download_data <- function(data, year, variable, selected_category, view_b
   }
   filtered
 }
-
 # Define the Shiny UI with custom styles and layout.
 ui <- tagList(
   tags$head(
@@ -285,7 +276,6 @@ ui <- tagList(
 )
 
 # ---- Server Logic ----
-
 # ---- DRILLDOWN HIERARCHY ----
 # Leaves of the hierarchy (exact strings as they appear in `Categories of Institutes`)
 C_RI_ORDERS <- c(
@@ -294,31 +284,24 @@ C_RI_ORDERS <- c(
   "Orders - mendicant",
   "Orders - clerics regular"
 )
-
 C_RI_CONG_CLERICS <- c(
   "Clerical religious congregations"
 )
-
 C_RI_CONG_LAY <- c(
   "Lay religious congregations"
 )
-
 C_SOCIETIES <- c(
   "Societies of apostolic life (total)"
 )
-
 C_RI_TOTAL_ROW <- c("Religious institutes (total)")
 C_SOCIETIES_TOTAL_ROW <- c("Societies of apostolic life (total)")
-
 C_ISPR_TOTAL_ROW <- c("ISPRs (total)")
-
 # Helper: a named list for level labels (do NOT change the names L1/L2/L3)
 YS_LEVELS <- list(
   L1 = c("Religious institutes", "Societies of apostolic life", "Total"),
   L2_RI = c("Orders", "Congregations of clerics", "Congregations of lay"),
   L3_ORDERS = c("Monastic orders", "Canons regular", "Mendicant orders", "Clerics regular")
 )
-
 # ---- STATE FOR DRILLDOWN ----
 ys_state <- reactiveValues(
   level = "L1", # "L1" | "L2_RI" | "L3_ORDERS"
@@ -333,6 +316,11 @@ ts_state <- reactiveValues(
 )
 # Define the server function for the Shiny app.
 server <- function(input, output, session) {
+  
+  # Helper function to wrap text for titles
+  wrap_title <- function(text, width = 50, sep = "<br>") {
+    paste(strwrap(text, width = width), collapse = sep)
+  }
   
   # Sum helper for a set of leaf categories
   sum_for <- function(values, categories, leaves) {
@@ -449,8 +437,8 @@ server <- function(input, output, session) {
         Orders = sum_for(value, category, C_RI_ORDERS),
         `Congregations of clerics` = sum_for(value, category, C_RI_CONG_CLERICS),
         `Congregations of lay` = sum_for(value, category, C_RI_CONG_LAY)
-      ) %>% ungroup() %>% 
-        pivot_longer(-Year, names_to = "label", values_to = "value", 
+      ) %>% ungroup() %>%
+        pivot_longer(-Year, names_to = "label", values_to = "value",
                      names_transform = list(label = ~factor(., levels = c("Orders", "Congregations of clerics", "Congregations of lay"))))
     } else if (ts_state$level == "L3_ORDERS") {
       base %>% summarise(
@@ -565,6 +553,14 @@ server <- function(input, output, session) {
       "L3_ORDERS" = "Deepest level"
     )
     
+    main_title <- paste("Time Series of", input$ts_variable)
+    wrapped_title <- wrap_title(main_title, width = 50, sep = "<br>")
+    
+    full_title_text <- paste0(wrapped_title, "<br><sup>", subtitle, "</sup>")
+    num_br <- length(unlist(gregexpr("<br>", full_title_text)))
+    num_lines <- num_br + 1
+    t_margin <- 30 + 20 * num_lines
+    
     plot_ly(
       data = plot_data,
       x = ~Year,
@@ -584,15 +580,12 @@ server <- function(input, output, session) {
       source = "ts_drill"
     ) %>%
       layout(
-        title = list(text = paste0(
-          "Time Series of ", input$ts_variable,
-          "<br><sup>", subtitle, "</sup>"
-        )),
+        title = list(text = full_title_text),
         hovermode = "closest",
         xaxis = list(title = "Year"),
         yaxis = list(title = "Absolute Value"),
         legend = list(title = list(text = "Categories"), x = 1.02, y = 1, xanchor = "left", yanchor = "top"),
-        margin = list(r = 150)
+        margin = list(r = 150, t = t_margin)
       ) %>%
       event_register('plotly_click') %>%
       config(displayModeBar = FALSE, responsive = TRUE)
@@ -603,12 +596,15 @@ server <- function(input, output, session) {
     
     if (nrow(plot_data) == 0) return(NULL)
     
+    main_title <- paste("Time Series of", input$ts_variable)
+    wrapped_title <- wrap_title(main_title, width = 50, sep = "\n")
+    
     ggplot(plot_data, aes(x = Year, y = value, color = category)) +
       geom_line(linewidth = 1) +
       geom_point(size = 2) +
       scale_color_viridis_d() +
       labs(
-        title = paste("Time Series of", input$ts_variable),
+        title = wrapped_title,
         x = "Year", y = "Absolute Value", color = "Categories"
       ) +
       theme_minimal(base_size = 13) +
@@ -669,6 +665,13 @@ server <- function(input, output, session) {
         )
       }
       
+      main_title <- paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year)
+      wrapped_title <- wrap_title(main_title, width = 50, sep = "<br>")
+      
+      num_br <- length(unlist(gregexpr("<br>", wrapped_title)))
+      num_lines <- num_br + 1
+      t_margin <- 30 + 20 * num_lines
+      
       return(
         plot_ly(
           data = plot_data,
@@ -681,12 +684,12 @@ server <- function(input, output, session) {
           hovertemplate = "<b>%{x}</b><br>Value: %{y:,}<extra></extra>"
         ) %>%
           layout(
-            title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
+            title = wrapped_title,
             hovermode = "closest",
             showlegend = FALSE, # legend off (x-axis already tells categories)
             xaxis = list(title = "Categories of Institutes", tickangle = -15),
             yaxis = list(title = "Absolute Value"),
-            margin = list(r = 20, t = 60, b = 60, l = 60)
+            margin = list(r = 20, t = t_margin, b = 60, l = 60)
           ) %>%
           config(displayModeBar = FALSE, responsive = TRUE)
       )
@@ -708,6 +711,14 @@ server <- function(input, output, session) {
       "L3_ORDERS" = "Deepest level"
     )
     
+    main_title <- paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year)
+    wrapped_title <- wrap_title(main_title, width = 50, sep = "<br>")
+    
+    full_title_text <- paste0(wrapped_title, "<br><sup>", subtitle, "</sup>")
+    num_br <- length(unlist(gregexpr("<br>", full_title_text)))
+    num_lines <- num_br + 1
+    t_margin <- 30 + 20 * num_lines
+    
     p <- plot_ly(
       data = dd,
       x = ~label,
@@ -720,15 +731,12 @@ server <- function(input, output, session) {
       source = "ys_drill" # this is the source you listen to
     ) %>%
       layout(
-        title = list(text = paste0(
-          "Yearly Snapshot of ", input$ys_variable, " in ", input$ys_year,
-          "<br><sup>", subtitle, "</sup>"
-        )),
+        title = list(text = full_title_text),
         hovermode = "closest",
         showlegend = FALSE,
         xaxis = list(title = "", tickangle = -15),
         yaxis = list(title = "Absolute Value"),
-        margin = list(r = 20, t = 60, b = 60, l = 60)
+        margin = list(r = 20, t = t_margin, b = 60, l = 60)
       )
     
     p %>% event_register('plotly_click') %>% # <-- REQUIRED
@@ -741,6 +749,9 @@ server <- function(input, output, session) {
   # Create a static ggplot for downloading the yearly snapshot histogram.
   ys_plot_static <- reactive({
     req(input$ys_variable, input$ys_year)
+    
+    main_title <- paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year)
+    wrapped_title <- wrap_title(main_title, width = 50, sep = "\n")
     
     if (input$ys_view_congregation) {
       # Mirror the BY CONGREGATION bars
@@ -759,7 +770,7 @@ server <- function(input, output, session) {
           geom_col() +
           scale_fill_viridis_d(guide = "none") +
           labs(
-            title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
+            title = wrapped_title,
             x = "Categories of Institutes", y = "Absolute Value"
           ) +
           theme_minimal(base_size = 13) +
@@ -781,7 +792,7 @@ server <- function(input, output, session) {
       geom_col() +
       scale_fill_viridis_d(guide = "none") +
       labs(
-        title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
+        title = wrapped_title,
         x = NULL, y = "Absolute Value"
       ) +
       theme_minimal(base_size = 13) +
@@ -791,7 +802,6 @@ server <- function(input, output, session) {
         axis.text.x = element_text(angle = 15, hjust = 1)
       )
   })
-
   
   output$download_ys_plot <- downloadHandler(
     filename = function() {
@@ -1142,6 +1152,5 @@ server <- function(input, output, session) {
     }
   )
 }
-
 # ---- Launch the Shiny App ----
 shinyApp(ui, server)
