@@ -31,16 +31,6 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 
 
 # ---- Load the Data ----
-# Set your working directory and read the data file.
-
-# Define the data file path and set it as your working directory.
-#path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
-# Use /app when inside Docker; fall back to your Windows path locally
-app_dir <- if (dir.exists("/app")) "/app" else "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-
-# Create an outputs folder (no working-dir changes)
-outputs_dir <- file.path(app_dir, "outputs")
-if (!dir.exists(outputs_dir)) dir.create(outputs_dir, recursive = TRUE)
 
 # Read the CSV file containing the geographic data
 data <- read.csv("final_geo_table.csv", check.names = FALSE)
