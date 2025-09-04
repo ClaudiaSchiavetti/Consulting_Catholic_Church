@@ -26,8 +26,5 @@ RUN R -e "install.packages(c( \
 
 WORKDIR /app
 COPY . /app
-
 EXPOSE 3838
-
-# exec form (correct) – note the space in the path is fine here
-CMD ["R", "-e", "shiny::runApp('/app/Map app', host='0.0.0.0', port=3838)"]
+CMD ["Rscript", "/app/app_map.R"]
