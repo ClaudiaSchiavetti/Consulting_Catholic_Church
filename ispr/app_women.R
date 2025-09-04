@@ -47,10 +47,14 @@ time_series_vars <- num_cols[
 # ---- WOMEN TAXONOMY (flat, 3 groups) ----
 WOMEN_TOP_CATS <- c("Autonomous Houses", "Centralized Institutes", "Secular Institutes")
 
+# ---- Define Variable Groups ----
+secular_vars <- c("Candidates admitted to probation period", "Membres incorporated temporarily", 
+                  "Membres incorporated definitively", "Lay people associated with the institute")
+houses_vars <- setdiff(num_cols, secular_vars)
+
 # ---- UI Helpers ----
 all_categories <- sort(unique(data$`Categories of Institutes`))
 category_choices_list <- as.list(all_categories); names(category_choices_list) <- all_categories
-final_category_dropdown_choices <- category_choices_list
 create_select_input <- function(id, label, choices, selected = NULL, multiple = FALSE, placeholder = NULL) {
   if (!is.null(placeholder)) {
     selectizeInput(id, label, choices = choices, selected = selected, multiple = multiple,
@@ -66,14 +70,11 @@ create_download_buttons <- function() {
     downloadButton("download_excel", "Excel", class = "btn btn-sm btn-info")
   )
 }
-# keep the same signature; the last arg is ignored now (no congregation view)
-create_download_data <- function(data, year, variable, selected_category, view_by_congregation_unused) {
+create_download_data <- function(data, year, variable, view_by_congregation_unused) {
   filtered <- data %>%
     filter(Year == year, `Categories of Institutes` %in% WOMEN_TOP_CATS) %>%
-    select(`Categories of Institutes`, Year, all_of(variable))
-  if (!is.null(selected_category) && selected_category %in% filtered$`Categories of Institutes`) {
-    filtered <- filtered %>% filter(`Categories of Institutes` == selected_category)
-  }
+    select(`Categories of Institutes`, Year, all_of(variable)) %>%
+    filter(!is.na(.data[[variable]]))
   filtered
 }
 
@@ -127,9 +128,6 @@ ui <- tagList(
                             style = "background-color: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #dee2e6; font-size: 14px;",
                             create_select_input("explorer_variable", "Select variable:", c("Select a variable..." = "", all_vars)),
                             create_select_input("explorer_year", "Select year:", sort(unique(data$Year))),
-                            create_select_input("explorer_category", "Search for a category:",
-                                                c("Type to search..." = "", final_category_dropdown_choices),
-                                                selected = "", multiple = FALSE, placeholder = "Type to search..."),
                             create_download_buttons(),
                             br(),
                             actionButton("reset_table", "Reset Filters", icon = icon("redo"), class = "btn btn-sm btn-secondary")
@@ -154,11 +152,16 @@ server <- function(input, output, session) {
   # ---- Time Series data (flat by 3 categories) ----
   ts_drill_data <- reactive({
     req(input$ts_variable)
+    # Determine which categories to include based on the selected variable
+    categories_to_include <- if (input$ts_variable %in% secular_vars) {
+      "Secular Institutes"
+    } else {
+      c("Autonomous Houses", "Centralized Institutes")
+    }
     data %>%
-      filter(`Categories of Institutes` %in% WOMEN_TOP_CATS) %>%
+      filter(`Categories of Institutes` %in% categories_to_include) %>%
       select(`Categories of Institutes`, Year, !!sym(input$ts_variable)) %>%
       rename(category = `Categories of Institutes`, value = !!sym(input$ts_variable)) %>%
-      filter(!is.na(value)) %>%
       group_by(Year, category) %>%
       summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
   })
@@ -194,7 +197,8 @@ server <- function(input, output, session) {
         xaxis = list(title = "Year"),
         yaxis = list(title = "Absolute Value"),
         legend = list(title = list(text = "Categories"), x = 1.02, y = 1, xanchor = "left", yanchor = "top"),
-        margin = list(r = 150, t = t_margin)
+        margin = list(r = 150, t = t_margin),
+        showlegend = TRUE
       ) %>%
       config(displayModeBar = FALSE, responsive = TRUE)
   })
@@ -224,7 +228,6 @@ server <- function(input, output, session) {
   )
   
   # ---- Data Explorer table ----
-  selected_category <- reactiveVal(NULL)
   output$table <- renderDT({
     if (is.null(input$explorer_variable) || input$explorer_variable == "") {
       return(datatable(data.frame(Message = "Please select a variable to explore.")))
@@ -232,16 +235,13 @@ server <- function(input, output, session) {
     req(input$explorer_year)
     filtered <- data %>%
       filter(Year == input$explorer_year, `Categories of Institutes` %in% WOMEN_TOP_CATS) %>%
-      select(`Categories of Institutes`, Year, !!input$explorer_variable)
-    if (!is.null(input$explorer_category) && input$explorer_category != "" &&
-        input$explorer_category %in% filtered$`Categories of Institutes`) {
-      filtered <- filtered %>% filter(`Categories of Institutes` == input$explorer_category)
-    }
+      select(`Categories of Institutes`, Year, !!input$explorer_variable) %>%
+      filter(!is.na(.data[[input$explorer_variable]]))
     datatable(filtered, options = list(pageLength = 20))
   })
   
   # ---- Synchronize Variable Selections ----
-  selections <- reactiveValues(variable = NULL, year = NULL, category = NULL, from_tab_var = NULL, from_tab_year = NULL)
+  selections <- reactiveValues(variable = NULL, year = NULL, from_tab_var = NULL, from_tab_year = NULL)
   
   observeEvent(input$ts_variable, {
     if (is.null(selections$from_tab_var) || selections$from_tab_var != "time_series") {
@@ -269,19 +269,10 @@ server <- function(input, output, session) {
     }
   })
   
-  # ---- Category search selection ----
-  observeEvent(input$explorer_category, {
-    req(input$explorer_category)
-    selected_category(input$explorer_category)
-    selections$category <- input$explorer_category
-  })
-  
   # ---- Resets ----
   observeEvent(input$reset_table, {
     updateSelectInput(session, "explorer_variable", selected = "", choices = c("Select a variable..." = "", all_vars))
     updateSelectInput(session, "explorer_year", selected = max(data$Year))
-    updateSelectInput(session, "explorer_category", selected = "")
-    selected_category(NULL)
   })
   observeEvent(input$reset_ts, {
     updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
@@ -293,7 +284,7 @@ server <- function(input, output, session) {
     filename = function() paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".csv"),
     content = function(file) {
       req(input$explorer_variable, input$explorer_year)
-      write.csv(create_download_data(data, input$explorer_year, input$explorer_variable, selected_category(), FALSE),
+      write.csv(create_download_data(data, input$explorer_year, input$explorer_variable, FALSE),
                 file, row.names = FALSE)
     }
   )
@@ -301,7 +292,7 @@ server <- function(input, output, session) {
     filename = function() paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".xlsx"),
     content = function(file) {
       req(input$explorer_variable, input$explorer_year)
-      writexl::write_xlsx(create_download_data(data, input$explorer_year, input$explorer_variable, selected_category(), FALSE),
+      writexl::write_xlsx(create_download_data(data, input$explorer_year, input$explorer_variable, FALSE),
                           path = file)
     }
   )
