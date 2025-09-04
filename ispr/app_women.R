@@ -17,7 +17,8 @@ options(shiny.host = "0.0.0.0")
 options(shiny.port = 3838)
 
 # ---- Load the Data ----
-path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+#path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_outputs)
 data <- read.csv("final_ispr_women_table.csv", check.names = FALSE)
 
@@ -50,7 +51,6 @@ WOMEN_TOP_CATS <- c("Autonomous Houses", "Centralized Institutes", "Secular Inst
 all_categories <- sort(unique(data$`Categories of Institutes`))
 category_choices_list <- as.list(all_categories); names(category_choices_list) <- all_categories
 final_category_dropdown_choices <- category_choices_list
-
 create_select_input <- function(id, label, choices, selected = NULL, multiple = FALSE, placeholder = NULL) {
   if (!is.null(placeholder)) {
     selectizeInput(id, label, choices = choices, selected = selected, multiple = multiple,
@@ -172,6 +172,11 @@ ui <- tagList(
 
 # ---- Server ----
 server <- function(input, output, session) {
+  # Helper function to wrap text for titles
+  wrap_title <- function(text, width = 50, sep = "<br>") {
+    paste(strwrap(text, width = width), collapse = sep)
+  }
+  
   # Simple breadcrumbs (no drill-down now)
   output$ys_breadcrumb <- renderUI(HTML("<b>Path:</b> Yearly Snapshot"))
   output$ts_breadcrumb <- renderUI(HTML("<b>Path:</b> Time Series"))
@@ -198,6 +203,13 @@ server <- function(input, output, session) {
       return(plot_ly() %>% layout(title = "No data available for the selected variable")
              %>% config(displayModeBar = FALSE, responsive = TRUE))
     }
+    
+    main_title <- paste("Time Series of", input$ts_variable)
+    wrapped_title <- wrap_title(main_title, width = 50, sep = "<br>")
+    num_br <- length(unlist(gregexpr("<br>", wrapped_title)))
+    num_lines <- num_br + 1
+    t_margin <- 30 + 20 * num_lines
+    
     plot_ly(
       data = plot_data,
       x = ~Year, y = ~value, color = ~category,
@@ -207,12 +219,12 @@ server <- function(input, output, session) {
       text = ~paste0("<b>", category, "</b><br>Year: ", Year, "<br>Value: ", round(value, 2))
     ) %>%
       layout(
-        title = paste0("Time Series of ", input$ts_variable),
+        title = list(text = wrapped_title),
         hovermode = "closest",
         xaxis = list(title = "Year"),
         yaxis = list(title = "Absolute Value"),
         legend = list(title = list(text = "Categories"), x = 1.02, y = 1, xanchor = "left", yanchor = "top"),
-        margin = list(r = 150)
+        margin = list(r = 150, t = t_margin)
       ) %>%
       config(displayModeBar = FALSE, responsive = TRUE)
   })
@@ -221,11 +233,13 @@ server <- function(input, output, session) {
   plot_ts_static <- reactive({
     plot_data <- plot_data_reactive()
     if (nrow(plot_data) == 0) return(NULL)
+    main_title <- paste("Time Series of", input$ts_variable)
+    wrapped_title <- wrap_title(main_title, width = 50, sep = "\n")
     ggplot(plot_data, aes(x = Year, y = value, color = category)) +
       geom_line(linewidth = 1) +
       geom_point(size = 2) +
       scale_color_viridis_d() +
-      labs(title = paste("Time Series of", input$ts_variable),
+      labs(title = wrapped_title,
            x = "Year", y = "Absolute Value", color = "Categories") +
       theme_minimal(base_size = 13) +
       theme(
@@ -236,7 +250,7 @@ server <- function(input, output, session) {
   })
   output$download_ts_plot <- downloadHandler(
     filename = function() paste0("time_series_", input$ts_variable, "_", Sys.Date(), ".png"),
-    content  = function(file) ggsave(file, plot = plot_ts_static(), width = 10, height = 6, dpi = 300)
+    content = function(file) ggsave(file, plot = plot_ts_static(), width = 10, height = 6, dpi = 300)
   )
   
   # ---- Yearly Snapshot (flat by 3 categories) ----
@@ -257,18 +271,25 @@ server <- function(input, output, session) {
       return(plot_ly() %>% layout(title = "No data available for the selected variable and year")
              %>% config(displayModeBar = FALSE, responsive = TRUE))
     }
+    
+    main_title <- paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year)
+    wrapped_title <- wrap_title(main_title, width = 50, sep = "<br>")
+    num_br <- length(unlist(gregexpr("<br>", wrapped_title)))
+    num_lines <- num_br + 1
+    t_margin <- 30 + 20 * num_lines
+    
     plot_ly(
       data = dd, x = ~label, y = ~value, type = "bar",
       color = ~label, colors = viridis::viridis(length(unique(dd$label))),
       hovertemplate = "<b>%{x}</b><br>Value: %{y:,}<extra></extra>"
     ) %>%
       layout(
-        title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
+        title = list(text = wrapped_title),
         hovermode = "closest",
         showlegend = FALSE,
         xaxis = list(title = "Categories of Institutes", tickangle = -15),
         yaxis = list(title = "Absolute Value"),
-        margin = list(r = 20, t = 60, b = 60, l = 60)
+        margin = list(r = 20, t = t_margin, b = 60, l = 60)
       ) %>%
       config(displayModeBar = FALSE, responsive = TRUE)
   })
@@ -278,10 +299,12 @@ server <- function(input, output, session) {
     dd <- ys_year_data(input$ys_year, input$ys_variable)
     if (nrow(dd) == 0) return(NULL)
     dd$label <- factor(dd$label, levels = dd$label)
+    main_title <- paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year)
+    wrapped_title <- wrap_title(main_title, width = 50, sep = "\n")
     ggplot(dd, aes(x = label, y = value, fill = label)) +
       geom_col() +
       scale_fill_viridis_d(guide = "none") +
-      labs(title = paste("Yearly Snapshot of", input$ys_variable, "in", input$ys_year),
+      labs(title = wrapped_title,
            x = "Categories of Institutes", y = "Absolute Value") +
       theme_minimal(base_size = 13) +
       theme(
@@ -292,7 +315,7 @@ server <- function(input, output, session) {
   })
   output$download_ys_plot <- downloadHandler(
     filename = function() paste0("yearly_snapshot_", input$ys_variable, "_", input$ys_year, "_", Sys.Date(), ".png"),
-    content  = function(file) ggsave(file, plot = ys_plot_static(), width = 10, height = 6, dpi = 300)
+    content = function(file) ggsave(file, plot = ys_plot_static(), width = 10, height = 6, dpi = 300)
   )
   
   # ---- Data Explorer table ----
@@ -326,7 +349,7 @@ server <- function(input, output, session) {
     ]
   })
   
-  # ---- Synchronize Variable Selections (keep your logic) ----
+  # ---- Synchronize Variable Selections ----
   selections <- reactiveValues(variable = NULL, year = NULL, category = NULL, from_tab_var = NULL, from_tab_year = NULL)
   
   observeEvent(list(input$ys_year), {
@@ -426,7 +449,7 @@ server <- function(input, output, session) {
   # ---- Downloads ----
   output$download_csv <- downloadHandler(
     filename = function() paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".csv"),
-    content  = function(file) {
+    content = function(file) {
       req(input$explorer_variable, input$explorer_year)
       write.csv(create_download_data(data, input$explorer_year, input$explorer_variable, selected_category(), FALSE),
                 file, row.names = FALSE)
@@ -434,7 +457,7 @@ server <- function(input, output, session) {
   )
   output$download_excel <- downloadHandler(
     filename = function() paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".xlsx"),
-    content  = function(file) {
+    content = function(file) {
       req(input$explorer_variable, input$explorer_year)
       writexl::write_xlsx(create_download_data(data, input$explorer_year, input$explorer_variable, selected_category(), FALSE),
                           path = file)
