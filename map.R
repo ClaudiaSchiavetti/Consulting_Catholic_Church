@@ -33,8 +33,8 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # Set your working directory and read the data file.
 
 # Define the data file path and set it as your working directory.
-path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+#path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_outputs)
 
 # Read the CSV file containing the geographic data
@@ -810,7 +810,36 @@ ui <- tagList(
                    )
                  )
                )
+             ),
+             
+             tabPanel(
+               "Credits",
+               tags$div(
+                 style = "padding: 20px; max-width: 800px; margin: 0 auto; font-size: 16px; line-height: 1.6;",
+                 tags$h3("Credits"),
+                 tags$p(
+                   "The data presented in this web application was extracted using Optical Character Recognition (OCR) by researchers at the University of Mannheim from the 2022 edition of the ",
+                   tags$i("Annuarium Statisticum Ecclesiae"), ", a publicly available publication. The ",
+                   tags$i("Annuarium Statisticum Ecclesiae"), " is compiled annually by the Central Office of Church Statistics of the Holy See's Secretariat of State and published by the Vatican Publishing House."
+                 ),
+                 tags$p(
+                   "Data transformation was carried out by Claudia Schiavetti, Manuel Soffici, and Felicitas Höerl; Claudia Schiavetti and Manuel Soffici developed the web applications. Claudia Schiavetti and Manuel Soffici worked on the project as students at LMU Munich. [Felicitas' description]. The project work was supervised by Dr. Anna-Carolina Haensch, researcher at LMU Munich."
+                 ),
+                 tags$p(
+                   "For further information or inquiries, please contact Dr. Haensch at ",
+                   tags$a(href = "mailto:Anna-Carolina.Haensch@stat.uni-muenchen.de", "Anna-Carolina.Haensch@stat.uni-muenchen.de"), "."
+                 ),
+                 tags$p(
+                   "This work is licensed under a ",
+                   tags$a(
+                     href = "https://creativecommons.org/licenses/by-nc/4.0/",
+                     target = "_blank",
+                     "Creative Commons Attribution-NonCommercial (CC BY-NC) License"
+                   ), "."
+                 )
+               )
              )
+             
   )
 )
 
