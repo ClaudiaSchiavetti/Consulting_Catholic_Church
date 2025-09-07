@@ -39,7 +39,7 @@ data <- read.csv("final_geo_table.csv", check.names = FALSE)
 # Read variable abbreviations from a CSV file and create a named vector.
 # The CSV file should have two columns: 'variable_name' and 'abbreviation'.
 
-abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
+abbreviations_file <- "variable_abbreviations.csv"
 if (!file.exists(abbreviations_file)) {
   stop("Variable abbreviations CSV file not found at: ", abbreviations_file)
 }
