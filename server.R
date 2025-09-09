@@ -40,6 +40,33 @@ server <- function(input, output, session) {
     from_tab = NULL # Track which tab triggered the change
   )
   
+  # Reactive data based on geographic level
+  current_data <- reactive({
+    if (input$geographic_level == "countries") {
+      data_countries
+    } else {
+      data_macroregions
+    }
+  })
+  
+  # Reactive map data based on geographic level  
+  current_map_data <- reactive({
+    if (input$geographic_level == "countries") {
+      map_data
+    } else {
+      map_data_macroregions
+    }
+  })
+  
+  # Reactive allowed variables based on geographic level
+  current_allowed_variables <- reactive({
+    if (input$geographic_level == "countries") {
+      allowed_variables
+    } else {
+      allowed_variables_macroregions
+    }
+  })
+  
   # Reactive for display mode label.
   mode_label <- reactive({
     if (as.integer(input$year) == 2022) input$display_mode else "absolute"
@@ -47,8 +74,9 @@ server <- function(input, output, session) {
   
   # Reactive for filtered map data
   filtered_map_data <- reactive({
-    req(input$variable, input$year)
-    data <- map_data %>% filter(Year == input$year)
+    req(input$variable, input$year, input$geographic_level)
+    data <- current_map_data() %>% filter(Year == input$year)
+    
     if (as.integer(input$year) == 2022) {
       if (input$display_mode == "per_capita") {
         data[[input$variable]] <- ifelse(
@@ -91,6 +119,16 @@ server <- function(input, output, session) {
         updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
       }
     }
+  })
+  
+  # Update variable choices when geographic level changes
+  observe({
+    updateSelectInput(
+      session,
+      "variable",
+      choices = current_allowed_variables(),
+      selected = if (input$variable %in% current_allowed_variables()) input$variable else current_allowed_variables()[1]
+    )
   })
   
   # Update from Data Explorer tab.
@@ -137,7 +175,7 @@ server <- function(input, output, session) {
   # ---- Update Available Years Based on Variable ----
   # Dynamically update year choices based on data availability for the selected variable.
   observeEvent(input$variable, {
-    available_years <- sort(unique(data_countries %>%
+    available_years <- sort(unique(current_data() %>%
                                      filter(!is.na(.data[[input$variable]])) %>%
                                      pull(Year)))
     updateSelectInput(session, "year", choices = available_years, selected = max(available_years))
@@ -164,28 +202,46 @@ server <- function(input, output, session) {
   })
   
   
+  # Handle geographic level changes
+  observeEvent(input$geographic_level, {
+    if (input$geographic_level == "macroregions") {
+      # Clear country selection and disable country search
+      selected_country(NULL)
+      updateSelectInput(session, "country_search", selected = "")
+      leafletProxy("map") %>% clearGroup("highlight")
+    }
+  })
+  
   # ---- Render Interactive World Map ----
   # Create the Leaflet map with selected variable data.
   output$map <- renderLeaflet({
-    req(input$variable, input$year)
+    req(input$variable, input$year, input$geographic_level)
     ml <- mode_label()
     filtered_data <- filtered_map_data()
-    # Ensure valid values for color palette.
+    
+    # Ensure valid values for color palette
     pal <- create_pal(filtered_data[[input$variable]])
+    
+    # Create labels based on geographic level
+    if (input$geographic_level == "countries") {
+      region_name <- filtered_data$name
+    } else {
+      region_name <- filtered_data$macroregion
+    }
     
     leaflet(filtered_data, options = leafletOptions(
       maxBounds = list(c(-120, -240), c(120, 240)),
       maxBoundsViscosity = 1,
-      zoomControl = FALSE # disable default (top-left)
+      zoomControl = FALSE
     )) %>%
       addProviderTiles("CartoDB.Voyager", options = providerTileOptions(noWrap = TRUE)) %>%
       setView(lng = 0, lat = 30, zoom = 3) %>%
       htmlwidgets::onRender("
-        function(el, x) {
-          var map = this;
-          L.control.zoom({ position: 'topright' }).addTo(map);
-        }
-      ") %>%
+      function(el, x) {
+        var map = this;
+        L.control.zoom({ position: 'topright' }).addTo(map);
+      }
+    ") %>%
       addPolygons(
         fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
@@ -193,8 +249,8 @@ server <- function(input, output, session) {
         color = "white",
         dashArray = "3",
         fillOpacity = 0.6,
-        layerId = ~name,
-        label = ~lapply(paste0("<strong>", name, "</strong><br/>",
+        layerId = ~region_name,
+        label = ~lapply(paste0("<strong>", region_name, "</strong><br/>",
                                switch(ml,
                                       "absolute" = variable_abbreviations[input$variable],
                                       "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
@@ -275,46 +331,59 @@ server <- function(input, output, session) {
   
   # ---- Handle Map Click Events ----
   # Highlight clicked country and update selections.
+  # ---- Handle Map Click Events ----
   observeEvent(input$map_shape_click, {
     req(input$map_shape_click$id, input$year)
-    clicked_country <- input$map_shape_click$id
-    filtered_data <- map_data %>% filter(name == clicked_country, Year = input$year)
     
-    if (nrow(filtered_data) == 0 || is.na(filtered_data$geometry[1])) {
-      showNotification("No data available for this country in the selected year.", type = "warning")
+    if (identical(input$geographic_level, "macroregions")) {
+      showNotification(
+        paste("Selected macroregion:", input$map_shape_click$id),
+        type = "message", duration = 3
+      )
       return()
     }
     
-    selected_country(clicked_country)
-    updateSelectInput(session, "country_search", selected = clicked_country)
+    # Countries path
+    clicked_country <- input$map_shape_click$id
     
-    # Update time series only if variable is valid.
-    if (input$variable %in% time_series_vars) {
-      update_time_series_for_country(clicked_country)
-      showNotification(
-        paste("Time series updated to show", clicked_country),
-        type = "message",
-        duration = 3
-      )
+    md <- current_map_data()                       # should return the sf for the current year/scope
+    filtered_data <- md %>%
+      dplyr::filter(name == clicked_country, Year == input$year)
+    
+    if (nrow(filtered_data) == 0 || !"geometry" %in% names(filtered_data)) {
+      showNotification("No geometry/data for selection.", type = "error", duration = 3)
+      return()
     }
     
-    leafletProxy("map") %>%
-      clearGroup("highlight") %>%
-      addPolygons(
-        data = filtered_data,
-        fill = FALSE, color = "red", weight = 3, opacity = 1, group = "highlight"
-      ) %>%
-      setView(
-        lng = tryCatch(
-          st_coordinates(st_centroid(st_union(filtered_data$geometry)))[1],
-          error = function(e) 0
-        ),
-        lat = tryCatch(
-          st_coordinates(st_centroid(st_union(filtered_data$geometry)))[2],
-          error = function(e) 30
-        ),
-        zoom = 4
+    # update selections
+    selected_country(clicked_country)  # your reactiveVal setter
+    updateSelectInput(session, "country_search", selected = clicked_country)
+    
+    # update time series if applicable
+    if (isTRUE(input$variable %in% time_series_vars)) {
+      update_time_series_for_country(clicked_country)
+      showNotification(paste("Time series updated to show", clicked_country),
+                       type = "message", duration = 3)
+    }
+    
+    # highlight + center
+    geom_union <- tryCatch(sf::st_union(filtered_data$geometry), error = function(e) NULL)
+    if (!is.null(geom_union)) {
+      ctr <- tryCatch(
+        sf::st_coordinates(sf::st_centroid(geom_union))[1:2],
+        error = function(e) c(0, 30)
       )
+      leafletProxy("map") %>%
+        clearGroup("highlight") %>%
+        addPolygons(
+          data = filtered_data,
+          fill = FALSE, color = "red", weight = 3, opacity = 1,
+          group = "highlight"
+        ) %>%
+        setView(lng = ctr[1], lat = ctr[2], zoom = 4)
+    } else {
+      leafletProxy("map") %>% clearGroup("highlight")
+    }
   })
   
   # ---- Handle Country Search Selection ----

@@ -86,6 +86,71 @@ safe_div <- function(num, den, scale = 1) {
   ifelse(is.na(num) | is.na(den) | den == 0, NA_real_, (num / den) * scale)
 }
 
+# ---- Macroregion Mapping Function ----
+assign_macroregion <- function(country_names) {
+  # Africa
+  africa <- c("Algeria", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", "Cabo Verde", "Cameroon",
+              "Central African Republic", "Chad", "Comoros", "Congo", "Dem. Rep. Congo", "Côte d'Ivoire", 
+              "Djibouti", "Egypt", "Eritrea", "eSwatini", "Ethiopia", "Gabon", "Gambia", "Ghana", "Guinea", 
+              "Guinea-Bissau", "Eq. Guinea", "Kenya", "Lesotho", "Liberia", "Libya", "Madagascar", 
+              "Malawi", "Mali", "Mauritania", "Mauritius", "Morocco", "Mozambique", "Namibia", "Niger", 
+              "Nigeria", "Rwanda", "W. Sahara", "Saint Helena", "São Tomé and Principe", 
+              "Senegal", "Seychelles", "Sierra Leone", "Somalia", "South Africa", "S. Sudan", "Sudan", 
+              "Tanzania", "Togo", "Tunisia", "Uganda", "Zambia", "Zimbabwe")
+  
+  # North America
+  north_america <- c("Bermuda", "Canada", "Greenland", "St. Pierre and Miquelon", "United States of America")
+  
+  # Central America (combining mainland and antilles)
+  central_america <- c("Belize", "Costa Rica", "El Salvador", "Guatemala", "Honduras", "Mexico", "Nicaragua", 
+                       "Panama", "Anguilla", "Antigua and Barb.", "Aruba", "Bahamas", "Barbados", "Cayman Is.", 
+                       "Cuba", "Dominica", "Dominican Rep.", "Grenada", "Haiti", "Jamaica", 
+                       "Martinique", "Montserrat", "Curaçao", "Puerto Rico", "St. Kitts and Nevis", "Saint Lucia", 
+                       "St. Vin. and Gren.", "Trinidad and Tobago", "Turks and Caicos Is.", "British Virgin Is.")
+  
+  # South America
+  south_america <- c("Argentina", "Bolivia", "Brazil", "Chile", "Colombia", "Ecuador", "Falkland Is.", 
+                     "Fr. Guiana", "Guyana", "Paraguay", "Peru", "Suriname", "Uruguay", "Venezuela")
+  
+  # Middle East Asia
+  middle_east_asia <- c("Afghanistan", "Cyprus", "Iran", "Iraq", "Israel", "Jordan", "Lebanon", "Syria", "Turkey")
+  
+  # South and Far East Asia
+  south_far_east_asia <- c("Bahrain", "Bangladesh", "Bhutan", "Brunei", "Cambodia", "China", "Hong Kong", 
+                           "Macao", "Taiwan", "India", "Indonesia", "Japan", "Kazakhstan", "North Korea", 
+                           "South Korea", "Kuwait", "Kyrgyzstan", "Laos", "Malaysia", "Maldives", "Mongolia", 
+                           "Myanmar", "Nepal", "Oman", "Pakistan", "Philippines", "Qatar", 
+                           "Saudi Arabia", "Singapore", "Sri Lanka", "Tajikistan", "Thailand", "Timor-Leste", 
+                           "Turkmenistan", "United Arab Emirates", "Uzbekistan", "Vietnam", "Yemen")
+  
+  # Europe
+  europe <- c("Albania", "Andorra", "Armenia", "Austria", "Azerbaijan", "Belarus", "Belgium", 
+              "Bosnia and Herz.", "Bulgaria", "Croatia", "Czech Rep.", "Denmark", "Estonia", "Faeroe Is.", 
+              "Finland", "Georgia", "Germany", "Gibraltar", "United Kingdom", "Greece", "Hungary", 
+              "Iceland", "Ireland", "Italy", "Kosovo", "Latvia", "Liechtenstein", "Lithuania", "Luxembourg", 
+              "North Macedonia", "Malta", "Moldova", "Monaco", "Montenegro", "Netherlands", "Norway", 
+              "Poland", "Portugal", "Romania", "San Marino", "Serbia", "Slovakia", 
+              "Slovenia", "Spain", "Sweden", "Switzerland", "Ukraine", "France", "Russia")
+  
+  # Oceania
+  oceania <- c("Australia", "Cook Is.", "Fiji", "Guam", "Kiribati", "Marshall Is.", "Micronesia", 
+               "Nauru", "New Caledonia", "New Zealand", "Niue", "Palau", 
+               "Papua New Guinea", "Fr. Polynesia", "Samoa", "American Samoa", "Solomon Is.", "Tokelau", 
+               "Tonga", "Tuvalu", "Vanuatu", "Wallis and Futuna Is.")
+  
+  # Use case_when for vectorized operations
+  dplyr::case_when(
+    country_names %in% africa ~ "Africa",
+    country_names %in% north_america ~ "North America", 
+    country_names %in% central_america ~ "Central America",
+    country_names %in% south_america ~ "South America",
+    country_names %in% middle_east_asia ~ "Middle East Asia",
+    country_names %in% south_far_east_asia ~ "South and Far East Asia",
+    country_names %in% europe ~ "Europe",
+    country_names %in% oceania ~ "Oceania",
+    TRUE ~ NA_character_
+  )
+}
 
 # ---- Process and Merge Macroregions ----
 # Standardize names, merge split regions, and filter out aggregates
@@ -290,6 +355,44 @@ world <- world %>%
 # Merge country data with the world map using country names.
 
 map_data <- left_join(world, data_countries, by = c("name" = "Region"))
+
+# ---- Create Macroregion Map Data ----
+# Assign macroregions to world map
+world_with_macroregions <- world %>%
+  mutate(macroregion = assign_macroregion(name)) %>%
+  filter(!is.na(macroregion))  # Remove countries not in any macroregion
+
+# Create dissolved macroregion polygons
+macroregion_polygons <- world_with_macroregions %>%
+  group_by(macroregion) %>%
+  summarise(
+    geometry = st_union(geometry),
+    .groups = "drop"
+  )
+
+# Merge with macroregion data
+map_data_macroregions <- left_join(
+  macroregion_polygons, 
+  data_macroregions, 
+  by = "macroregion"
+)
+
+# Update allowed variables for macroregions (same logic as countries)
+allowed_variables_macroregions <- setdiff(
+  names(data_macroregions)[sapply(data_macroregions, is.numeric) & names(data_macroregions) != "Year"],
+  excluded_vars
+)
+
+# Time series variables for macroregions
+time_series_vars_macroregions <- allowed_variables_macroregions[
+  sapply(allowed_variables_macroregions, function(var) {
+    years <- data_macroregions %>% 
+      filter(!is.na(.data[[var]])) %>% 
+      pull(Year) %>% 
+      unique()
+    length(years) > 1
+  })
+]
 
 # ---- Analyze Unmatched Country Names ----
 # Identify countries in data that do not match the world map.
@@ -618,4 +721,5 @@ time_series_vars <- allowed_variables[
     length(years) > 1
   })
 ]
+
 

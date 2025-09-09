@@ -86,6 +86,9 @@ ui <- tagList(
                           width = 300, height = "auto",
                           style = "background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px; overflow-y: auto; max-height: 90vh;",
                           create_select_input("variable", "Select variable to display:", allowed_variables),
+                          radioButtons("geographic_level", "Geographic Level:",
+                                       choices = list("Countries" = "countries", "Macroregions" = "macroregions"),
+                                       selected = "countries"),
                           create_select_input("year", "Select year:", sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
                           radioButtons("display_mode", "Display mode:",
                                        choices = list("Absolute values" = "absolute",
@@ -185,4 +188,6 @@ ui <- tagList(
              )
   )
 )
+
+
 

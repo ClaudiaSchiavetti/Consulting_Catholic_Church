@@ -33,8 +33,8 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # Set your working directory and read the data file.
 
 # Define the data file path and set it as your working directory.
-#path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+#path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_outputs)
 
 # Read the CSV file containing the geographic data
@@ -92,6 +92,71 @@ safe_div <- function(num, den, scale = 1) {
   ifelse(is.na(num) | is.na(den) | den == 0, NA_real_, (num / den) * scale)
 }
 
+# ---- Macroregion Mapping Function ----
+assign_macroregion <- function(country_names) {
+  # Africa
+  africa <- c("Algeria", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", "Cabo Verde", "Cameroon",
+              "Central African Republic", "Chad", "Comoros", "Congo", "Dem. Rep. Congo", "Côte d'Ivoire", 
+              "Djibouti", "Egypt", "Eritrea", "eSwatini", "Ethiopia", "Gabon", "Gambia", "Ghana", "Guinea", 
+              "Guinea-Bissau", "Eq. Guinea", "Kenya", "Lesotho", "Liberia", "Libya", "Madagascar", 
+              "Malawi", "Mali", "Mauritania", "Mauritius", "Morocco", "Mozambique", "Namibia", "Niger", 
+              "Nigeria", "Rwanda", "W. Sahara", "Saint Helena", "São Tomé and Principe", 
+              "Senegal", "Seychelles", "Sierra Leone", "Somalia", "South Africa", "S. Sudan", "Sudan", 
+              "Tanzania", "Togo", "Tunisia", "Uganda", "Zambia", "Zimbabwe")
+  
+  # North America
+  north_america <- c("Bermuda", "Canada", "Greenland", "St. Pierre and Miquelon", "United States of America")
+  
+  # Central America (combining mainland and antilles)
+  central_america <- c("Belize", "Costa Rica", "El Salvador", "Guatemala", "Honduras", "Mexico", "Nicaragua", 
+                       "Panama", "Anguilla", "Antigua and Barb.", "Aruba", "Bahamas", "Barbados", "Cayman Is.", 
+                       "Cuba", "Dominica", "Dominican Rep.", "Grenada", "Haiti", "Jamaica", 
+                       "Martinique", "Montserrat", "Curaçao", "Puerto Rico", "St. Kitts and Nevis", "Saint Lucia", 
+                       "St. Vin. and Gren.", "Trinidad and Tobago", "Turks and Caicos Is.", "British Virgin Is.")
+  
+  # South America
+  south_america <- c("Argentina", "Bolivia", "Brazil", "Chile", "Colombia", "Ecuador", "Falkland Is.", 
+                     "Fr. Guiana", "Guyana", "Paraguay", "Peru", "Suriname", "Uruguay", "Venezuela")
+  
+  # Middle East Asia
+  middle_east_asia <- c("Afghanistan", "Cyprus", "Iran", "Iraq", "Israel", "Jordan", "Lebanon", "Syria", "Turkey")
+  
+  # South and Far East Asia
+  south_far_east_asia <- c("Bahrain", "Bangladesh", "Bhutan", "Brunei", "Cambodia", "China", "Hong Kong", 
+                           "Macao", "Taiwan", "India", "Indonesia", "Japan", "Kazakhstan", "North Korea", 
+                           "South Korea", "Kuwait", "Kyrgyzstan", "Laos", "Malaysia", "Maldives", "Mongolia", 
+                           "Myanmar", "Nepal", "Oman", "Pakistan", "Philippines", "Qatar", 
+                           "Saudi Arabia", "Singapore", "Sri Lanka", "Tajikistan", "Thailand", "Timor-Leste", 
+                           "Turkmenistan", "United Arab Emirates", "Uzbekistan", "Vietnam", "Yemen")
+  
+  # Europe
+  europe <- c("Albania", "Andorra", "Armenia", "Austria", "Azerbaijan", "Belarus", "Belgium", 
+              "Bosnia and Herz.", "Bulgaria", "Croatia", "Czech Rep.", "Denmark", "Estonia", "Faeroe Is.", 
+              "Finland", "Georgia", "Germany", "Gibraltar", "United Kingdom", "Greece", "Hungary", 
+              "Iceland", "Ireland", "Italy", "Kosovo", "Latvia", "Liechtenstein", "Lithuania", "Luxembourg", 
+              "North Macedonia", "Malta", "Moldova", "Monaco", "Montenegro", "Netherlands", "Norway", 
+              "Poland", "Portugal", "Romania", "San Marino", "Serbia", "Slovakia", 
+              "Slovenia", "Spain", "Sweden", "Switzerland", "Ukraine", "Russia", "France")
+  
+  # Oceania
+  oceania <- c("Australia", "Cook Is.", "Fiji", "Guam", "Kiribati", "Marshall Is.", "Micronesia", 
+               "Nauru", "New Caledonia", "New Zealand", "Niue", "Palau", 
+               "Papua New Guinea", "Fr. Polynesia", "Samoa", "American Samoa", "Solomon Is.", "Tokelau", 
+               "Tonga", "Tuvalu", "Vanuatu", "Wallis and Futuna Is.")
+  
+  # Use case_when for vectorized operations
+  dplyr::case_when(
+    country_names %in% africa ~ "Africa",
+    country_names %in% north_america ~ "North America", 
+    country_names %in% central_america ~ "Central America",
+    country_names %in% south_america ~ "South America",
+    country_names %in% middle_east_asia ~ "Middle East Asia",
+    country_names %in% south_far_east_asia ~ "South and Far East Asia",
+    country_names %in% europe ~ "Europe",
+    country_names %in% oceania ~ "Oceania",
+    TRUE ~ NA_character_
+  )
+}
 
 # ---- Process and Merge Macroregions ----
 # Standardize names, merge split regions, and filter out aggregates
@@ -296,6 +361,47 @@ world <- world %>%
 # Merge country data with the world map using country names.
 
 map_data <- left_join(world, data_countries, by = c("name" = "Region"))
+
+# ---- Create Macroregion Map Data ----
+# Assign macroregions to world map
+world_with_macroregions <- world %>%
+  mutate(macroregion = assign_macroregion(name)) %>%
+  filter(!is.na(macroregion))  # Remove countries not in any macroregion
+
+# Create dissolved macroregion polygons with proper geometry handling
+macroregion_polygons <- world_with_macroregions %>%
+  group_by(macroregion) %>%
+  summarise(
+    geometry = st_union(geometry),
+    .groups = "drop"
+  ) %>%
+  # Fix invalid geometries and simplify to remove artifacts
+  mutate(geometry = st_make_valid(geometry)) %>%
+  mutate(geometry = st_simplify(geometry, dTolerance = 0.01))
+
+# Merge with macroregion data
+map_data_macroregions <- left_join(
+  macroregion_polygons, 
+  data_macroregions, 
+  by = "macroregion"
+)
+
+# Update allowed variables for macroregions (same logic as countries)
+allowed_variables_macroregions <- setdiff(
+  names(data_macroregions)[sapply(data_macroregions, is.numeric) & names(data_macroregions) != "Year"],
+  excluded_vars
+)
+
+# Time series variables for macroregions
+time_series_vars_macroregions <- allowed_variables_macroregions[
+  sapply(allowed_variables_macroregions, function(var) {
+    years <- data_macroregions %>% 
+      filter(!is.na(.data[[var]])) %>% 
+      pull(Year) %>% 
+      unique()
+    length(years) > 1
+  })
+]
 
 # ---- Analyze Unmatched Country Names ----
 # Identify countries in data that do not match the world map.
@@ -714,6 +820,9 @@ ui <- tagList(
                           width = 300, height = "auto",
                           style = "background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px; overflow-y: auto; max-height: 90vh;",
                           create_select_input("variable", "Select variable to display:", allowed_variables),
+                          radioButtons("geographic_level", "Geographic Level:",
+                                       choices = list("Countries" = "countries", "Macroregions" = "macroregions"),
+                                       selected = "countries"),
                           create_select_input("year", "Select year:", sort(unique(data_countries$Year)), selected = max(data_countries$Year)),
                           radioButtons("display_mode", "Display mode:",
                                        choices = list("Absolute values" = "absolute",
@@ -885,6 +994,43 @@ server <- function(input, output, session) {
     from_tab = NULL # Track which tab triggered the change
   )
   
+  # Reactive data based on geographic level
+  current_data <- reactive({
+    if (input$geographic_level == "countries") {
+      data_countries
+    } else {
+      data_macroregions
+    }
+  })
+  
+  # Reactive map data based on geographic level  
+  current_map_data <- reactive({
+    if (input$geographic_level == "countries") {
+      map_data
+    } else {
+      map_data_macroregions
+    }
+  })
+  
+  # Reactive allowed variables based on geographic level
+  current_allowed_variables <- reactive({
+    if (input$geographic_level == "countries") {
+      allowed_variables
+    } else {
+      allowed_variables_macroregions
+    }
+  })
+  
+  # Update variable choices when geographic level changes
+  observe({
+    updateSelectInput(
+      session,
+      "variable",
+      choices = current_allowed_variables(),
+      selected = if (input$variable %in% current_allowed_variables()) input$variable else current_allowed_variables()[1]
+    )
+  })
+  
   # Reactive for display mode label.
   mode_label <- reactive({
     if (as.integer(input$year) == 2022) input$display_mode else "absolute"
@@ -892,8 +1038,9 @@ server <- function(input, output, session) {
   
   # Reactive for filtered map data
   filtered_map_data <- reactive({
-    req(input$variable, input$year)
-    data <- map_data %>% filter(Year == input$year)
+    req(input$variable, input$year, input$geographic_level)
+    data <- current_map_data() %>% filter(Year == input$year)
+    
     if (as.integer(input$year) == 2022) {
       if (input$display_mode == "per_capita") {
         data[[input$variable]] <- ifelse(
@@ -982,10 +1129,20 @@ server <- function(input, output, session) {
   # ---- Update Available Years Based on Variable ----
   # Dynamically update year choices based on data availability for the selected variable.
   observeEvent(input$variable, {
-    available_years <- sort(unique(data_countries %>%
+    available_years <- sort(unique(current_data() %>%
                                      filter(!is.na(.data[[input$variable]])) %>%
                                      pull(Year)))
     updateSelectInput(session, "year", choices = available_years, selected = max(available_years))
+  })
+  
+  # Handle geographic level changes
+  observeEvent(input$geographic_level, {
+    if (input$geographic_level == "macroregions") {
+      # Clear country selection and disable country search
+      selected_country(NULL)
+      updateSelectInput(session, "country_search", selected = "")
+      leafletProxy("map") %>% clearGroup("highlight")
+    }
   })
   
   # ---- Limit Display Modes to 2022 ----
@@ -1012,25 +1169,33 @@ server <- function(input, output, session) {
   # ---- Render Interactive World Map ----
   # Create the Leaflet map with selected variable data.
   output$map <- renderLeaflet({
-    req(input$variable, input$year)
+    req(input$variable, input$year, input$geographic_level)
     ml <- mode_label()
     filtered_data <- filtered_map_data()
-    # Ensure valid values for color palette.
+    
+    # Ensure valid values for color palette
     pal <- create_pal(filtered_data[[input$variable]])
+    
+    # Create labels based on geographic level
+    if (input$geographic_level == "countries") {
+      region_name <- filtered_data$name
+    } else {
+      region_name <- filtered_data$macroregion
+    }
     
     leaflet(filtered_data, options = leafletOptions(
       maxBounds = list(c(-120, -240), c(120, 240)),
       maxBoundsViscosity = 1,
-      zoomControl = FALSE # disable default (top-left)
+      zoomControl = FALSE
     )) %>%
       addProviderTiles("CartoDB.Voyager", options = providerTileOptions(noWrap = TRUE)) %>%
       setView(lng = 0, lat = 30, zoom = 3) %>%
       htmlwidgets::onRender("
-        function(el, x) {
-          var map = this;
-          L.control.zoom({ position: 'topright' }).addTo(map);
-        }
-      ") %>%
+      function(el, x) {
+        var map = this;
+        L.control.zoom({ position: 'topright' }).addTo(map);
+      }
+    ") %>%
       addPolygons(
         fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
@@ -1038,8 +1203,8 @@ server <- function(input, output, session) {
         color = "white",
         dashArray = "3",
         fillOpacity = 0.6,
-        layerId = ~name,
-        label = ~lapply(paste0("<strong>", name, "</strong><br/>",
+        layerId = ~region_name,
+        label = ~lapply(paste0("<strong>", region_name, "</strong><br/>",
                                switch(ml,
                                       "absolute" = variable_abbreviations[input$variable],
                                       "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
@@ -1122,8 +1287,16 @@ server <- function(input, output, session) {
   # Highlight clicked country and update selections.
   observeEvent(input$map_shape_click, {
     req(input$map_shape_click$id, input$year)
+    
+    if (input$geographic_level == "macroregions") {
+      # For macroregions, just show notification
+      showNotification(paste("Selected macroregion:", input$map_shape_click$id), type = "message", duration = 3)
+      return()
+    }
+    
+    # Rest of existing country click logic...
     clicked_country <- input$map_shape_click$id
-    filtered_data <- map_data %>% filter(name == clicked_country, Year == input$year)
+    filtered_data <- current_map_data() %>% filter(name == clicked_country, Year == input$year)
     
     if (nrow(filtered_data) == 0 || is.na(filtered_data$geometry[1])) {
       showNotification("No data available for this country in the selected year.", type = "warning")
