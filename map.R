@@ -96,7 +96,7 @@ safe_div <- function(num, den, scale = 1) {
 assign_macroregion <- function(country_names) {
   # Africa
   africa <- c("Algeria", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", "Cabo Verde", "Cameroon",
-              "Central African Republic", "Chad", "Comoros", "Congo", "Dem. Rep. Congo", "Côte d'Ivoire", 
+              "Central African Rep.", "Chad", "Comoros", "Congo", "Dem. Rep. Congo", "Côte d'Ivoire", 
               "Djibouti", "Egypt", "Eritrea", "eSwatini", "Ethiopia", "Gabon", "Gambia", "Ghana", "Guinea", 
               "Guinea-Bissau", "Eq. Guinea", "Kenya", "Lesotho", "Liberia", "Libya", "Madagascar", 
               "Malawi", "Mali", "Mauritania", "Mauritius", "Morocco", "Mozambique", "Namibia", "Niger", 
@@ -131,7 +131,7 @@ assign_macroregion <- function(country_names) {
   
   # Europe
   europe <- c("Albania", "Andorra", "Armenia", "Austria", "Azerbaijan", "Belarus", "Belgium", 
-              "Bosnia and Herz.", "Bulgaria", "Croatia", "Czech Rep.", "Denmark", "Estonia", "Faeroe Is.", 
+              "Bosnia and Herz.", "Bulgaria", "Croatia", "Czechia", "Denmark", "Estonia", "Faeroe Is.", 
               "Finland", "Georgia", "Germany", "Gibraltar", "United Kingdom", "Greece", "Hungary", 
               "Iceland", "Ireland", "Italy", "Kosovo", "Latvia", "Liechtenstein", "Lithuania", "Luxembourg", 
               "North Macedonia", "Malta", "Moldova", "Monaco", "Montenegro", "Netherlands", "Norway", 
@@ -361,6 +361,32 @@ world <- world %>%
 # Merge country data with the world map using country names.
 
 map_data <- left_join(world, data_countries, by = c("name" = "Region"))
+
+
+# ---- Define Excluded Variables for Map Tab ----
+# List variables to exclude from the "Map" tab's variable selection menu.
+
+excluded_vars <- c(
+  "Area in km^2",
+  "prev_inc_priests",
+  "Yearly ordinations of diocesan priests as share of those incardinated on January 1",
+  "Yearly deaths of diocesan priests as share of those incardinated on January 1",
+  "Yearly defections of diocesan priests as share of those incardinated at January 1",
+  "Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1",
+  "Ecclesiastical territories (total) - index numbers (base 2013 = 100)",
+  "Pastoral centres (total) - index numbers (base 2013 = 100)",
+  "Parishes (total) - index numbers (base 2013 = 100)",
+  "Priests (diocesan and religious) - index numbers (base 2013 = 100)",
+  "Diocesan priests (total) - index numbers (base 2013 = 100)",
+  "Incardinated diocesan priests - index numbers (base 2013 = 100)",
+  "Religious priests - index numbers (base 2013 = 100)",
+  "Permanent deacons (diocesan and religious) - index numbers (base 2013 = 100)",
+  "Non-priest religious men (with temporary or perpetual vows) - index numbers (base 2013 = 100)",
+  "Religious women (with temporary or perpetual vows) - index numbers (base 2013 = 100)",
+  "Candidates for diocesan and religious clergy in philosophy+theology centres - index numbers (base 2013 = 100)",
+  "Students for diocesan and religious clergy in secondary schools - index numbers (base 2013 = 100)"
+)
+
 
 # ---- Create Macroregion Map Data ----
 # Assign macroregions to world map
@@ -675,30 +701,6 @@ if (all(c("Priests and bishops as share of apostolic workforce",
 # Commit all recomputed values back to data_countries.
 data_countries <- dc
 
-
-# ---- Define Excluded Variables for Map Tab ----
-# List variables to exclude from the "Map" tab's variable selection menu.
-
-excluded_vars <- c(
-  "Area in km^2",
-  "prev_inc_priests",
-  "Yearly ordinations of diocesan priests as share of those incardinated on January 1",
-  "Yearly deaths of diocesan priests as share of those incardinated on January 1",
-  "Yearly defections of diocesan priests as share of those incardinated at January 1",
-  "Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1",
-  "Ecclesiastical territories (total) - index numbers (base 2013 = 100)",
-  "Pastoral centres (total) - index numbers (base 2013 = 100)",
-  "Parishes (total) - index numbers (base 2013 = 100)",
-  "Priests (diocesan and religious) - index numbers (base 2013 = 100)",
-  "Diocesan priests (total) - index numbers (base 2013 = 100)",
-  "Incardinated diocesan priests - index numbers (base 2013 = 100)",
-  "Religious priests - index numbers (base 2013 = 100)",
-  "Permanent deacons (diocesan and religious) - index numbers (base 2013 = 100)",
-  "Non-priest religious men (with temporary or perpetual vows) - index numbers (base 2013 = 100)",
-  "Religious women (with temporary or perpetual vows) - index numbers (base 2013 = 100)",
-  "Candidates for diocesan and religious clergy in philosophy+theology centres - index numbers (base 2013 = 100)",
-  "Students for diocesan and religious clergy in secondary schools - index numbers (base 2013 = 100)"
-)
 
 # ---- Define Allowed Variables for Map Tab ----
 # Select numeric variables excluding 'Year' and those in excluded_vars.
