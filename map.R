@@ -928,16 +928,18 @@ ui <- tagList(
                  style = "padding: 20px; max-width: 800px; margin: 0 auto; font-size: 16px; line-height: 1.6;",
                  tags$h3("Credits"),
                  tags$p(
-                   "The data presented in this web application was extracted using Optical Character Recognition (OCR) by researchers at the University of Mannheim from the 2022 edition of the ",
-                   tags$i("Annuarium Statisticum Ecclesiae"), ", a publicly available publication. The ",
+                   "The data presented in this web application was extracted using Optical Character Recognition (OCR) by the University Library at the University of Mannheim from the 2022 edition of the ",
+                   tags$i("Annuarium Statisticum Ecclesiae"), ". The ",
                    tags$i("Annuarium Statisticum Ecclesiae"), " is compiled annually by the Central Office of Church Statistics of the Holy See's Secretariat of State and published by the Vatican Publishing House."
                  ),
                  tags$p(
-                   "Data transformation was carried out by Claudia Schiavetti, Manuel Soffici, and Felicitas Höerl; Claudia Schiavetti and Manuel Soffici developed the web applications. Claudia Schiavetti and Manuel Soffici worked on the project as students at LMU Munich. [Felicitas' description]. The project work was supervised by Dr. Anna-Carolina Haensch, researcher at LMU Munich."
+                   "The data was then transformed and edited by Felicitas Hörl, student assistant for Prof. Dr. Andreas Wollbold. Additional preprocessing steps and development of the web apps were carried out by Claudia Schiavetti and Manuel Soffici. Claudia Schiavetti and Manuel Soffici worked on the project as Master students in Statistics and Data Science at LMU Munich as part of the Consulting Project module."
                  ),
                  tags$p(
-                   "For further information or inquiries, please contact Dr. Haensch at ",
-                   tags$a(href = "mailto:Anna-Carolina.Haensch@stat.uni-muenchen.de", "Anna-Carolina.Haensch@stat.uni-muenchen.de"), "."
+                   "The initial idea for the project was developed and supervised by Dr. Anna-Carolina Haensch (Institute of Statistics) and supported by Prof. Dr. Andreas Wollbold and Prof. Dr. Jean-Olivier Nke Ongono (Faculty of Catholic Theology)."
+                 ),
+                 tags$p(
+                   "For further information or inquiries, please contact Dr. Haensch at C.Haensch[at]lmu.de."
                  ),
                  tags$p(
                    "This work is licensed under a ",
