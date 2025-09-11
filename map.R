@@ -3,7 +3,7 @@
 # It checks if each package is installed and installs it if not, then loads them.
 
 required_packages <- c(
-  "shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes",
+  "shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "lwgeom",
   "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "webshot",
   "writexl", "plotly", "shinyjs", "viridisLite", "ggplot2", "htmlwidgets"
 )
@@ -33,8 +33,8 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # Set your working directory and read the data file.
 
 # Define the data file path and set it as your working directory.
-path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+#path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_outputs)
 
 # Read the CSV file containing the geographic data
@@ -392,7 +392,7 @@ excluded_vars <- c(
 # Assign macroregions to world map
 world_with_macroregions <- world %>%
   mutate(macroregion = assign_macroregion(name)) %>%
-  filter(!is.na(macroregion))  # Remove countries not in any macroregion
+  filter(!is.na(macroregion)) # Remove countries not in any macroregion
 
 # Create dissolved macroregion polygons with proper geometry handling
 macroregion_polygons <- world_with_macroregions %>%
@@ -401,14 +401,13 @@ macroregion_polygons <- world_with_macroregions %>%
     geometry = st_union(geometry),
     .groups = "drop"
   ) %>%
-  # Fix invalid geometries and simplify to remove artifacts
-  mutate(geometry = st_make_valid(geometry)) %>%
-  mutate(geometry = st_simplify(geometry, dTolerance = 0.01))
+  mutate(geometry = st_make_valid(geometry)) %>%  # Keep this to fix any post-union invalidities
+  mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=10")))  
 
 # Merge with macroregion data
 map_data_macroregions <- left_join(
-  macroregion_polygons, 
-  data_macroregions, 
+  macroregion_polygons,
+  data_macroregions,
   by = "macroregion"
 )
 
