@@ -5,7 +5,7 @@
 required_packages <- c(
   "shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "lwgeom",
   "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "webshot",
-  "writexl", "plotly", "shinyjs", "viridisLite", "ggplot2", "htmlwidgets"
+  "writexl", "plotly", "shinyjs", "viridisLite", "ggplot2", "htmlwidgets", "purrr"
 )
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
@@ -39,8 +39,6 @@ setwd(path_outputs)
 
 # Read the CSV file containing the geographic data
 data <- read.csv("final_geo_table.csv", check.names = FALSE)
-
-
 # ---- Define Variable Abbreviations ----
 # Read variable abbreviations from a CSV file and create a named vector.
 # The CSV file should have two columns: 'variable_name' and 'abbreviation'.
@@ -401,7 +399,7 @@ macroregion_polygons <- world_with_macroregions %>%
     geometry = st_union(geometry),
     .groups = "drop"
   ) %>%
-  mutate(geometry = st_make_valid(geometry)) %>%  # Keep this to fix any post-union invalidities
+  mutate(geometry = st_make_valid(geometry)) %>%
   mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=10")))  
 
 # Merge with macroregion data
@@ -534,6 +532,33 @@ data_countries <- data_countries %>%
 # Shorthand for data_countries to simplify recomputations.
 
 dc <- data_countries
+
+# ---- Build Coverage Matrix ----
+build_coverage_matrix <- function(data, variables, countries, years) {
+  coverage <- expand.grid(
+    variable = variables,
+    country = countries,
+    year = years,
+    stringsAsFactors = FALSE
+  ) %>%
+    left_join(data, by = c("country", "year" = "Year")) %>%
+    mutate(
+      has_data =purrr::map2_lgl(variable, seq_len(nrow(.)), function(var, idx) {
+        value <- .[[var]][idx]
+        !is.na(value) && value != 0
+      })
+    ) %>%
+    select(variable, country, year, has_data)
+  
+  return(coverage)
+}
+
+coverage_matrix <- build_coverage_matrix(
+  data_countries, 
+  allowed_variables, 
+  unique(data_countries$country), 
+  unique(data_countries$Year)
+)
 
 # Recompute density and rates, rounding to 2 decimal places.
 if (all(c("Inhabitants per km^2", "Inhabitants in thousands", "Area in km^2") %in% names(dc))) {
@@ -990,8 +1015,9 @@ standardize_macro <- function(df, col = "macroregion") {
 server <- function(input, output, session) {
   
   # ---- Initialize Reactive Values ----
-  # Reactive value for selected country.
+  # Reactive value for selected country
   selected_country <- reactiveVal(NULL)
+  selected_macroregion <- reactiveVal(NULL)
   # Reactive values for synchronizing selections across tabs.
   selections <- reactiveValues(
     variable = NULL,
@@ -1044,23 +1070,105 @@ server <- function(input, output, session) {
   # Reactive for filtered map data
   filtered_map_data <- reactive({
     req(input$variable, input$year, input$geographic_level)
-    data <- current_map_data() %>% filter(Year == input$year)
     
-    if (as.integer(input$year) == 2022) {
-      if (input$display_mode == "per_capita") {
-        data[[input$variable]] <- ifelse(
-          !is.na(data[["Inhabitants in thousands"]]) & data[["Inhabitants in thousands"]] > 0,
-          data[[input$variable]] / data[["Inhabitants in thousands"]],
-          NA_real_
+    if (input$geographic_level == "countries") {
+      data <- current_map_data() %>% filter(Year == input$year)
+    } else {
+      # Use full macroregion polygons (no holes) - revert to original approach
+      data <- map_data_macroregions %>% filter(Year == input$year)
+      
+      # But recalculate aggregations using only countries with data for this variable
+      countries_with_data <- coverage_matrix %>%
+        filter(variable == input$variable, year == input$year, has_data == TRUE) %>%
+        pull(country)
+      
+      # Add this check for empty results
+      if (length(countries_with_data) == 0) {
+        # Get total countries per macroregion from actual data
+        total_by_region <- data_countries %>%
+          filter(Year == input$year) %>%
+          mutate(macroregion = assign_macroregion(country)) %>%
+          filter(!is.na(macroregion)) %>%
+          group_by(macroregion) %>%
+          summarise(total_countries = n(), .groups = "drop")
+        
+        # Return all regions with zero coverage and 0 values (not NA)
+        data <- map_data_macroregions %>% 
+          filter(Year == input$year) %>%
+          left_join(total_by_region, by = "macroregion") %>%
+          mutate(
+            countries_with_data = 0,
+            coverage_pct = 0,
+            !!input$variable := 0  # Change from NA_real_ to 0
+          )
+        return(data)
+      }
+      
+      # Create coverage statistics
+      coverage_stats <- data_countries %>%
+        filter(Year == input$year) %>%
+        mutate(macroregion = assign_macroregion(country)) %>%
+        filter(!is.na(macroregion)) %>%
+        group_by(macroregion) %>%
+        summarise(
+          total_countries = n(),
+          countries_with_data = sum(country %in% countries_with_data),
+          total_population = sum(`Inhabitants in thousands`, na.rm = TRUE),
+          # Only count population from countries that have data for this variable
+          covered_population = sum(ifelse(country %in% countries_with_data, 
+                                          `Inhabitants in thousands`, 0), na.rm = TRUE),
+          # Fix the percentage calculation
+          coverage_pct = ifelse(total_population > 0, 
+                                round(100 * covered_population / total_population, 0), 
+                                0),
+          .groups = "drop"
         )
-      } else if (input$display_mode == "per_catholic") {
-        data[[input$variable]] <- ifelse(
-          !is.na(data[["Catholics in thousands"]]) & data[["Catholics in thousands"]] > 0,
-          data[[input$variable]] / data[["Catholics in thousands"]],
-          NA_real_
+      
+      # Recalculate aggregations using only countries with data
+      filtered_aggregation <- data_countries %>%
+        filter(Year == input$year, country %in% countries_with_data) %>%
+        mutate(macroregion = assign_macroregion(country)) %>%
+        filter(!is.na(macroregion)) %>%
+        group_by(macroregion) %>%
+        summarise(
+          across(where(is.numeric), ~ if (all(is.na(.))) NA_real_ else sum(., na.rm = TRUE)),
+          .groups = "drop"
         )
+      
+      # Merge with coverage stats and update the data
+      data <- data %>%
+        select(-all_of(intersect(names(filtered_aggregation)[-1], names(data)))) %>%
+        left_join(filtered_aggregation, by = "macroregion") %>%
+        left_join(coverage_stats, by = "macroregion") %>%
+        # if no countries contribute, show 0 (not NA) for the selected variable
+        mutate(
+          !!input$variable := dplyr::if_else(
+            is.na(.data[[input$variable]]) & (countries_with_data == 0),
+            0, .data[[input$variable]]
+          )
+        )
+    
+    # Apply display mode transformations (per capita, per catholic)
+      if (as.integer(input$year) == 2022) {
+        if (input$display_mode == "per_capita") {
+          data[[input$variable]] <- dplyr::case_when(
+            # keep zero when there’s zero coverage
+            !is.na(countries_with_data) & countries_with_data == 0 ~ 0,
+            !is.na(data[["Inhabitants in thousands"]]) & data[["Inhabitants in thousands"]] > 0 ~
+              data[[input$variable]] / data[["Inhabitants in thousands"]],
+            TRUE ~ NA_real_
+          )
+        } else if (input$display_mode == "per_catholic") {
+          data[[input$variable]] <- dplyr::case_when(
+            !is.na(countries_with_data) & countries_with_data == 0 ~ 0,
+            !is.na(data[["Catholics in thousands"]]) & data[["Catholics in thousands"]] > 0 ~
+              data[[input$variable]] / data[["Catholics in thousands"]],
+            TRUE ~ NA_real_
+          )
+        }
       }
     }
+    
     data
   })
   
@@ -1184,8 +1292,32 @@ server <- function(input, output, session) {
     # Create labels based on geographic level
     if (input$geographic_level == "countries") {
       region_name <- filtered_data$name
+      labels <- ~lapply(paste0("<strong>", region_name, "</strong><br/>",
+                               switch(ml,
+                                      "absolute" = variable_abbreviations[input$variable],
+                                      "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
+                                      "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
+                               ": ",
+                               format_value(filtered_data[[input$variable]], ml)), htmltools::HTML)
     } else {
       region_name <- filtered_data$macroregion
+      # Get total countries per macroregion
+      total_countries <- world_with_macroregions %>%
+        group_by(macroregion) %>%
+        summarise(total = n(), .groups = "drop")
+      
+      # Create enhanced coverage labels
+      labels <- ~lapply(paste0("<strong>", region_name, "</strong><br/>",
+                               "Coverage: ", 
+                               ifelse(is.na(filtered_data$countries_with_data), "?", filtered_data$countries_with_data), "/", 
+                               ifelse(is.na(filtered_data$total_countries), "?", filtered_data$total_countries), 
+                               " countries<br/>",
+                               switch(ml,
+                                      "absolute" = variable_abbreviations[input$variable],
+                                      "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
+                                      "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
+                               ": ",
+                               format_value(filtered_data[[input$variable]], ml)), htmltools::HTML)
     }
     
     leaflet(filtered_data, options = leafletOptions(
@@ -1196,11 +1328,11 @@ server <- function(input, output, session) {
       addProviderTiles("CartoDB.Voyager", options = providerTileOptions(noWrap = TRUE)) %>%
       setView(lng = 0, lat = 30, zoom = 3) %>%
       htmlwidgets::onRender("
-      function(el, x) {
-        var map = this;
-        L.control.zoom({ position: 'topright' }).addTo(map);
-      }
-    ") %>%
+    function(el, x) {
+      var map = this;
+      L.control.zoom({ position: 'topright' }).addTo(map);
+    }
+  ") %>%
       addPolygons(
         fillColor = ~pal(filtered_data[[input$variable]]),
         weight = 1,
@@ -1209,13 +1341,7 @@ server <- function(input, output, session) {
         dashArray = "3",
         fillOpacity = 0.6,
         layerId = ~region_name,
-        label = ~lapply(paste0("<strong>", region_name, "</strong><br/>",
-                               switch(ml,
-                                      "absolute" = variable_abbreviations[input$variable],
-                                      "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
-                                      "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
-                               ": ",
-                               format_value(filtered_data[[input$variable]], ml)), htmltools::HTML),
+        label = labels,
         highlight = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.8, bringToFront = TRUE)
       ) %>%
       addLegend(pal = pal, values = filtered_data[[input$variable]],
@@ -1248,7 +1374,7 @@ server <- function(input, output, session) {
         addPolygons(
           fillColor = ~pal(filtered_data[[input$variable]]),
           color = "white", weight = 1, opacity = 0.45, fillOpacity = 0.6,
-          label = ~name
+          label = if(input$geographic_level == "countries") ~name else ~macroregion
         ) %>%
         addLegend(pal = pal, values = filtered_data[[input$variable]],
                   title = paste(switch(ml,
@@ -1294,8 +1420,26 @@ server <- function(input, output, session) {
     req(input$map_shape_click$id, input$year)
     
     if (input$geographic_level == "macroregions") {
-      # For macroregions, just show notification
-      showNotification(paste("Selected macroregion:", input$map_shape_click$id), type = "message", duration = 3)
+      clicked_macroregion <- input$map_shape_click$id
+      selected_macroregion(clicked_macroregion)
+      
+      # Get the clicked macroregion data for highlighting
+      clicked_data <- filtered_map_data() %>% filter(macroregion == clicked_macroregion)
+      
+      if (nrow(clicked_data) == 0) {
+        showNotification("No data available for this macroregion.", type = "warning")
+        return()
+      }
+      
+      # Highlight selected macroregion
+      leafletProxy("map") %>%
+        clearGroup("highlight") %>%
+        addPolygons(
+          data = clicked_data,
+          fill = FALSE, color = "red", weight = 3, opacity = 1, group = "highlight"
+        )
+      
+      showNotification(paste("Selected macroregion:", clicked_macroregion), type = "message", duration = 3)
       return()
     }
     
@@ -1401,6 +1545,7 @@ server <- function(input, output, session) {
   # Clear highlights and reset view on reset button click.
   observeEvent(input$reset_map, {
     selected_country(NULL)
+    selected_macroregion(NULL)
     leafletProxy("map") %>%
       clearGroup("highlight") %>%
       setView(lng = 0, lat = 30, zoom = 3)
@@ -1436,14 +1581,21 @@ server <- function(input, output, session) {
   })
   
   # ---- Render Macroregion Histogram ----
-  # Generate bar plot for continent-level distribution.
   output$varPlot <- renderPlot({
     
     ml <- mode_label()
     req(input$variable, input$year)
     
-    filtered_macro <- data_macroregions %>%
-      filter(Year == input$year) %>%
+    # Get countries with data for this variable (same logic as map)
+    countries_with_data <- coverage_matrix %>%
+      filter(variable == input$variable, year == input$year, has_data == TRUE) %>%
+      pull(country)
+    
+    # Use filtered aggregation for consistency with map
+    filtered_macro <- data_countries %>%
+      filter(Year == input$year, country %in% countries_with_data) %>%
+      mutate(macroregion = assign_macroregion(country)) %>%
+      filter(!is.na(macroregion)) %>%
       mutate(macroregion = case_when(
         macroregion %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
         macroregion == "South East and Far East Asia" ~ "South & Far East Asia",
@@ -1452,24 +1604,32 @@ server <- function(input, output, session) {
       filter(!macroregion %in% c("World", "America", "Asia")) %>%
       group_by(macroregion) %>%
       summarise(
+        # Sum the raw values first
+        variable_sum = sum(.data[[input$variable]], na.rm = TRUE),
+        inhabitants_sum = sum(`Inhabitants in thousands`, na.rm = TRUE),
+        catholics_sum = sum(`Catholics in thousands`, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      mutate(
+        # Then calculate the display values
         value = switch(ml,
-                       "absolute" = sum(.data[[input$variable]], na.rm = TRUE),
+                       "absolute" = variable_sum,
                        "per_capita" = ifelse(
-                         sum(.data[["Inhabitants in thousands"]], na.rm = TRUE) > 0,
-                         sum(.data[[input$variable]], na.rm = TRUE) / sum(.data[["Inhabitants in thousands"]], na.rm = TRUE),
+                         inhabitants_sum > 0,
+                         variable_sum / inhabitants_sum,
                          NA_real_
                        ),
                        "per_catholic" = ifelse(
-                         sum(.data[["Catholics in thousands"]], na.rm = TRUE) > 0,
-                         sum(.data[[input$variable]], na.rm = TRUE) / sum(.data[["Catholics in thousands"]], na.rm = TRUE),
+                         catholics_sum > 0,
+                         variable_sum / catholics_sum,
                          NA_real_
-                       )),
-        .groups = "drop"
-      )
+                       ))
+      ) %>%
+      filter(!is.na(value))
     
-    if (all(is.na(filtered_macro$value))) {
+    if (nrow(filtered_macro) == 0 || all(is.na(filtered_macro$value))) {
       plot.new()
-      text(0.5, 0.5, "No data available at macroregion level", cex = 1.2)
+      text(0.5, 0.5, "No data available for any continent", cex = 1.2)
       return()
     }
     
@@ -1485,6 +1645,8 @@ server <- function(input, output, session) {
         x = "Continents",
         y = NULL,
         title = paste("Continent-level distribution", "in", input$year),
+        subtitle = if(length(countries_with_data) > 0) 
+          paste("(Based on", length(countries_with_data), "countries with data)") else NULL,
         caption = switch(ml,
                          "absolute" = variable_abbreviations[input$variable],
                          "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
@@ -1493,7 +1655,8 @@ server <- function(input, output, session) {
       scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +
       theme_minimal(base_size = 11) +
       theme(
-        plot.title = element_text(hjust = 0.5, size = 10, face = "bold", margin = margin(b = 10)),
+        plot.title = element_text(hjust = 0.5, size = 10, face = "bold", margin = margin(b = 5)),
+        plot.subtitle = element_text(hjust = 0.5, size = 8, color = "gray60", margin = margin(b = 10)),
         axis.title.x = element_text(size = 10),
         axis.title.y = element_blank(),
         axis.text.x = element_blank(),
