@@ -33,8 +33,8 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # Set your working directory and read the data file.
 
 # Define the data file path and set it as your working directory.
-#path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+#path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_outputs)
 
 # Read the CSV file containing the geographic data
@@ -929,8 +929,10 @@ ui <- tagList(
                  tags$h3("Credits"),
                  tags$p(
                    "The data presented in this web application was extracted using Optical Character Recognition (OCR) by the University Library at the University of Mannheim from the 2022 edition of the ",
-                   tags$i("Annuarium Statisticum Ecclesiae"), ". The ",
-                   tags$i("Annuarium Statisticum Ecclesiae"), " is compiled annually by the Central Office of Church Statistics of the Holy See's Secretariat of State and published by the Vatican Publishing House."
+                   tags$i("Annuarium Statisticum Ecclesiae."),
+                   "The ",
+                   tags$i("Annuarium Statisticum Ecclesiae"),
+                   " is compiled annually by the Central Office of Church Statistics of the Holy See's Secretariat of State and published by the Vatican Publishing House."
                  ),
                  tags$p(
                    "The data was then transformed and edited by Felicitas Hörl, student assistant for Prof. Dr. Andreas Wollbold. Additional preprocessing steps and development of the web apps were carried out by Claudia Schiavetti and Manuel Soffici. Claudia Schiavetti and Manuel Soffici worked on the project as Master students in Statistics and Data Science at LMU Munich as part of the Consulting Project module."
@@ -946,8 +948,8 @@ ui <- tagList(
                    tags$a(
                      href = "https://creativecommons.org/licenses/by-nc/4.0/",
                      target = "_blank",
-                     "Creative Commons Attribution-NonCommercial (CC BY-NC) License"
-                   ), "."
+                     "Creative Commons Attribution-NonCommercial (CC BY-NC) License."
+                   ), 
                  )
                )
              )
