@@ -1065,6 +1065,8 @@ server <- function(input, output, session) {
   })
   
   # Reactive for filtered map data
+  # Replace the filtered_map_data reactive with this corrected structure:
+  
   filtered_map_data <- reactive({
     req(input$variable, input$year, input$geographic_level)
     
@@ -1144,20 +1146,39 @@ server <- function(input, output, session) {
             0, .data[[input$variable]]
           )
         )
+    }
     
-    # Apply display mode transformations (per capita, per catholic)
-      if (as.integer(input$year) == 2022) {
-        if (input$display_mode == "per_capita") {
+    # Apply display mode transformations (per capita, per catholic) - NOW OUTSIDE THE IF/ELSE BLOCKS
+    if (as.integer(input$year) == 2022) {
+      if (input$display_mode == "per_capita") {
+        if (input$geographic_level == "countries") {
+          # For countries, simple division
           data[[input$variable]] <- dplyr::case_when(
-            # keep zero when there’s zero coverage
-            !is.na(countries_with_data) & countries_with_data == 0 ~ 0,
             !is.na(data[["Inhabitants in thousands"]]) & data[["Inhabitants in thousands"]] > 0 ~
               data[[input$variable]] / data[["Inhabitants in thousands"]],
             TRUE ~ NA_real_
           )
-        } else if (input$display_mode == "per_catholic") {
+        } else {
+          # For macroregions, check coverage and use data$countries_with_data (not countries_with_data vector)
           data[[input$variable]] <- dplyr::case_when(
-            !is.na(countries_with_data) & countries_with_data == 0 ~ 0,
+            !is.na(data$countries_with_data) & data$countries_with_data == 0 ~ 0,
+            !is.na(data[["Inhabitants in thousands"]]) & data[["Inhabitants in thousands"]] > 0 ~
+              data[[input$variable]] / data[["Inhabitants in thousands"]],
+            TRUE ~ NA_real_
+          )
+        }
+      } else if (input$display_mode == "per_catholic") {
+        if (input$geographic_level == "countries") {
+          # For countries, simple division
+          data[[input$variable]] <- dplyr::case_when(
+            !is.na(data[["Catholics in thousands"]]) & data[["Catholics in thousands"]] > 0 ~
+              data[[input$variable]] / data[["Catholics in thousands"]],
+            TRUE ~ NA_real_
+          )
+        } else {
+          # For macroregions, check coverage and use data$countries_with_data (not countries_with_data vector)
+          data[[input$variable]] <- dplyr::case_when(
+            !is.na(data$countries_with_data) & data$countries_with_data == 0 ~ 0,
             !is.na(data[["Catholics in thousands"]]) & data[["Catholics in thousands"]] > 0 ~
               data[[input$variable]] / data[["Catholics in thousands"]],
             TRUE ~ NA_real_
