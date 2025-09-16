@@ -551,7 +551,7 @@ build_coverage_matrix <- function(data, variables, countries, years) {
     mutate(
       has_data =purrr::map2_lgl(variable, seq_len(nrow(.)), function(var, idx) {
         value <- .[[var]][idx]
-        !is.na(value) && value != 0
+        !is.na(value)
       })
     ) %>%
     select(variable, country, year, has_data)
