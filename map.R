@@ -1148,7 +1148,7 @@ server <- function(input, output, session) {
         )
     }
     
-    # Apply display mode transformations (per capita, per catholic) - NOW OUTSIDE THE IF/ELSE BLOCKS
+    # Apply display mode transformations (per capita, per catholic)
     if (as.integer(input$year) == 2022) {
       if (input$display_mode == "per_capita") {
         if (input$geographic_level == "countries") {
@@ -1176,7 +1176,7 @@ server <- function(input, output, session) {
             TRUE ~ NA_real_
           )
         } else {
-          # For macroregions, check coverage and use data$countries_with_data (not countries_with_data vector)
+          # For macroregions, check coverage and use data$countries_with_data
           data[[input$variable]] <- dplyr::case_when(
             !is.na(data$countries_with_data) & data$countries_with_data == 0 ~ 0,
             !is.na(data[["Catholics in thousands"]]) & data[["Catholics in thousands"]] > 0 ~
