@@ -928,9 +928,9 @@ ui <- tagList(
                    width = 3,
                    class = "ts-sidebar",
                    create_select_input("ts_variable", "Select variable:", time_series_vars, selected = time_series_vars[1]),
-                   radioButtons("ts_level", "Region level:",
-                                choices = c("Continent" = "Macroregion", "Country" = "Country"),
-                                selected = "Macroregion"),
+                   radioButtons("ts_level", "Geographic Level:",
+                                choices = c("Countries" = "countries", "Macroregions" = "macroregions"),
+                                selected = "macroregions"),
                    uiOutput("ts_region_selector"),
                    div(
                      style = "margin-top: 10px;",
@@ -1463,10 +1463,10 @@ server <- function(input, output, session) {
   # ---- Time Series Region Selector UI ----
   # Dynamically render region selector based on level (Country or Macroregion).
   output$ts_region_selector <- renderUI({
-    if (input$ts_level == "Country") {
+    if (input$ts_level == "Countries") {
       create_select_input("ts_regions", "Select country/countries:", sort(unique(data_countries$country)), multiple = TRUE)
     } else {
-      create_select_input("ts_regions", "Displayed continents (remove any to filter):", TARGET_REGIONS, selected = TARGET_REGIONS, multiple = TRUE)
+      create_select_input("ts_regions", "Displayed macroregions (remove any to filter):", TARGET_REGIONS, selected = TARGET_REGIONS, multiple = TRUE)
     }
   })
   
