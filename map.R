@@ -871,8 +871,13 @@ ui <- tagList(
                           width = 3,
                           tags$div(
                             style = "background-color: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #dee2e6; font-size: 14px;",
-                            create_select_input("explorer_variable", "Select variable:", c("Select a variable..." = "", allowed_variables)),
-                            create_select_input("explorer_year", "Select year:", sort(unique(data_countries$Year))),
+                            # Add geographic level selector
+                            radioButtons("explorer_geographic_level", "Geographic Level:",
+                                         choices = list("Countries" = "countries", "Macroregions" = "macroregions"),
+                                         selected = "countries"),
+                            create_select_input("explorer_variable", "Select variable:", c("Select a variable..." = "", allowed_variables)),                            create_select_input("explorer_year", "Select year:", sort(unique(data_countries$Year))),
+                            # Add coverage info display
+                            htmlOutput("explorer_coverage_info"),
                             create_download_buttons(),
                             br(),
                             actionButton("reset_table", "Reset Filters", icon = icon("redo"), class = "btn btn-sm btn-secondary")
@@ -1043,6 +1048,24 @@ server <- function(input, output, session) {
   # Reactive allowed variables based on geographic level
   current_allowed_variables <- reactive({
     if (input$geographic_level == "countries") {
+      allowed_variables
+    } else {
+      allowed_variables_macroregions
+    }
+  })
+  
+  #Reactive explorer tab based on geographic level 
+  current_explorer_data <- reactive({
+    if (input$explorer_geographic_level == "countries") {
+      data_countries
+    } else {
+      data_macroregions
+    }
+  })
+  
+  # Reactive allowed variables in the explorer tab based on geographic level
+  current_explorer_allowed_variables <- reactive({
+    if (input$explorer_geographic_level == "countries") {
       allowed_variables
     } else {
       allowed_variables_macroregions
@@ -1257,6 +1280,21 @@ server <- function(input, output, session) {
     }
   })
   
+  # Synchronize the geographic level between the map tab, data explorer tab and the ts tab
+  observeEvent(input$geographic_level, {
+    updateRadioButtons(session, "explorer_geographic_level", selected = input$geographic_level)
+    if (input$geographic_level == "macroregions") {
+      selected_country(NULL)
+      selected_macroregion(NULL)
+      updateSelectInput(session, "country_search", selected = "")
+      leafletProxy("map") %>% clearGroup("highlight")
+    }
+  })
+  
+  observeEvent(input$explorer_geographic_level, {
+    updateRadioButtons(session, "geographic_level", selected = input$explorer_geographic_level)
+  })
+  
   # ---- Update Available Years Based on Variable ----
   # Dynamically update year choices based on data availability for the selected variable.
   observeEvent(input$variable, {
@@ -1266,15 +1304,15 @@ server <- function(input, output, session) {
     updateSelectInput(session, "year", choices = available_years, selected = max(available_years))
   })
   
-  # Handle geographic level changes
-  observeEvent(input$geographic_level, {
-    if (input$geographic_level == "macroregions") {
-      # Clear country selection and disable country search
-      selected_country(NULL)
-      updateSelectInput(session, "country_search", selected = "")
-      leafletProxy("map") %>% clearGroup("highlight")
-    }
-  })
+  # Update explorer variable choices when geographic level changes
+  # observe({
+  #   updateSelectInput(
+  #     session,
+  #     "explorer_variable",
+  #     choices = c("Select a variable..." = "", current_explorer_allowed_variables()),
+  #     selected = if (input$explorer_variable %in% current_explorer_allowed_variables()) input$explorer_variable else ""
+  #   )
+  # })
   
   # ---- Limit Display Modes to 2022 ----
   # Restrict per capita/per Catholic modes to 2022 data only.
@@ -1457,11 +1495,33 @@ server <- function(input, output, session) {
           fill = FALSE, color = "red", weight = 3, opacity = 1, group = "highlight"
         )
       
+      # Update Data Explorer to show this macroregion
+      updateRadioButtons(session, "explorer_geographic_level", selected = "macroregions")
+      
+      # Update time series if applicable
+      if (input$variable %in% time_series_vars) {
+        updateRadioButtons(session, "ts_level", selected = "Macroregion")
+        # Find the standardized name for time series
+        standardized_name <- case_when(
+          clicked_macroregion %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
+          clicked_macroregion == "South East and Far East Asia" ~ "South and Far East Asia", 
+          clicked_macroregion == "Middle East" ~ "Middle East Asia",
+          TRUE ~ clicked_macroregion
+        )
+        if (standardized_name %in% TARGET_REGIONS) {
+          shinyjs::delay(500, {
+            current_regions <- input$ts_regions %||% TARGET_REGIONS
+            if (!standardized_name %in% current_regions) {
+              updateSelectInput(session, "ts_regions", selected = standardized_name)
+            }
+          })
+        }
+      }
+      
       showNotification(paste("Selected macroregion:", clicked_macroregion), type = "message", duration = 3)
       return()
     }
     
-    # Rest of existing country click logic...
     clicked_country <- input$map_shape_click$id
     filtered_data <- current_map_data() %>% filter(name == clicked_country, Year == input$year)
     
@@ -1472,6 +1532,8 @@ server <- function(input, output, session) {
     
     selected_country(clicked_country)
     updateSelectInput(session, "country_search", selected = clicked_country)
+    # Update Data Explorer to show this country
+    updateRadioButtons(session, "explorer_geographic_level", selected = "countries")
     
     # Update time series only if variable is valid.
     if (input$variable %in% time_series_vars) {
@@ -1500,6 +1562,24 @@ server <- function(input, output, session) {
         ),
         zoom = 4
       )
+  })
+  
+  # Add coverage information for Data Explorer
+  output$explorer_coverage_info <- renderUI({
+    req(input$explorer_variable, input$explorer_year)
+    if (input$explorer_variable == "" || input$explorer_geographic_level == "countries") return(NULL)
+    
+    countries_with_data <- coverage_matrix %>%
+      filter(variable == input$explorer_variable, year == input$explorer_year, has_data == TRUE) %>%
+      pull(country)
+    
+    total_countries <- length(unique(data_countries$country))
+    coverage_count <- length(countries_with_data)
+    
+    div(
+      style = "margin: 10px 0; padding: 8px; background-color: #e9ecef; border-radius: 4px; font-size: 12px;",
+      HTML(paste0("<strong>Coverage:</strong> ", coverage_count, "/", total_countries, " countries have data for this variable"))
+    )
   })
   
   # ---- Handle Country Search Selection ----
@@ -1584,20 +1664,39 @@ server <- function(input, output, session) {
   # Render HTML with country info based on selection.
   output$country_info <- renderUI({
     ml <- mode_label()
-    req(selected_country())
-    info <- filtered_map_data() %>% filter(name == selected_country())
-    if (nrow(info) == 0 || is.na(info[[input$variable]][1])) {
-      HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
+    
+    if (!is.null(selected_country())) {
+      info <- filtered_map_data() %>% filter(name == selected_country())
+      if (nrow(info) == 0 || is.na(info[[input$variable]][1])) {
+        HTML(paste0("<strong>", selected_country(), "</strong><br/>No data available"))
+      } else {
+        HTML(paste0("<strong>", selected_country(), "</strong><br/>",
+                    switch(ml,
+                           "absolute" = input$variable,
+                           "per_capita" = paste(input$variable, "per thousand inhabitants"),
+                           "per_catholic" = paste(input$variable, "per thousand Catholics")),
+                    " in ", input$year, ": ", format_value(info[[input$variable]][1], ml)))
+      }
+    } else if (!is.null(selected_macroregion())) {
+      info <- filtered_map_data() %>% filter(macroregion == selected_macroregion())
+      if (nrow(info) == 0 || is.na(info[[input$variable]][1])) {
+        HTML(paste0("<strong>", selected_macroregion(), "</strong><br/>No data available"))
+      } else {
+        coverage_text <- if (!is.na(info$countries_with_data[1]) && !is.na(info$total_countries[1])) {
+          paste0("<br/><small>Coverage: ", info$countries_with_data[1], "/", info$total_countries[1], " countries</small>")
+        } else ""
+        
+        HTML(paste0("<strong>", selected_macroregion(), "</strong>", coverage_text, "<br/>",
+                    switch(ml,
+                           "absolute" = input$variable,
+                           "per_capita" = paste(input$variable, "per thousand inhabitants"),
+                           "per_catholic" = paste(input$variable, "per thousand Catholics")),
+                    " in ", input$year, ": ", format_value(info[[input$variable]][1], ml)))
+      }
     } else {
-      HTML(paste0("<strong>", selected_country(), "</strong><br/>",
-                  switch(ml,
-                         "absolute" = input$variable,
-                         "per_capita" = paste(input$variable, "per thousand inhabitants"),
-                         "per_catholic" = paste(input$variable, "per thousand Catholics")),
-                  " in ", input$year, ": ", format_value(info[[input$variable]][1], ml)))
+      HTML("")
     }
   })
-  
   # ---- Render Macroregion Histogram ----
   output$varPlot <- renderPlot({
     
@@ -1815,47 +1914,70 @@ server <- function(input, output, session) {
     }
     req(input$explorer_year)
     
-    base_cols <- data_countries %>%
-      filter(Year == input$explorer_year) %>%
-      select(country, Year, !!input$explorer_variable,
-             `Inhabitants in thousands`, `Catholics in thousands`)
-    
-    if (as.integer(input$explorer_year) == 2022) {
-      filtered <- base_cols %>%
-        mutate(
-          `Per 1000 Inhabitants` = ifelse(
-            !is.na(`Inhabitants in thousands`) & `Inhabitants in thousands` > 0,
-            round(.data[[input$explorer_variable]] / `Inhabitants in thousands`, 3),
-            NA_real_
-          ),
-          `Per 1000 Catholics` = ifelse(
-            !is.na(`Catholics in thousands`) & `Catholics in thousands` > 0,
-            round(.data[[input$explorer_variable]] / `Catholics in thousands`, 3),
-            NA_real_
-          )
-        ) %>%
-        select(-`Inhabitants in thousands`, -`Catholics in thousands`)
+    if (input$explorer_geographic_level == "countries") {
+      base_cols <- data_countries %>%
+        filter(Year == input$explorer_year) %>%
+        select(country, Year, !!input$explorer_variable,
+               `Inhabitants in thousands`, `Catholics in thousands`)
+      
+      if (as.integer(input$explorer_year) == 2022) {
+        filtered <- base_cols %>%
+          mutate(
+            `Per 1000 Inhabitants` = ifelse(
+              !is.na(`Inhabitants in thousands`) & `Inhabitants in thousands` > 0,
+              round(.data[[input$explorer_variable]] / `Inhabitants in thousands`, 3),
+              NA_real_
+            ),
+            `Per 1000 Catholics` = ifelse(
+              !is.na(`Catholics in thousands`) & `Catholics in thousands` > 0,
+              round(.data[[input$explorer_variable]] / `Catholics in thousands`, 3),
+              NA_real_
+            )
+          ) %>%
+          select(-`Inhabitants in thousands`, -`Catholics in thousands`)
+      } else {
+        filtered <- base_cols %>%
+          select(-`Inhabitants in thousands`, -`Catholics in thousands`)
+      }
+      
+      if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
+        filtered <- filtered %>% filter(country == selected_country())
+      }
     } else {
-      filtered <- base_cols %>%
-        select(-`Inhabitants in thousands`, -`Catholics in thousands`)
+      # Macroregion data table
+      filtered <- data_macroregions %>%
+        filter(Year == input$explorer_year) %>%
+        select(macroregion, Year, !!input$explorer_variable)
+      
+      if (!is.null(selected_macroregion()) && selected_macroregion() %in% filtered$macroregion) {
+        filtered <- filtered %>% filter(macroregion == selected_macroregion())
+      }
     }
     
-    if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
-      filtered <- filtered %>% filter(country == selected_country())
-    }
     datatable(filtered, options = list(pageLength = 20))
   })
   
   # ---- Update Available Years for Explorer Tab ----
-  # Dynamically update years based on variable data availability.
+  # Dynamically update years and variables based on variable data availability.
   observeEvent(input$explorer_variable, {
     req(input$explorer_variable)
-    available_years <- sort(unique(data_countries %>%
+    available_years <- sort(unique(current_explorer_data() %>%
                                      filter(!is.na(.data[[input$explorer_variable]])) %>%
                                      pull(Year)))
     updateSelectInput(session, "explorer_year", choices = available_years, selected = max(available_years))
   })
   
+  # output$explorer_variable_selector <- renderUI({
+  #   create_select_input("explorer_variable", "Select variable:", 
+  #                       c("Select a variable..." = "", current_explorer_allowed_variables()),
+  #                       selected = if (!is.null(input$explorer_variable) && 
+  #                                      input$explorer_variable %in% current_explorer_allowed_variables()) {
+  #                         input$explorer_variable
+  #                       } else {
+  #                         ""
+  #                       })
+  # })
+  # 
   # ---- Reset Table Filters ----
   # Clear selections in data explorer tab.
   observeEvent(input$reset_table, {
@@ -1872,11 +1994,23 @@ server <- function(input, output, session) {
   # Handler for CSV download from data explorer.
   output$download_csv <- downloadHandler(
     filename = function() {
-      paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".csv")
+      level <- if (input$explorer_geographic_level == "countries") "countries" else "macroregions"
+      paste0("data_explorer_", level, "_", input$explorer_variable, "_", input$explorer_year, ".csv")
     },
     content = function(file) {
       req(input$explorer_variable, input$explorer_year)
-      write.csv(create_download_data(data_countries, input$explorer_year, input$explorer_variable, selected_country()), file, row.names = FALSE)
+      data_to_download <- if (input$explorer_geographic_level == "countries") {
+        create_download_data(data_countries, input$explorer_year, input$explorer_variable, selected_country())
+      } else {
+        filtered <- data_macroregions %>%
+          filter(Year == input$explorer_year) %>%
+          select(macroregion, Year, all_of(input$explorer_variable))
+        if (!is.null(selected_macroregion()) && selected_macroregion() %in% filtered$macroregion) {
+          filtered <- filtered %>% filter(macroregion == selected_macroregion())
+        }
+        filtered
+      }
+      write.csv(data_to_download, file, row.names = FALSE)
     }
   )
   
@@ -1884,11 +2018,23 @@ server <- function(input, output, session) {
   # Handler for Excel download from data explorer.
   output$download_excel <- downloadHandler(
     filename = function() {
-      paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".xlsx")
+      level <- if (input$explorer_geographic_level == "countries") "countries" else "macroregions"
+      paste0("data_explorer_", level, "_", input$explorer_variable, "_", input$explorer_year, ".xlsx")
     },
     content = function(file) {
       req(input$explorer_variable, input$explorer_year)
-      writexl::write_xlsx(create_download_data(data_countries, input$explorer_year, input$explorer_variable, selected_country()), path = file)
+      data_to_download <- if (input$explorer_geographic_level == "countries") {
+        create_download_data(data_countries, input$explorer_year, input$explorer_variable, selected_country())
+      } else {
+        filtered <- data_macroregions %>%
+          filter(Year == input$explorer_year) %>%
+          select(macroregion, Year, all_of(input$explorer_variable))
+        if (!is.null(selected_macroregion()) && selected_macroregion() %in% filtered$macroregion) {
+          filtered <- filtered %>% filter(macroregion == selected_macroregion())
+        }
+        filtered
+      }
+      writexl::write_xlsx(data_to_download, path = file)
     }
   )
 }
