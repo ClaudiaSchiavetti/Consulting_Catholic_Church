@@ -1217,12 +1217,32 @@ server <- function(input, output, session) {
   update_time_series_for_country <- function(country) {
     req(country)
     if (country %in% data_countries$country) {
-      updateRadioButtons(session, "ts_level", selected = "Country")
+      updateRadioButtons(session, "ts_level", selected = "countries")
       shinyjs::delay(500, {
         updateSelectInput(session, "ts_regions", selected = country)
       })
     }
   }
+  
+  # Update time series for a selected macroregion
+  update_time_series_for_macroregion <- function(macroregion) {
+    req(macroregion)
+    # Standardize the macroregion name for time series
+    standardized_name <- case_when(
+      macroregion %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
+      macroregion == "South East and Far East Asia" ~ "South and Far East Asia",
+      macroregion == "Middle East" ~ "Middle East Asia", 
+      TRUE ~ macroregion
+    )
+    
+    if (standardized_name %in% TARGET_REGIONS) {
+      updateRadioButtons(session, "ts_level", selected = "macroregions")
+      shinyjs::delay(500, {
+        updateSelectInput(session, "ts_regions", selected = standardized_name)
+      })
+    }
+  }
+  
   
   # ---- Synchronize Variable and Year Selections ----
   # Update from Map tab.
@@ -1303,16 +1323,6 @@ server <- function(input, output, session) {
                                      pull(Year)))
     updateSelectInput(session, "year", choices = available_years, selected = max(available_years))
   })
-  
-  # Update explorer variable choices when geographic level changes
-  # observe({
-  #   updateSelectInput(
-  #     session,
-  #     "explorer_variable",
-  #     choices = c("Select a variable..." = "", current_explorer_allowed_variables()),
-  #     selected = if (input$explorer_variable %in% current_explorer_allowed_variables()) input$explorer_variable else ""
-  #   )
-  # })
   
   # ---- Limit Display Modes to 2022 ----
   # Restrict per capita/per Catholic modes to 2022 data only.
@@ -1463,7 +1473,7 @@ server <- function(input, output, session) {
   # ---- Time Series Region Selector UI ----
   # Dynamically render region selector based on level (Country or Macroregion).
   output$ts_region_selector <- renderUI({
-    if (input$ts_level == "Countries") {
+    if (input$ts_level == "countries") {
       create_select_input("ts_regions", "Select country/countries:", sort(unique(data_countries$country)), multiple = TRUE)
     } else {
       create_select_input("ts_regions", "Displayed macroregions (remove any to filter):", TARGET_REGIONS, selected = TARGET_REGIONS, multiple = TRUE)
@@ -1500,22 +1510,12 @@ server <- function(input, output, session) {
       
       # Update time series if applicable
       if (input$variable %in% time_series_vars) {
-        updateRadioButtons(session, "ts_level", selected = "Macroregion")
-        # Find the standardized name for time series
-        standardized_name <- case_when(
-          clicked_macroregion %in% c("Central America (Mainland)", "Central America (Antilles)") ~ "Central America",
-          clicked_macroregion == "South East and Far East Asia" ~ "South and Far East Asia", 
-          clicked_macroregion == "Middle East" ~ "Middle East Asia",
-          TRUE ~ clicked_macroregion
+        update_time_series_for_macroregion(clicked_macroregion)
+        showNotification(
+          paste("Time series updated to show", clicked_macroregion),
+          type = "message",
+          duration = 3
         )
-        if (standardized_name %in% TARGET_REGIONS) {
-          shinyjs::delay(500, {
-            current_regions <- input$ts_regions %||% TARGET_REGIONS
-            if (!standardized_name %in% current_regions) {
-              updateSelectInput(session, "ts_regions", selected = standardized_name)
-            }
-          })
-        }
       }
       
       showNotification(paste("Selected macroregion:", clicked_macroregion), type = "message", duration = 3)
@@ -1625,19 +1625,21 @@ server <- function(input, output, session) {
       # Update variable and level.
       updateSelectInput(session, "ts_variable", selected = valid_variable)
       if (!is.null(selected_country()) && selected_country() %in% data_countries$country) {
-        updateRadioButtons(session, "ts_level", selected = "Country")
-        # Use a longer delay to ensure UI is ready.
+        updateRadioButtons(session, "ts_level", selected = "countries")
         shinyjs::delay(500, {
           updateSelectInput(session, "ts_regions", selected = selected_country())
         })
+      } else if (!is.null(selected_macroregion()) && selected_macroregion() %in% data_macroregions$macroregion) {
+        update_time_series_for_macroregion(selected_macroregion())
       } else {
-        updateRadioButtons(session, "ts_level", selected = "Macroregion")
+        updateRadioButtons(session, "ts_level", selected = "macroregions")
         shinyjs::delay(500, {
           updateSelectInput(session, "ts_regions", selected = TARGET_REGIONS)
         })
       }
     }
   })
+  
   
   # ---- Reset Map View and Selections ----
   # Clear highlights and reset view on reset button click.
@@ -1652,7 +1654,7 @@ server <- function(input, output, session) {
     
     # Reset time series to default.
     updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
-    updateRadioButtons(session, "ts_level", selected = "Macroregion")
+    updateRadioButtons(session, "ts_level", selected = "macroregions")
     updateSelectInput(session, "ts_regions", selected = TARGET_REGIONS)
     
     # Reset data explorer.
@@ -1790,15 +1792,15 @@ server <- function(input, output, session) {
   output$ts_plot <- renderPlotly({
     req(input$ts_variable, input$ts_regions, input$ts_level)
     
-    data_source <- if (input$ts_level == "Country") data_countries else data_macroregions
-    region_col <- if (input$ts_level == "Country") "country" else "macroregion"
+    data_source <- if (input$ts_level == "countries") data_countries else data_macroregions
+    region_col <- if (input$ts_level == "countries") "country" else "macroregion"
     
     plot_data <- data_source %>%
       filter(.data[[region_col]] %in% input$ts_regions) %>%
       select(Year, !!sym(region_col), !!sym(input$ts_variable)) %>%
       rename(region = !!sym(region_col), value = !!sym(input$ts_variable)) %>%
       filter(!is.na(value))
-    if (input$ts_level == "Macroregion") {
+    if (input$ts_level == "macroregions") {
       plot_data <- data_macroregions %>%
         standardize_macro("macroregion") %>%
         select(Year, macro_simplified, !!sym(input$ts_variable)) %>%
@@ -1841,7 +1843,7 @@ server <- function(input, output, session) {
         hovermode = "closest",
         xaxis = list(title = "Year"),
         yaxis = list(title = "Absolute Value"),
-        legend = list(title = list(text = ifelse(input$ts_level == "Country", "Countries", "Continents")))
+        legend = list(title = list(text = ifelse(input$ts_level == "countries", "Countries", "Macroregions")))
       ) %>%
       config(displayModeBar = FALSE, responsive = TRUE)
   })
@@ -1850,7 +1852,7 @@ server <- function(input, output, session) {
   # Reset time series selections to defaults.
   observeEvent(input$reset_ts, {
     updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
-    updateRadioButtons(session, "ts_level", selected = "Macroregion")
+    updateRadioButtons(session, "ts_level", selected = "macroregions")
     updateSelectInput(session, "ts_regions", selected = TARGET_REGIONS)
     
     # Clear country selection.
@@ -1867,15 +1869,15 @@ server <- function(input, output, session) {
   plot_ts_static <- reactive({
     req(input$ts_variable, input$ts_regions, input$ts_level)
     
-    data_source <- if (input$ts_level == "Country") data_countries else data_macroregions
-    region_col <- if (input$ts_level == "Country") "country" else "macroregion"
+    data_source <- if (input$ts_level == "countries") data_countries else data_macroregions
+    region_col <- if (input$ts_level == "countries") "country" else "macroregion"
     
     plot_data <- data_source %>%
       filter(.data[[region_col]] %in% input$ts_regions) %>%
       select(Year, !!sym(region_col), !!sym(input$ts_variable)) %>%
       rename(region = !!sym(region_col), value = !!sym(input$ts_variable))
     
-    if (input$ts_level == "Macroregion") {
+    if (input$ts_level == "macroregions") {
       plot_data <- data_macroregions %>%
         standardize_macro("macroregion") %>%
         select(Year, macro_simplified, !!sym(input$ts_variable)) %>%
@@ -1889,7 +1891,7 @@ server <- function(input, output, session) {
       geom_line(linewidth = 1) +
       geom_point(size = 2) +
       labs(title = paste("Time Series of", input$ts_variable),
-           x = "Year", y = "Absolute Value", color = ifelse(input$ts_level == "Country", "Countries", "Continents")) +
+           x = "Year", y = "Absolute Value", color = ifelse(input$ts_level == "countries", "Countries", "Continents")) +
       theme_minimal(base_size = 13) +
       theme(plot.background = element_rect(fill = "white", colour = "white"),
             panel.background = element_rect(fill = "white", colour = "white")) +
@@ -1967,17 +1969,7 @@ server <- function(input, output, session) {
     updateSelectInput(session, "explorer_year", choices = available_years, selected = max(available_years))
   })
   
-  # output$explorer_variable_selector <- renderUI({
-  #   create_select_input("explorer_variable", "Select variable:", 
-  #                       c("Select a variable..." = "", current_explorer_allowed_variables()),
-  #                       selected = if (!is.null(input$explorer_variable) && 
-  #                                      input$explorer_variable %in% current_explorer_allowed_variables()) {
-  #                         input$explorer_variable
-  #                       } else {
-  #                         ""
-  #                       })
-  # })
-  # 
+
   # ---- Reset Table Filters ----
   # Clear selections in data explorer tab.
   observeEvent(input$reset_table, {
