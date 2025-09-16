@@ -527,11 +527,17 @@ data_countries <- data_countries %>%
     .groups = "drop"
   )
 
-
-# ---- Recompute Derived Variables ----
-# Shorthand for data_countries to simplify recomputations.
-
 dc <- data_countries
+
+
+# ---- Define Allowed Variables for Map Tab ----
+# Select numeric variables excluding 'Year' and those in excluded_vars.
+
+allowed_variables <- setdiff(
+  names(data_countries)[sapply(data_countries, is.numeric) & names(data_countries) != "Year"],
+  excluded_vars
+)
+
 
 # ---- Build Coverage Matrix ----
 build_coverage_matrix <- function(data, variables, countries, years) {
@@ -724,15 +730,6 @@ if (all(c("Priests and bishops as share of apostolic workforce",
 
 # Commit all recomputed values back to data_countries.
 data_countries <- dc
-
-
-# ---- Define Allowed Variables for Map Tab ----
-# Select numeric variables excluding 'Year' and those in excluded_vars.
-
-allowed_variables <- setdiff(
-  names(data_countries)[sapply(data_countries, is.numeric) & names(data_countries) != "Year"],
-  excluded_vars
-)
 
 
 # ---- Final Map Data Rematching ----
