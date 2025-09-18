@@ -373,11 +373,40 @@ world <- world %>%
   filter(!admin %in% c("Somalia", "Somaliland")) %>%
   bind_rows(somalia_unified)
 
+# --- Handle composites by merging map_units up to your country names ---
 
-# ---- Initial Map Data Merge ----
-# Merge country data with the world map using country names.
+# Map Natural Earth sub-units -> your desired country labels
+bridge_overrides <- tribble(
+  ~name,                  ~Region_bridge,
+  # Great Britain (merge UK home nations)
+  "England",              "Great Britain",
+  "Scotland",             "Great Britain",
+  "Wales",                "Great Britain",
+  
+  # Belgium (merge language regions + Brussels)
+  "Flemish",              "Belgium",
+  "Walloon",              "Belgium",
+  "Brussels",             "Belgium",
+  
+  # Antigua and Barbuda (merge the two islands)
+  "Antigua",              "Antigua and Barbuda",
+  "Barbuda",              "Antigua and Barbuda",
+  
+  # Netherlands Antilles (historical; merge successor units)
+  "Curaçao",              "Netherlands Antilles",
+  "Caribbean Netherlands","Netherlands Antilles",
+  "Sint Maarten",         "Netherlands Antilles"
+)
 
-map_data <- left_join(world, data_countries, by = c("name" = "Region"))
+# Add the bridge, defaulting to the map_unit's own name when not overridden
+world_bridge <- world %>%
+  left_join(bridge_overrides, by = "name") %>%
+  mutate(Region_bridge = coalesce(Region_bridge, name))
+
+# Dissolve geometries by Region_bridge so they match your data's 'country' labels
+world_custom <- world_bridge %>%
+  group_by(Region_bridge) %>%
+  summarise(geometry = sf::st_union(geometry), .groups = "drop")
 
 
 # ---- Define Excluded Variables for Map Tab ----
@@ -406,10 +435,10 @@ excluded_vars <- c(
 
 
 # ---- Create Macroregion Map Data ----
-# Assign macroregions to world map
-world_with_macroregions <- world %>%
-  mutate(macroregion = assign_macroregion(name)) %>%
-  filter(!is.na(macroregion)) # Remove countries not in any macroregion
+# Assign macroregions to world map using the corrected world_custom
+world_with_macroregions <- world_custom %>%
+  mutate(macroregion = assign_macroregion(Region_bridge)) %>%
+  filter(!is.na(macroregion))
 
 # Create dissolved macroregion polygons with proper geometry handling
 macroregion_polygons <- world_with_macroregions %>%
@@ -419,7 +448,7 @@ macroregion_polygons <- world_with_macroregions %>%
     .groups = "drop"
   ) %>%
   mutate(geometry = st_make_valid(geometry)) %>%
-  mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=10")))  
+  mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=10")))
 
 # Merge with macroregion data
 map_data_macroregions <- left_join(
@@ -455,46 +484,6 @@ print(unmatched_in_data$Region)
 # ---- Manual Country Name Corrections ----
 # Define a vector of corrections for mismatched country names.
 
-
-
-library(dplyr)
-library(tibble)
-library(sf)
-
-# --- Handle composites by merging map_units up to your country names ---
-
-# Map Natural Earth sub-units -> your desired country labels
-bridge_overrides <- tribble(
-  ~name,                  ~Region_bridge,
-  # Great Britain (merge UK home nations)
-  "England",              "Great Britain",
-  "Scotland",             "Great Britain",
-  "Wales",                "Great Britain",
-  
-  # Belgium (merge language regions + Brussels)
-  "Flemish",              "Belgium",
-  "Walloon",              "Belgium",
-  "Brussels",             "Belgium",
-  
-  # Antigua and Barbuda (merge the two islands)
-  "Antigua",              "Antigua and Barbuda",
-  "Barbuda",              "Antigua and Barbuda",
-  
-  # Netherlands Antilles (historical; merge successor units)
-  "Curaçao",              "Netherlands Antilles",
-  "Caribbean Netherlands","Netherlands Antilles",
-  "Sint Maarten",         "Netherlands Antilles"
-)
-
-# Add the bridge, defaulting to the map_unit's own name when not overridden
-world_bridge <- world %>%
-  left_join(bridge_overrides, by = "name") %>%
-  mutate(Region_bridge = coalesce(Region_bridge, name))
-
-# Dissolve geometries by Region_bridge so they match your data's 'country' labels
-world_custom <- world_bridge %>%
-  group_by(Region_bridge) %>%
-  summarise(geometry = sf::st_union(geometry), .groups = "drop")
 
 
 name_corrections <- c(
