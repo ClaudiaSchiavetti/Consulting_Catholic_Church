@@ -1781,6 +1781,9 @@ server <- function(input, output, session) {
       filter(variable == input$variable, year == input$year, has_data == TRUE) %>%
       pull(country)
     
+    # Get total number of countries
+    total_countries <- length(unique(data_countries$country))
+    
     # Use filtered aggregation for consistency with map
     filtered_macro <- data_countries %>%
       filter(Year == input$year, country %in% countries_with_data) %>%
@@ -1836,7 +1839,7 @@ server <- function(input, output, session) {
         y = NULL,
         title = paste("Continent-level distribution", "in", input$year),
         subtitle = if(length(countries_with_data) > 0) 
-          paste("(Based on", length(countries_with_data), "countries with data)") else NULL,
+          paste("(Based on", length(countries_with_data), "out of", total_countries, "countries with data)") else NULL,
         caption = switch(ml,
                          "absolute" = variable_abbreviations[input$variable],
                          "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
