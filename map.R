@@ -497,7 +497,7 @@ macroregion_polygons <- world_with_macroregions %>%
     .groups = "drop"
   ) %>%
   mutate(geometry = st_make_valid(geometry)) %>%
-  mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=10")))
+  mutate(geometry = st_buffer(geometry, dist = 0))
 
 # Merge with macroregion data
 map_data_macroregions <- left_join(
@@ -1471,10 +1471,10 @@ server <- function(input, output, session) {
     req(input$variable, input$year, input$geographic_level)
     ml <- mode_label()
     filtered_data <- filtered_map_data()
-    
+
     # Ensure valid values for color palette
     pal <- create_pal(filtered_data[[input$variable]])
-    
+
     # Create labels based on geographic level
     if (input$geographic_level == "countries") {
       region_name <- filtered_data$name
@@ -1491,12 +1491,12 @@ server <- function(input, output, session) {
       total_countries <- world_with_macroregions %>%
         group_by(macroregion) %>%
         summarise(total = n(), .groups = "drop")
-      
+
       # Create enhanced coverage labels
       labels <- ~lapply(paste0("<strong>", region_name, "</strong><br/>",
-                               "Coverage: ", 
-                               ifelse(is.na(filtered_data$countries_with_data), "?", filtered_data$countries_with_data), "/", 
-                               ifelse(is.na(filtered_data$total_countries), "?", filtered_data$total_countries), 
+                               "Coverage: ",
+                               ifelse(is.na(filtered_data$countries_with_data), "?", filtered_data$countries_with_data), "/",
+                               ifelse(is.na(filtered_data$total_countries), "?", filtered_data$total_countries),
                                " countries<br/>",
                                switch(ml,
                                       "absolute" = variable_abbreviations[input$variable],
@@ -1505,7 +1505,7 @@ server <- function(input, output, session) {
                                ": ",
                                format_value(filtered_data[[input$variable]], ml)), htmltools::HTML)
     }
-    
+
     leaflet(filtered_data, options = leafletOptions(
       maxBounds = list(c(-120, -240), c(120, 240)),
       maxBoundsViscosity = 1,
@@ -1538,7 +1538,7 @@ server <- function(input, output, session) {
                               "in", input$year),
                 position = "bottomright")
   })
-  
+
   # ---- Handle Map Download ----
   # Generate filename and content for downloading the map as PNG.
   output$download_map <- downloadHandler(
@@ -1589,7 +1589,7 @@ server <- function(input, output, session) {
       webshot::webshot(temp_html, file = file, vwidth = 1600, vheight = 1000)
     }
   )
-  
+ 
   # ---- Time Series Region Selector UI ----
   # Dynamically render region selector based on level (Country or Macroregion).
   output$ts_region_selector <- renderUI({
