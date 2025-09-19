@@ -378,10 +378,14 @@ world <- world %>%
 # Map Natural Earth sub-units -> your desired country labels
 bridge_overrides <- tribble(
   ~name,                  ~Region_bridge,
-  # Great Britain (merge UK home nations)
+  # Great Britain (merge UK home nations and territories)
   "England",              "Great Britain",
-  "Scotland",             "Great Britain",
+  "Scotland",             "Great Britain", 
   "Wales",                "Great Britain",
+  "N. Ireland",           "Great Britain",
+  "Guernsey",             "Great Britain",
+  "Jersey",               "Great Britain", 
+  "Isle of Man",          "Great Britain",
   
   # Belgium (merge language regions + Brussels)
   "Flemish",              "Belgium",
@@ -395,7 +399,52 @@ bridge_overrides <- tribble(
   # Netherlands Antilles (historical; merge successor units)
   "Curaçao",              "Netherlands Antilles",
   "Caribbean Netherlands","Netherlands Antilles",
-  "Sint Maarten",         "Netherlands Antilles"
+  "Sint Maarten",         "Netherlands Antilles",
+  "St-Martin",            "Netherlands Antilles", 
+  "St-Barthélemy",        "Netherlands Antilles",
+  
+  # Bosnia and Herzegovina (merge all parts)
+  "Bosnia and Herzegovina", "Fed. of Bos. & Herz.",
+  "Republic of Srpska",   "Fed. of Bos. & Herz.",
+  "Republika Srpska",     "Fed. of Bos. & Herz.",
+  "Rep. Srpska",          "Fed. of Bos. & Herz.",
+  
+  # Serbia (merge with autonomous provinces)
+  "Vojvodina",            "Serbia",
+  
+  # Tanzania (merge with Zanzibar)
+  "Zanzibar",             "Tanzania",
+  
+  # Finland (merge with Åland)
+  "Åland",                "Finland",
+  
+  # Portugal (merge with autonomous regions)
+  "Azores",               "Portugal",
+  "Madeira",              "Portugal",
+  
+  # France (merge with overseas territories)
+  "Mayotte",              "France",
+  
+  # Papua New Guinea (merge with Bougainville)
+  "Bougainville",         "Papua New Guinea",
+  
+  # Australia (merge with external territories)
+  "Christmas I.",         "Australia",
+  "Cocos Is.",            "Australia", 
+  "Norfolk Island",       "Australia",
+  "Ashmore and Cartier Is.", "Australia",
+  "Heard I. and McDonald Is.", "Australia",
+  
+  # Norway (merge with dependencies)
+  "Svalbard Is.",         "Norway",
+  "Jan Mayen I.",         "Norway",
+  
+  # Palestine (if you have Palestine data - merge territories)
+  "Gaza",                 "Palestine",
+  "West Bank",            "Palestine",
+  
+  # Vatican (typically reports with Italy for statistical purposes)
+  "Vatican",              "Italy"
 )
 
 # Add the bridge, defaulting to the map_unit's own name when not overridden
@@ -2108,3 +2157,4 @@ server <- function(input, output, session) {
 
 # ---- Launch the Shiny App ----
 shinyApp(ui, server)
+
