@@ -2066,13 +2066,11 @@ server <- function(input, output, session) {
     req(input$explorer_year)
     
     if (input$explorer_geographic_level == "countries") {
-      base_cols <- data_countries %>%
-        filter(Year == input$explorer_year) %>%
-        select(country, Year, !!input$explorer_variable,
-               `Inhabitants in thousands`, `Catholics in thousands`)
-      
       if (as.integer(input$explorer_year) == 2022) {
-        filtered <- base_cols %>%
+        # For 2022: show absolute + per capita columns (but not population columns in table)
+        filtered <- data_countries %>%
+          filter(Year == input$explorer_year) %>%
+          select(country, Year, !!input$explorer_variable, `Inhabitants in thousands`, `Catholics in thousands`) %>%
           mutate(
             `Per 1000 Inhabitants` = ifelse(
               !is.na(`Inhabitants in thousands`) & `Inhabitants in thousands` > 0,
@@ -2085,20 +2083,69 @@ server <- function(input, output, session) {
               NA_real_
             )
           ) %>%
-          select(-`Inhabitants in thousands`, -`Catholics in thousands`)
+          select(country, Year, all_of(input$explorer_variable), `Per 1000 Inhabitants`, `Per 1000 Catholics`)
       } else {
-        filtered <- base_cols %>%
-          select(-`Inhabitants in thousands`, -`Catholics in thousands`)
+        # For non-2022: show only absolute values
+        filtered <- data_countries %>%
+          filter(Year == input$explorer_year) %>%
+          select(country, Year, all_of(input$explorer_variable))
       }
       
       if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
         filtered <- filtered %>% filter(country == selected_country())
       }
     } else {
-      # Macroregion data table
-      filtered <- data_macroregions %>%
-        filter(Year == input$explorer_year) %>%
-        select(macroregion, Year, !!input$explorer_variable)
+      # Macroregion data table - use filtered aggregation like the map
+      
+      # Get countries with data for this variable
+      countries_with_data <- coverage_matrix %>%
+        filter(variable == input$explorer_variable, year == input$explorer_year, has_data == TRUE) %>%
+        pull(country)
+      
+      if (length(countries_with_data) == 0) {
+        # No countries have data - return empty or zero values
+        filtered <- data.frame(
+          macroregion = character(0),
+          Year = integer(0),
+          variable = numeric(0)
+        )
+        names(filtered)[3] <- input$explorer_variable
+      } else {
+        # Aggregate only countries with data
+        aggregated_data <- data_countries %>%
+          filter(Year == input$explorer_year, country %in% countries_with_data) %>%
+          mutate(macroregion = assign_macroregion(country)) %>%
+          filter(!is.na(macroregion)) %>%
+          group_by(macroregion) %>%
+          summarise(
+            Year = first(Year),  # Keep the original year value
+            across(where(is.numeric) & !Year, ~ if (all(is.na(.))) NA_real_ else sum(., na.rm = TRUE)),
+            .groups = "drop"
+          )
+        
+        if (as.integer(input$explorer_year) == 2022) {
+          # For 2022: show absolute + per capita columns 
+          filtered <- aggregated_data %>%
+            select(macroregion, Year, all_of(input$explorer_variable), `Inhabitants in thousands`, `Catholics in thousands`) %>%
+            mutate(
+              `Per 1000 Inhabitants` = ifelse(
+                !is.na(`Inhabitants in thousands`) & `Inhabitants in thousands` > 0,
+                round(.data[[input$explorer_variable]] / `Inhabitants in thousands`, 3),
+                NA_real_
+              ),
+              `Per 1000 Catholics` = ifelse(
+                !is.na(`Catholics in thousands`) & `Catholics in thousands` > 0,
+                round(.data[[input$explorer_variable]] / `Catholics in thousands`, 3),
+                NA_real_
+              )
+            ) %>%
+            select(macroregion, Year, all_of(input$explorer_variable), `Per 1000 Inhabitants`, `Per 1000 Catholics`)
+        } else {
+          # For non-2022: show only absolute values
+          filtered <- aggregated_data %>%
+            select(macroregion, Year, all_of(input$explorer_variable))
+        }
+      }
       
       if (!is.null(selected_macroregion()) && selected_macroregion() %in% filtered$macroregion) {
         filtered <- filtered %>% filter(macroregion == selected_macroregion())
@@ -2131,8 +2178,97 @@ server <- function(input, output, session) {
     updateSelectInput(session, "country_search", selected = "")
   })
   
+  #---- Helper function to create download data ---- 
+  
+  create_download_data_with_per_capita <- function(data, year, variable, selected_country = NULL, geographic_level) {
+    if (geographic_level == "countries") {
+      if (as.integer(year) == 2022) {
+        # For 2022: include all columns
+        filtered <- data %>%
+          filter(Year == year) %>%
+          select(country, Year, all_of(variable), `Inhabitants in thousands`, `Catholics in thousands`) %>%
+          mutate(
+            `Per 1000 Inhabitants` = ifelse(
+              !is.na(`Inhabitants in thousands`) & `Inhabitants in thousands` > 0,
+              round(.data[[variable]] / `Inhabitants in thousands`, 3),
+              NA_real_
+            ),
+            `Per 1000 Catholics` = ifelse(
+              !is.na(`Catholics in thousands`) & `Catholics in thousands` > 0,
+              round(.data[[variable]] / `Catholics in thousands`, 3),
+              NA_real_
+            )
+          )
+      } else {
+        # For non-2022: only absolute values
+        filtered <- data %>%
+          filter(Year == year) %>%
+          select(country, Year, all_of(variable))
+      }
+      
+      if (!is.null(selected_country) && selected_country %in% filtered$country) {
+        filtered <- filtered %>% filter(country == selected_country)
+      }
+    } else {
+      # Macroregions - use filtered aggregation
+      
+      # Get countries with data for this variable
+      countries_with_data <- coverage_matrix %>%
+        filter(variable == variable, year == year, has_data == TRUE) %>%
+        pull(country)
+      
+      if (length(countries_with_data) == 0) {
+        # No countries have data
+        filtered <- data.frame(
+          macroregion = character(0),
+          Year = integer(0),
+          variable = numeric(0)
+        )
+        names(filtered)[3] <- variable
+      } else {
+        # Aggregate only countries with data
+        aggregated_data <- data_countries %>%
+          filter(Year == input$explorer_year, country %in% countries_with_data) %>%
+          mutate(macroregion = assign_macroregion(country)) %>%
+          filter(!is.na(macroregion)) %>%
+          group_by(macroregion) %>%
+          summarise(
+            Year = first(Year),  # Keep the original year value
+            across(where(is.numeric) & !Year, ~ if (all(is.na(.))) NA_real_ else sum(., na.rm = TRUE)),
+            .groups = "drop"
+          )
+        
+        if (as.integer(year) == 2022) {
+          # For 2022: include all columns  
+          filtered <- aggregated_data %>%
+            select(macroregion, Year, all_of(variable), `Inhabitants in thousands`, `Catholics in thousands`) %>%
+            mutate(
+              `Per 1000 Inhabitants` = ifelse(
+                !is.na(`Inhabitants in thousands`) & `Inhabitants in thousands` > 0,
+                round(.data[[variable]] / `Inhabitants in thousands`, 3),
+                NA_real_
+              ),
+              `Per 1000 Catholics` = ifelse(
+                !is.na(`Catholics in thousands`) & `Catholics in thousands` > 0,
+                round(.data[[variable]] / `Catholics in thousands`, 3),
+                NA_real_
+              )
+            )
+        } else {
+          # For non-2022: only absolute values
+          filtered <- aggregated_data %>%
+            select(macroregion, Year, all_of(variable))
+        }
+      }
+      
+      if (!is.null(selected_country) && selected_country %in% filtered$macroregion) {
+        filtered <- filtered %>% filter(macroregion == selected_country)
+      }
+    }
+    return(filtered)
+  }
+    
   # ---- Download Data as CSV ----
-  # Handler for CSV download from data explorer.
   output$download_csv <- downloadHandler(
     filename = function() {
       level <- if (input$explorer_geographic_level == "countries") "countries" else "macroregions"
@@ -2141,22 +2277,27 @@ server <- function(input, output, session) {
     content = function(file) {
       req(input$explorer_variable, input$explorer_year)
       data_to_download <- if (input$explorer_geographic_level == "countries") {
-        create_download_data(data_countries, input$explorer_year, input$explorer_variable, selected_country())
+        create_download_data_with_per_capita(
+          data_countries, 
+          input$explorer_year, 
+          input$explorer_variable, 
+          selected_country(),
+          "countries"
+        )
       } else {
-        filtered <- data_macroregions %>%
-          filter(Year == input$explorer_year) %>%
-          select(macroregion, Year, all_of(input$explorer_variable))
-        if (!is.null(selected_macroregion()) && selected_macroregion() %in% filtered$macroregion) {
-          filtered <- filtered %>% filter(macroregion == selected_macroregion())
-        }
-        filtered
+        create_download_data_with_per_capita(
+          data_macroregions, 
+          input$explorer_year, 
+          input$explorer_variable, 
+          selected_macroregion(),
+          "macroregions"
+        )
       }
       write.csv(data_to_download, file, row.names = FALSE)
     }
   )
   
   # ---- Download Data as Excel ----
-  # Handler for Excel download from data explorer.
   output$download_excel <- downloadHandler(
     filename = function() {
       level <- if (input$explorer_geographic_level == "countries") "countries" else "macroregions"
@@ -2165,20 +2306,26 @@ server <- function(input, output, session) {
     content = function(file) {
       req(input$explorer_variable, input$explorer_year)
       data_to_download <- if (input$explorer_geographic_level == "countries") {
-        create_download_data(data_countries, input$explorer_year, input$explorer_variable, selected_country())
+        create_download_data_with_per_capita(
+          data_countries, 
+          input$explorer_year, 
+          input$explorer_variable, 
+          selected_country(),
+          "countries"
+        )
       } else {
-        filtered <- data_macroregions %>%
-          filter(Year == input$explorer_year) %>%
-          select(macroregion, Year, all_of(input$explorer_variable))
-        if (!is.null(selected_macroregion()) && selected_macroregion() %in% filtered$macroregion) {
-          filtered <- filtered %>% filter(macroregion == selected_macroregion())
-        }
-        filtered
+        create_download_data_with_per_capita(
+          data_macroregions, 
+          input$explorer_year, 
+          input$explorer_variable, 
+          selected_macroregion(),
+          "macroregions"
+        )
       }
       writexl::write_xlsx(data_to_download, path = file)
     }
   )
-}
+  }
 
 
 # ---- Launch the Shiny App ----
