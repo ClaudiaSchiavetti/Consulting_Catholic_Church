@@ -1569,7 +1569,7 @@ server <- function(input, output, session) {
                                        "per_capita" = paste(variable_abbreviations[input$variable], "per 1000 Pop."),
                                        "per_catholic" = paste(variable_abbreviations[input$variable], "per 1000 Cath.")),
                                 "in", input$year),
-                  position = "bottomright") %>%
+                  position = "bottomleft") %>%
         addControl(
           html = paste0("<div style='font-size:20px; font-weight:bold; background-color:rgba(255,255,255,0.7);
                   padding:6px 12px; border-radius:6px;'>",
@@ -1583,8 +1583,33 @@ server <- function(input, output, session) {
         addControl(
           html = "<div style='font-size:13px; background-color:rgba(255,255,255,0.6); padding:4px 10px;
             border-radius:5px;'>Source: Annuarium Statisticum Ecclesiae</div>",
-          position = "bottomleft"
-        )
+          position = "bottomright"
+        ) %>%
+        htmlwidgets::onRender("
+        function(el, x) {
+          var style = document.createElement('style');
+          style.innerHTML = `
+            .small-legend {
+              font-size: 10px !important;
+            }
+            .small-legend .legend {
+              line-height: 14px !important;
+              font-size: 10px !important;
+            }
+            .small-legend .legend i {
+              width: 10px !important;
+              height: 10px !important;
+              margin-right: 3px !important;
+            }
+            .small-legend .legend .legend-title {
+              font-size: 11px !important;
+              font-weight: bold !important;
+              margin-bottom: 3px !important;
+            }
+          `;
+          document.head.appendChild(style);
+        }
+      ")
       temp_html <- tempfile(fileext = ".html")
       saveWidget(leaflet_obj, temp_html, selfcontained = TRUE)
       webshot::webshot(temp_html, file = file, vwidth = 1600, vheight = 1000)
