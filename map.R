@@ -1024,12 +1024,13 @@ ui <- tagList(
       padding: 0;
     }
     .ts-sidebar {
-      height: 100%;
+      height:calc(100vh - 100px);
       overflow-y: auto;
       background-color: #f8f9fa;
       padding: 15px;
       border-radius: 8px;
       border: 1px solid #dee2e6;
+      min-height: 600px;
     }
     .ts-main {
       height: 100%;
