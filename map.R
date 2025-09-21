@@ -497,7 +497,7 @@ macroregion_polygons <- world_with_macroregions %>%
     .groups = "drop"
   ) %>%
   mutate(geometry = st_make_valid(geometry)) %>%
-  mutate(geometry = st_buffer(geometry, dist = 0))
+  mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=10")))
 
 # Merge with macroregion data
 map_data_macroregions <- left_join(
