@@ -33,8 +33,8 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # Set your working directory and read the data file.
 
 # Define the data file path and set it as your working directory.
-path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+#path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_outputs)
 
 # Read the CSV file containing the geographic data
@@ -455,7 +455,9 @@ world_bridge <- world %>%
 # Dissolve geometries by Region_bridge so they match your data's 'country' labels
 world_custom <- world_bridge %>%
   group_by(Region_bridge) %>%
-  summarise(geometry = sf::st_union(geometry), .groups = "drop")
+  summarise(geometry = sf::st_union(geometry), .groups = "drop") %>%
+  mutate(geometry = st_make_valid(geometry)) %>%  # Validate after union
+  mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=20")))  # Wrap after validation
 
 
 # ---- Define Excluded Variables for Map Tab ----
@@ -496,8 +498,8 @@ macroregion_polygons <- world_with_macroregions %>%
     geometry = st_union(geometry),
     .groups = "drop"
   ) %>%
-  mutate(geometry = st_make_valid(geometry)) %>%
-  mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=10")))
+  mutate(geometry = st_make_valid(geometry)) %>%  # Validate after union
+  mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=20")))  # Wrap after validation
 
 # Merge with macroregion data
 map_data_macroregions <- left_join(
