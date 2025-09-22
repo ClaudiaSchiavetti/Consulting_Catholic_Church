@@ -529,7 +529,7 @@ time_series_vars_macroregions <- allowed_variables_macroregions[
 # Identify countries in data that do not match the world map.
 
 unmatched_in_data <- anti_join(data_countries, world, by = c("Region" = "name"))
-print(unmatched_in_data$Region)
+#print(unmatched_in_data$Region)
 
 
 # ---- Manual Country Name Corrections ----
@@ -2061,6 +2061,7 @@ server <- function(input, output, session) {
   
   # ---- Render Data Table for Explorer Tab ----
   # Display data table with optional per capita calculations for 2022.
+
   output$table <- renderDT({
     if (is.null(input$explorer_variable) || input$explorer_variable == "") {
       return(datatable(data.frame(Message = "Please select a variable to explore.")))
@@ -2096,6 +2097,13 @@ server <- function(input, output, session) {
       if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
         filtered <- filtered %>% filter(country == selected_country())
       }
+      # Capitalize "country" header and handle dynamic variable
+      col_names <- c("Country" = "country", "Year" = "Year")
+      col_names <- c(col_names, setNames(input$explorer_variable, input$explorer_variable))
+      if (as.integer(input$explorer_year) == 2022) {
+        col_names <- c(col_names, "Per 1000 Inhabitants" = "Per 1000 Inhabitants", "Per 1000 Catholics" = "Per 1000 Catholics")
+      }
+      datatable(filtered, options = list(pageLength = 20), colnames = col_names)
     } else {
       # Macroregion data table - use filtered aggregation like the map
       
@@ -2120,13 +2128,13 @@ server <- function(input, output, session) {
           filter(!is.na(macroregion)) %>%
           group_by(macroregion) %>%
           summarise(
-            Year = first(Year),  # Keep the original year value
+            Year = first(Year), # Keep the original year value
             across(where(is.numeric) & !Year, ~ if (all(is.na(.))) NA_real_ else sum(., na.rm = TRUE)),
             .groups = "drop"
           )
         
         if (as.integer(input$explorer_year) == 2022) {
-          # For 2022: show absolute + per capita columns 
+          # For 2022: show absolute + per capita columns
           filtered <- aggregated_data %>%
             select(macroregion, Year, all_of(input$explorer_variable), `Inhabitants in thousands`, `Catholics in thousands`) %>%
             mutate(
@@ -2152,9 +2160,14 @@ server <- function(input, output, session) {
       if (!is.null(selected_macroregion()) && selected_macroregion() %in% filtered$macroregion) {
         filtered <- filtered %>% filter(macroregion == selected_macroregion())
       }
+      # Capitalize "macroregion" header and handle dynamic variable
+      col_names <- c("Macroregion" = "macroregion", "Year" = "Year")
+      col_names <- c(col_names, setNames(input$explorer_variable, input$explorer_variable))
+      if (as.integer(input$explorer_year) == 2022) {
+        col_names <- c(col_names, "Per 1000 Inhabitants" = "Per 1000 Inhabitants", "Per 1000 Catholics" = "Per 1000 Catholics")
+      }
+      datatable(filtered, options = list(pageLength = 20), colnames = col_names)
     }
-    
-    datatable(filtered, options = list(pageLength = 20))
   })
   
   # ---- Update Available Years for Explorer Tab ----
