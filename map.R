@@ -619,7 +619,7 @@ unmatched_in_data <- anti_join(
   by = c("country" = "Region_bridge")
 )
 
-print(unique(unmatched_in_data$country))
+#print(unique(unmatched_in_data$country))
 
 
 # ---- Aggregate Numeric Values by Country and Year ----
@@ -861,7 +861,7 @@ unmatched_after_fix <- anti_join(
   world_custom %>% st_drop_geometry(),
   by = c("country" = "Region_bridge")
 )
-print(unique(unmatched_after_fix$country))
+#print(unique(unmatched_after_fix$country))
 
 
 # ---- Identify Time Series Variables ----
