@@ -39,7 +39,6 @@ if (file.exists("/srv/shiny-server/final_ispr_men_table.csv")) {
 # ---- Define Variable Abbreviations ----
 # Read variable abbreviations from a CSV file and create a named vector.
 # The CSV file should have two columns: 'variable_name' and 'abbreviation'.
-abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
 if (!file.exists(abbreviations_file)) {
   stop("Variable abbreviations CSV file not found at: ", abbreviations_file)
 }
