@@ -30,26 +30,24 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 
 
 # ---- Load the Data ----
-# Set your working directory and read the data file.
+# Update paths for Docker environment
+if (file.exists("/srv/shiny-server/final_geo_table.csv")) {
+  # Docker environment
+  setwd("/srv/shiny-server")
+  data <- read.csv("final_geo_table.csv", check.names = FALSE)
+  abbreviations_file <- "variable_abbreviations.csv"
+} else {
+  # Local development environment
+  path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+  setwd(path_outputs)
+  data <- read.csv("final_geo_table.csv", check.names = FALSE)
+  abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
+}
 
-# Define the data file path and set it as your working directory.
-#path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
-setwd(path_outputs)
-
-# Read the CSV file containing the geographic data
-data <- read.csv("final_geo_table.csv", check.names = FALSE)
 # ---- Define Variable Abbreviations ----
-# Read variable abbreviations from a CSV file and create a named vector.
-# The CSV file should have two columns: 'variable_name' and 'abbreviation'.
-
-abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
 if (!file.exists(abbreviations_file)) {
   stop("Variable abbreviations CSV file not found at: ", abbreviations_file)
 }
-abbreviations_df <- read.csv(abbreviations_file, stringsAsFactors = FALSE, check.names = FALSE)
-variable_abbreviations <- setNames(abbreviations_df$abbreviation, abbreviations_df$variable_name)
-
 
 # ---- Data Filtering Functions ----
 # Function to check if a column has non-NA data at the country level.
