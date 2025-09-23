@@ -33,8 +33,8 @@ options(shiny.port = 3838) # Also 8180 is a valid option
 # Set your working directory and read the data file.
 
 # Define the data file path and set it as your working directory.
-path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+#path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_outputs)
 
 # Read the CSV file containing the geographic data
@@ -455,7 +455,9 @@ world_bridge <- world %>%
 # Dissolve geometries by Region_bridge so they match your data's 'country' labels
 world_custom <- world_bridge %>%
   group_by(Region_bridge) %>%
-  summarise(geometry = sf::st_union(geometry), .groups = "drop")
+  summarise(geometry = sf::st_union(geometry), .groups = "drop") %>%
+  mutate(geometry = st_make_valid(geometry)) %>%  # Validate after union
+  mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=20")))  # Wrap after validation
 
 
 # ---- Define Excluded Variables for Map Tab ----
@@ -496,8 +498,8 @@ macroregion_polygons <- world_with_macroregions %>%
     geometry = st_union(geometry),
     .groups = "drop"
   ) %>%
-  mutate(geometry = st_make_valid(geometry)) %>%
-  mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=10")))
+  mutate(geometry = st_make_valid(geometry)) %>%  # Validate after union
+  mutate(geometry = st_wrap_dateline(geometry, options = c("WRAPDATELINE=YES", "DATELINEOFFSET=20")))  # Wrap after validation
 
 # Merge with macroregion data
 map_data_macroregions <- left_join(
@@ -527,7 +529,7 @@ time_series_vars_macroregions <- allowed_variables_macroregions[
 # Identify countries in data that do not match the world map.
 
 unmatched_in_data <- anti_join(data_countries, world, by = c("Region" = "name"))
-print(unmatched_in_data$Region)
+#print(unmatched_in_data$Region)
 
 
 # ---- Manual Country Name Corrections ----
@@ -617,7 +619,7 @@ unmatched_in_data <- anti_join(
   by = c("country" = "Region_bridge")
 )
 
-print(unique(unmatched_in_data$country))
+#print(unique(unmatched_in_data$country))
 
 
 # ---- Aggregate Numeric Values by Country and Year ----
@@ -859,7 +861,7 @@ unmatched_after_fix <- anti_join(
   world_custom %>% st_drop_geometry(),
   by = c("country" = "Region_bridge")
 )
-print(unique(unmatched_after_fix$country))
+#print(unique(unmatched_after_fix$country))
 
 
 # ---- Identify Time Series Variables ----
@@ -2059,6 +2061,7 @@ server <- function(input, output, session) {
   
   # ---- Render Data Table for Explorer Tab ----
   # Display data table with optional per capita calculations for 2022.
+
   output$table <- renderDT({
     if (is.null(input$explorer_variable) || input$explorer_variable == "") {
       return(datatable(data.frame(Message = "Please select a variable to explore.")))
@@ -2094,6 +2097,13 @@ server <- function(input, output, session) {
       if (!is.null(selected_country()) && selected_country() %in% filtered$country) {
         filtered <- filtered %>% filter(country == selected_country())
       }
+      # Capitalize "country" header and handle dynamic variable
+      col_names <- c("Country" = "country", "Year" = "Year")
+      col_names <- c(col_names, setNames(input$explorer_variable, input$explorer_variable))
+      if (as.integer(input$explorer_year) == 2022) {
+        col_names <- c(col_names, "Per 1000 Inhabitants" = "Per 1000 Inhabitants", "Per 1000 Catholics" = "Per 1000 Catholics")
+      }
+      datatable(filtered, options = list(pageLength = 20), colnames = col_names)
     } else {
       # Macroregion data table - use filtered aggregation like the map
       
@@ -2118,13 +2128,13 @@ server <- function(input, output, session) {
           filter(!is.na(macroregion)) %>%
           group_by(macroregion) %>%
           summarise(
-            Year = first(Year),  # Keep the original year value
+            Year = first(Year), # Keep the original year value
             across(where(is.numeric) & !Year, ~ if (all(is.na(.))) NA_real_ else sum(., na.rm = TRUE)),
             .groups = "drop"
           )
         
         if (as.integer(input$explorer_year) == 2022) {
-          # For 2022: show absolute + per capita columns 
+          # For 2022: show absolute + per capita columns
           filtered <- aggregated_data %>%
             select(macroregion, Year, all_of(input$explorer_variable), `Inhabitants in thousands`, `Catholics in thousands`) %>%
             mutate(
@@ -2150,9 +2160,14 @@ server <- function(input, output, session) {
       if (!is.null(selected_macroregion()) && selected_macroregion() %in% filtered$macroregion) {
         filtered <- filtered %>% filter(macroregion == selected_macroregion())
       }
+      # Capitalize "macroregion" header and handle dynamic variable
+      col_names <- c("Macroregion" = "macroregion", "Year" = "Year")
+      col_names <- c(col_names, setNames(input$explorer_variable, input$explorer_variable))
+      if (as.integer(input$explorer_year) == 2022) {
+        col_names <- c(col_names, "Per 1000 Inhabitants" = "Per 1000 Inhabitants", "Per 1000 Catholics" = "Per 1000 Catholics")
+      }
+      datatable(filtered, options = list(pageLength = 20), colnames = col_names)
     }
-    
-    datatable(filtered, options = list(pageLength = 20))
   })
   
   # ---- Update Available Years for Explorer Tab ----
