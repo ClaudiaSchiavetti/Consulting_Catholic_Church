@@ -770,8 +770,9 @@ server <- function(input, output, session) {
         margin = list(r = 20, t = t_margin, b = 60, l = 60)
       )
     
-    p %>% event_register('plotly_click') %>% # <-- REQUIRED
-      config(displayModeBar = FALSE, responsive = TRUE)
+    p %>% 
+      config(displayModeBar = FALSE, responsive = TRUE) %>%
+      event_register('plotly_click')
     
   })
   
