@@ -30,7 +30,8 @@ if (file.exists("/srv/shiny-server/final_ispr_men_table.csv")) {
   abbreviations_file <- "variable_abbreviations.csv"
 } else {
   # Local development environment
-  path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+  path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+  #path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
   setwd(path_outputs)
   data <- read.csv("final_ispr_men_table.csv", check.names = FALSE)
   abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
@@ -538,6 +539,11 @@ server <- function(input, output, session) {
     ys_state$level <- "L1"; ys_state$path <- character()
   })
   
+  # Force ys_plot_static to invalidate when drill-down state changes
+  observeEvent(list(ys_state$level, ys_state$path), {
+    # This will cause ys_plot_static() to re-evaluate
+  }, ignoreInit = TRUE)
+  
   
   # ---- Render Time Series Plot ----
   output$ts_plot <- renderPlotly({
@@ -787,9 +793,19 @@ server <- function(input, output, session) {
       )
     }
     
-    # Mirror the DRILLDOWN bars (NOT by congregation)
+    # Use the same drill-down data function that the interactive plot uses
     dd <- ys_drill_data(input$ys_year, input$ys_variable)
     if (nrow(dd) == 0) return(NULL)
+    
+    # Add drill-down level info to the title
+    level_subtitle <- switch(
+      ys_state$level,
+      "L1" = "",
+      "L2_RI" = " - Religious Institutes Breakdown",
+      "L3_ORDERS" = " - Orders Breakdown"
+    )
+    
+    full_title <- paste0(wrapped_title, level_subtitle)
     
     dd$label <- factor(dd$label, levels = dd$label)
     
@@ -797,7 +813,7 @@ server <- function(input, output, session) {
       geom_col() +
       scale_fill_viridis_d(guide = "none") +
       labs(
-        title = wrapped_title,
+        title = full_title,
         x = NULL, y = "Absolute Value"
       ) +
       theme_minimal(base_size = 13) +
