@@ -136,49 +136,69 @@ create_download_data <- function(data, year, variable, selected_category, view_b
 ui <- tagList(
   tags$head(
     tags$style(HTML("
-      html, body {
-        height: 100%;
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-      }
-      .navbar {
-        z-index: 1001 !important;
-      }
-      body {
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      }
-      .plotly, .js-plotly-plot, .plotly text {
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      }
-      .shiny-plot-output {
-        margin-top: 10px;
-      }
-      div.tab-pane[data-value='Time Series'] .ts-wrap {
-        height: calc(100vh - 150px);
-      }
-      div.tab-pane[data-value='Yearly Snapshot'] .ts-wrap {
-        height: calc(100vh - 150px);
-      }
-      .ts-sidebar {
-        max-height: calc(100vh - 100px);
-        overflow-y: auto;
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
-        padding: 15px;
-      }
-      div.tab-pane[data-value='Data Explorer'] .data-explorer-main {
-        overflow-y: auto !important;
-        max-height: 80vh !important;
-        padding: 15px;
-      }
-      #ts_variable, #ys_variable {
-        size: 15; /* Show more options in dropdown */
-        max-height: 400px;
-        overflow-y: auto;
-      }
-    ")), useShinyjs()
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    .navbar {
+      z-index: 1001 !important;
+    }
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+    .plotly, .js-plotly-plot, .plotly text {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+    .shiny-plot-output {
+      margin-top: 10px;
+    }
+    div.tab-pane[data-value='Time Series'] .ts-wrap {
+      height: calc(100vh - 150px);
+    }
+    div.tab-pane[data-value='Yearly Snapshot'] .ts-wrap {
+      height: calc(100vh - 150px);
+    }
+    /* Time Series sidebar - 40% of vertical space */
+    div.tab-pane[data-value='Time Series'] .ts-sidebar {
+      max-height: 30vh;
+      height: 30vh;
+      overflow-y: auto;
+      background-color: #f8f9fa;
+      border-radius: 8px;
+      border: 1px solid #dee2e6;
+      padding: 15px;
+    }
+    /* Yearly Snapshot sidebar - keep original full height */
+    div.tab-pane[data-value='Yearly Snapshot'] .ts-sidebar {
+      max-height: calc(100vh - 100px);
+      overflow-y: auto;
+      background-color: #f8f9fa;
+      border-radius: 8px;
+      border: 1px solid #dee2e6;
+      padding: 15px;
+    }
+    /* General ts-sidebar fallback */
+    .ts-sidebar {
+      max-height: calc(100vh - 100px);
+      overflow-y: auto;
+      background-color: #f8f9fa;
+      border-radius: 8px;
+      border: 1px solid #dee2e6;
+      padding: 15px;
+    }
+    div.tab-pane[data-value='Data Explorer'] .data-explorer-main {
+      overflow-y: auto !important;
+      max-height: 80vh !important;
+      padding: 15px;
+    }
+    #ts_variable, #ys_variable {
+      size: 15; /* Show more options in dropdown */
+      max-height: 400px;
+      overflow-y: auto;
+    }
+  ")), useShinyjs()
   ),
   
   navbarPage("ISPR Men Statistics", id = "navbar", theme = shinytheme("flatly"),
