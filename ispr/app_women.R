@@ -18,7 +18,7 @@ options(shiny.port = 3838)
 
 # ---- Load the Data ----
 # Update paths for Docker environment
-if (file.exists("/srv/shiny-server/final_ispr_men_table.csv")) {
+if (file.exists("/srv/shiny-server/final_ispr_women_table.csv")) {
   # Docker environment
   setwd("/srv/shiny-server")
   data <- read.csv("final_ispr_women_table.csv", check.names = FALSE)
@@ -28,7 +28,7 @@ if (file.exists("/srv/shiny-server/final_ispr_men_table.csv")) {
   path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
   #path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
   setwd(path_outputs)
-  data <- read.csv("final_ispr_men_table.csv", check.names = FALSE)
+  data <- read.csv("final_ispr_women_table.csv", check.names = FALSE)
   abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
 }
 
