@@ -38,7 +38,8 @@ if (file.exists("/srv/shiny-server/final_geo_table.csv")) {
   abbreviations_file <- "variable_abbreviations.csv"
 } else {
   # Local development environment
-  path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+  #path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+  path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
   setwd(path_outputs)
   data <- read.csv("final_geo_table.csv", check.names = FALSE)
   abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
@@ -48,6 +49,8 @@ if (file.exists("/srv/shiny-server/final_geo_table.csv")) {
 if (!file.exists(abbreviations_file)) {
   stop("Variable abbreviations CSV file not found at: ", abbreviations_file)
 }
+abbreviations_df <- read.csv(abbreviations_file, stringsAsFactors = FALSE, check.names = FALSE)
+variable_abbreviations <- setNames(abbreviations_df$abbreviation, abbreviations_df$variable_name)
 
 # ---- Data Filtering Functions ----
 # Function to check if a column has non-NA data at the country level.
@@ -1472,10 +1475,10 @@ server <- function(input, output, session) {
     req(input$variable, input$year, input$geographic_level)
     ml <- mode_label()
     filtered_data <- filtered_map_data()
-
+    
     # Ensure valid values for color palette
     pal <- create_pal(filtered_data[[input$variable]])
-
+    
     # Create labels based on geographic level
     if (input$geographic_level == "countries") {
       region_name <- filtered_data$name
@@ -1492,7 +1495,7 @@ server <- function(input, output, session) {
       total_countries <- world_with_macroregions %>%
         group_by(macroregion) %>%
         summarise(total = n(), .groups = "drop")
-
+      
       # Create enhanced coverage labels
       labels <- ~lapply(paste0("<strong>", region_name, "</strong><br/>",
                                "Coverage: ",
@@ -1506,7 +1509,7 @@ server <- function(input, output, session) {
                                ": ",
                                format_value(filtered_data[[input$variable]], ml)), htmltools::HTML)
     }
-
+    
     leaflet(filtered_data, options = leafletOptions(
       maxBounds = list(c(-120, -240), c(120, 240)),
       maxBoundsViscosity = 1,
@@ -1539,7 +1542,7 @@ server <- function(input, output, session) {
                               "in", input$year),
                 position = "bottomright")
   })
-
+  
   # ---- Handle Map Download ----
   # Generate filename and content for downloading the map as PNG.
   output$download_map <- downloadHandler(
@@ -1615,7 +1618,7 @@ server <- function(input, output, session) {
       webshot::webshot(temp_html, file = file, vwidth = 1600, vheight = 1000)
     }
   )
- 
+  
   # ---- Time Series Region Selector UI ----
   # Dynamically render region selector based on level (Country or Macroregion).
   output$ts_region_selector <- renderUI({
@@ -2059,7 +2062,7 @@ server <- function(input, output, session) {
   
   # ---- Render Data Table for Explorer Tab ----
   # Display data table with optional per capita calculations for 2022.
-
+  
   output$table <- renderDT({
     if (is.null(input$explorer_variable) || input$explorer_variable == "") {
       return(datatable(data.frame(Message = "Please select a variable to explore.")))
@@ -2178,7 +2181,7 @@ server <- function(input, output, session) {
     updateSelectInput(session, "explorer_year", choices = available_years, selected = max(available_years))
   })
   
-
+  
   # ---- Reset Table Filters ----
   # Clear selections in data explorer tab.
   observeEvent(input$reset_table, {
@@ -2280,7 +2283,7 @@ server <- function(input, output, session) {
     }
     return(filtered)
   }
-    
+  
   # ---- Download Data as CSV ----
   output$download_csv <- downloadHandler(
     filename = function() {
@@ -2338,9 +2341,8 @@ server <- function(input, output, session) {
       writexl::write_xlsx(data_to_download, path = file)
     }
   )
-  }
+}
 
 
 # ---- Launch the Shiny App ----
 shinyApp(ui, server)
-
