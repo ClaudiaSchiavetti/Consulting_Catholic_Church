@@ -304,6 +304,38 @@ ui <- tagList(
                         )
                         
                       )
+             ),
+             
+             tabPanel(
+               "Credits",
+               tags$div(
+                 style = "padding: 20px; max-width: 800px; margin: 0 auto; font-size: 16px; line-height: 1.6;",
+                 tags$h3("Credits"),
+                 tags$p(
+                   "The data presented in this web application was extracted using Optical Character Recognition (OCR) by the University Library at the University of Mannheim from the 2022 edition of the ",
+                   tags$i("Annuarium Statisticum Ecclesiae."),
+                   "The ",
+                   tags$i("Annuarium Statisticum Ecclesiae"),
+                   " is compiled annually by the Central Office of Church Statistics of the Holy See's Secretariat of State and published by the Vatican Publishing House."
+                 ),
+                 tags$p(
+                   "The data was then transformed and edited by Felicitas Hörl, student assistant for Prof. Dr. Andreas Wollbold. Additional preprocessing steps and development of the web apps were carried out by Claudia Schiavetti and Manuel Soffici. Claudia Schiavetti and Manuel Soffici worked on the project as Master students in Statistics and Data Science at LMU Munich as part of the Consulting Project module."
+                 ),
+                 tags$p(
+                   "The initial idea for the project was developed and supervised by Dr. Anna-Carolina Haensch (Institute of Statistics) and supported by Prof. Dr. Andreas Wollbold and Prof. Dr. Jean-Olivier Nke Ongono (Faculty of Catholic Theology)."
+                 ),
+                 tags$p(
+                   "For further information or inquiries, please contact Dr. Haensch at C.Haensch[at]lmu.de."
+                 ),
+                 tags$p(
+                   "This work is licensed under a ",
+                   tags$a(
+                     href = "https://creativecommons.org/licenses/by-nc/4.0/",
+                     target = "_blank",
+                     "Creative Commons Attribution-NonCommercial (CC BY-NC) License."
+                   ), 
+                 )
+               )
              )
   )
 )
@@ -955,6 +987,20 @@ server <- function(input, output, session) {
       }
       ts_state$level <- "L1"
       ts_state$path <- character()
+    }
+  })
+  
+  # Update from Time Series tab to Data Explorer tab
+  observeEvent(input$ts_variable, {
+    if (is.null(selections$from_tab) || selections$from_tab != "map") {
+      selections$variable <- input$ts_variable
+      selections$from_tab <- "time_series"
+      updateSelectInput(session, "explorer_variable", selected = input$ts_variable)
+      if (input$ts_variable %in% time_series_vars) {
+        updateSelectInput(session, "variable", selected = input$ts_variable)
+      } else {
+        updateSelectInput(session, "variable", selected = time_series_vars[1])
+      }
     }
   })
   
