@@ -30,8 +30,8 @@ if (file.exists("/srv/shiny-server/final_ispr_men_table.csv")) {
   abbreviations_file <- "variable_abbreviations.csv"
 } else {
   # Local development environment
-  path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-  #path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+  #path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+  path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
   setwd(path_outputs)
   data <- read.csv("final_ispr_men_table.csv", check.names = FALSE)
   abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
@@ -1084,6 +1084,23 @@ server <- function(input, output, session) {
       selections$from_tab_view <- "explorer"
       updateCheckboxInput(session, "ys_view_congregation", value = input$explorer_view_congregation)
     }
+  })
+  
+  # ---- Update Available Variables for Data Explorer Tab ----
+  observeEvent(input$explorer_view_congregation, {
+    available_vars <- if (input$explorer_view_congregation) {
+      congregation_vars
+    } else {
+      all_vars
+    }
+    selected_var <- if (!is.null(selections$variable) && selections$variable %in% available_vars) {
+      selections$variable
+    } else {
+      available_vars[1]
+    }
+    updateSelectInput(session, "explorer_variable",
+                      choices = c("Select a variable..." = "", available_vars),
+                      selected = selected_var)
   })
   
   # ---- Update Available Years for Explorer Tab ----
