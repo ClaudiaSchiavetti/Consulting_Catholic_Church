@@ -11,11 +11,9 @@ for (pkg in required_packages) {
 }
 lapply(required_packages, library, character.only = TRUE)
 useShinyjs()
-
 # ---- Docker Instructions ----
 options(shiny.host = "0.0.0.0")
 options(shiny.port = 3838)
-
 # ---- Load the Data ----
 # Update paths for Docker environment
 if (file.exists("/srv/shiny-server/final_ispr_women_table.csv")) {
@@ -25,25 +23,22 @@ if (file.exists("/srv/shiny-server/final_ispr_women_table.csv")) {
   abbreviations_file <- "variable_abbreviations.csv"
 } else {
   # Local development environment
-  path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-  #path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+  #path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+  path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
   setwd(path_outputs)
   data <- read.csv("final_ispr_women_table.csv", check.names = FALSE)
   abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
 }
-
 # ---- Define Variable Abbreviations ----
 if (!file.exists(abbreviations_file)) {
   stop("Variable abbreviations CSV file not found at: ", abbreviations_file)
 }
 abbreviations_df <- read.csv(abbreviations_file, stringsAsFactors = FALSE, check.names = FALSE)
 variable_abbreviations <- setNames(abbreviations_df$abbreviation, abbreviations_df$variable_name)
-
 # ---- Data Processing ----
 num_cols <- names(data)[sapply(data, is.numeric)]
 num_cols <- setdiff(num_cols, "Year")
 data <- data %>% mutate(Year = as.integer(Year))
-
 # ---- Identify All Variables and Time Series Variables ----
 all_vars <- num_cols
 time_series_vars <- num_cols[
@@ -52,15 +47,12 @@ time_series_vars <- num_cols[
     length(years) > 1
   })
 ]
-
 # ---- WOMEN TAXONOMY (flat, 3 groups) ----
 WOMEN_TOP_CATS <- c("Autonomous Houses", "Centralized Institutes", "Secular Institutes")
-
 # ---- Define Variable Groups ----
-secular_vars <- c("Candidates admitted to probation period", "Membres incorporated temporarily", 
+secular_vars <- c("Candidates admitted to probation period", "Membres incorporated temporarily",
                   "Membres incorporated definitively", "Lay people associated with the institute")
 houses_vars <- setdiff(num_cols, secular_vars)
-
 # ---- UI Helpers ----
 all_categories <- sort(unique(data$`Categories of Institutes`))
 category_choices_list <- as.list(all_categories); names(category_choices_list) <- all_categories
@@ -79,14 +71,13 @@ create_download_buttons <- function() {
     downloadButton("download_excel", "Excel", class = "btn btn-sm btn-info")
   )
 }
-create_download_data <- function(data, year, variable, view_by_congregation_unused) {
+create_download_data <- function(data, variable, view_by_congregation_unused) {
   filtered <- data %>%
-    filter(Year == year, `Categories of Institutes` %in% WOMEN_TOP_CATS) %>%
+    filter(`Categories of Institutes` %in% WOMEN_TOP_CATS) %>%
     select(`Categories of Institutes`, Year, all_of(variable)) %>%
     filter(!is.na(.data[[variable]]))
   filtered
 }
-
 # ---- UI ----
 ui <- tagList(
   tags$head(
@@ -136,7 +127,6 @@ ui <- tagList(
                           tags$div(
                             style = "background-color: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #dee2e6; font-size: 14px;",
                             create_select_input("explorer_variable", "Select variable:", c("Select a variable..." = "", all_vars)),
-                            create_select_input("explorer_year", "Select year:", sort(unique(data$Year))),
                             create_download_buttons(),
                             br(),
                             actionButton("reset_table", "Reset Filters", icon = icon("redo"), class = "btn btn-sm btn-secondary")
@@ -144,10 +134,41 @@ ui <- tagList(
                         ),
                         mainPanel(class = "data-explorer-main", width = 9, DTOutput("table"), br())
                       )
+             ),
+             
+             tabPanel(
+               "Credits",
+               tags$div(
+                 style = "padding: 20px; max-width: 800px; margin: 0 auto; font-size: 16px; line-height: 1.6;",
+                 tags$h3("Credits"),
+                 tags$p(
+                   "The data presented in this web application was extracted using Optical Character Recognition (OCR) by the University Library at the University of Mannheim from the 2022 edition of the ",
+                   tags$i("Annuarium Statisticum Ecclesiae."),
+                   "The ",
+                   tags$i("Annuarium Statisticum Ecclesiae"),
+                   " is compiled annually by the Central Office of Church Statistics of the Holy See's Secretariat of State and published by the Vatican Publishing House."
+                 ),
+                 tags$p(
+                   "The data was then transformed and edited by Felicitas Hörl, student assistant for Prof. Dr. Andreas Wollbold. Additional preprocessing steps and development of the web apps were carried out by Claudia Schiavetti and Manuel Soffici. Claudia Schiavetti and Manuel Soffici worked on the project as Master students in Statistics and Data Science at LMU Munich as part of the Consulting Project module."
+                 ),
+                 tags$p(
+                   "The initial idea for the project was developed and supervised by Dr. Anna-Carolina Haensch (Institute of Statistics) and supported by Prof. Dr. Andreas Wollbold and Prof. Dr. Jean-Olivier Nke Ongono (Faculty of Catholic Theology)."
+                 ),
+                 tags$p(
+                   "For further information or inquiries, please contact Dr. Haensch at C.Haensch[at]lmu.de."
+                 ),
+                 tags$p(
+                   "This work is licensed under a ",
+                   tags$a(
+                     href = "https://creativecommons.org/licenses/by-nc/4.0/",
+                     target = "_blank",
+                     "Creative Commons Attribution-NonCommercial (CC BY-NC) License."
+                   ),
+                 )
+               )
              )
   )
 )
-
 # ---- Server ----
 server <- function(input, output, session) {
   # Helper function to wrap text for titles
@@ -241,71 +262,75 @@ server <- function(input, output, session) {
     if (is.null(input$explorer_variable) || input$explorer_variable == "") {
       return(datatable(data.frame(Message = "Please select a variable to explore.")))
     }
-    req(input$explorer_year)
     filtered <- data %>%
-      filter(Year == input$explorer_year, `Categories of Institutes` %in% WOMEN_TOP_CATS) %>%
+      filter(`Categories of Institutes` %in% WOMEN_TOP_CATS) %>%
       select(`Categories of Institutes`, Year, !!input$explorer_variable) %>%
       filter(!is.na(.data[[input$explorer_variable]]))
     datatable(filtered, options = list(pageLength = 20))
   })
   
   # ---- Synchronize Variable Selections ----
-  selections <- reactiveValues(variable = NULL, year = NULL, from_tab_var = NULL, from_tab_year = NULL)
+  selected_var <- reactiveVal(time_series_vars[1])
+  update_source <- reactiveVal(NULL)
   
   observeEvent(input$ts_variable, {
-    if (is.null(selections$from_tab_var) || selections$from_tab_var != "time_series") {
-      selections$variable <- input$ts_variable
-      selections$from_tab_var <- "time_series"
-      updateSelectInput(session, "explorer_variable", selected = input$ts_variable)
+    if (is.null(update_source()) || update_source() != "program") {
+      selected_var(input$ts_variable)
     }
   })
   
   observeEvent(input$explorer_variable, {
-    req(input$explorer_variable)
-    if (input$explorer_variable != "" && (is.null(selections$from_tab_var) || selections$from_tab_var != "explorer")) {
-      selections$variable <- input$explorer_variable
-      selections$from_tab_var <- "explorer"
-      if (input$explorer_variable %in% time_series_vars) {
-        updateSelectInput(session, "ts_variable", selected = input$explorer_variable)
-      }
+    if (input$explorer_variable != "" && (is.null(update_source()) || update_source() != "program")) {
+      selected_var(input$explorer_variable)
     }
   })
   
-  observeEvent(input$explorer_year, {
-    if (is.null(selections$from_tab_year) || selections$from_tab_year != "explorer") {
-      selections$year <- input$explorer_year
-      selections$from_tab_year <- "explorer"
+  # ---- Sync Selections on Tab Switch ----
+  observeEvent(input$navbar, {
+    if (input$navbar == "Time Series") {
+      ts_selected <- if (is.null(selected_var())) time_series_vars[1] else if (selected_var() %in% time_series_vars) selected_var() else time_series_vars[1]
+      update_source("program")
+      updateSelectInput(session, "ts_variable", selected = ts_selected)
+      update_source(NULL)
+    } else if (input$navbar == "Data Explorer") {
+      ex_selected <- if (is.null(selected_var())) "" else selected_var()
+      update_source("program")
+      updateSelectInput(session, "explorer_variable", selected = ex_selected)
+      update_source(NULL)
     }
   })
   
   # ---- Resets ----
   observeEvent(input$reset_table, {
+    selected_var(NULL)
+    update_source("program")
     updateSelectInput(session, "explorer_variable", selected = "", choices = c("Select a variable..." = "", all_vars))
-    updateSelectInput(session, "explorer_year", selected = max(data$Year))
+    update_source(NULL)
   })
   observeEvent(input$reset_ts, {
+    selected_var(time_series_vars[1])
+    update_source("program")
     updateSelectInput(session, "ts_variable", selected = time_series_vars[1])
-    shiny::invalidateLater(100, session)
+    update_source(NULL)
   })
   
   # ---- Downloads ----
   output$download_csv <- downloadHandler(
-    filename = function() paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".csv"),
+    filename = function() paste0("data_explorer_", input$explorer_variable, "_all_years_", Sys.Date(), ".csv"),
     content = function(file) {
-      req(input$explorer_variable, input$explorer_year)
-      write.csv(create_download_data(data, input$explorer_year, input$explorer_variable, FALSE),
+      req(input$explorer_variable)
+      write.csv(create_download_data(data, input$explorer_variable, FALSE),
                 file, row.names = FALSE)
     }
   )
   output$download_excel <- downloadHandler(
-    filename = function() paste0("data_explorer_", input$explorer_variable, "_", input$explorer_year, ".xlsx"),
+    filename = function() paste0("data_explorer_", input$explorer_variable, "_all_years_", Sys.Date(), ".xlsx"),
     content = function(file) {
-      req(input$explorer_variable, input$explorer_year)
-      writexl::write_xlsx(create_download_data(data, input$explorer_year, input$explorer_variable, FALSE),
+      req(input$explorer_variable)
+      writexl::write_xlsx(create_download_data(data, input$explorer_variable, FALSE),
                           path = file)
     }
   )
 }
-
 # ---- Launch ----
 shinyApp(ui, server)
