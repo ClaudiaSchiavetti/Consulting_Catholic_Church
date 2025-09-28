@@ -26,11 +26,6 @@ if (!webshot::is_phantomjs_installed()) {
 # Set Shiny app to listen on all interfaces and a specific port for Docker compatibility.
 
 options(shiny.host = "0.0.0.0")
-options(shiny.port = 3838) # Also 8180 is a valid option
-
-
-# ---- Docker Instructions ----
-options(shiny.host = "0.0.0.0")
 options(shiny.port = 3838)
 
 # ---- Load the Data ----
