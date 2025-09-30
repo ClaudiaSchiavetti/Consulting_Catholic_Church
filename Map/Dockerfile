@@ -12,14 +12,20 @@ RUN apt-get update && apt-get install -y \
     libgeos-dev \
     libproj-dev \
     libmagick++-dev \
+    cmake \
     wget \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
-# Install required R packages (including spatial packages)
-RUN R -e "install.packages(c('shiny', 'leaflet', 'dplyr', 'readr', 'sf', 'DT', 'shinythemes', 'lwgeom', 'rnaturalearth', 'rnaturalearthdata', 'RColorBrewer', 'webshot', 'writexl', 'plotly', 'shinyjs', 'viridisLite', 'ggplot2', 'htmlwidgets', 'purrr'), repos='https://cran.rstudio.com/')"
+# Use RStudio Package Manager for faster binary package installation
+RUN R -e "options(repos = c(CRAN = 'https://p3m.dev/cran/__linux__/noble/latest')); \
+    install.packages(c('shiny', 'leaflet', 'dplyr', 'readr', 'sf', 'DT', 'shinythemes', \
+    'lwgeom', 'rnaturalearth', 'rnaturalearthdata', 'RColorBrewer', 'webshot', 'webshot2', 'mapview', \
+    'writexl', 'plotly', 'shinyjs', 'viridisLite', 'ggplot2', 'htmlwidgets', 'purrr'))"
 
-# Install PhantomJS manually for webshot functionality
-RUN R -e "webshot::install_phantomjs()"
+# Verify critical packages
+RUN R -e "library(leaflet); library(sf); library(shiny); library(mapview)"
 
 # Remove default shiny apps
 RUN rm -rf /srv/shiny-server/*
@@ -30,11 +36,6 @@ COPY final_geo_table.csv /srv/shiny-server/
 COPY variable_abbreviations.csv /srv/shiny-server/
 COPY styles.css /srv/shiny-server/
 
-# Set working directory
 WORKDIR /srv/shiny-server
-
-# Expose port 3838
 EXPOSE 3838
-
-# Run the shiny server
 CMD ["/usr/bin/shiny-server"]
