@@ -38,8 +38,8 @@ if (file.exists("/srv/shiny-server/final_geo_table.csv")) {
   abbreviations_file <- "variable_abbreviations.csv"
 } else {
   # Local development environment
-  #path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-  path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+  path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+  #path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
   setwd(path_outputs)
   data <- read.csv("final_geo_table.csv", check.names = FALSE)
   abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
@@ -1544,7 +1544,7 @@ server <- function(input, output, session) {
   })
   
   # ---- Handle Map Download ----
-  # Generate filename and content for downloading the map as PNG.
+  # Generate filename and content for downloading the map as interactive HTML.
   output$download_map <- downloadHandler(
     filename = function() {
       ml <- mode_label()
@@ -1552,7 +1552,7 @@ server <- function(input, output, session) {
              switch(ml,
                     "absolute" = "",
                     "per_capita" = "_per_capita",
-                    "per_catholic" = "_per_catholic"), ".png")
+                    "per_catholic" = "_per_catholic"), ".html")
     },
     content = function(file) {
       ml <- mode_label()
@@ -1614,8 +1614,7 @@ server <- function(input, output, session) {
       }
     ")
       
-      # mapshot2 handles everything internally
-      mapview::mapshot2(leaflet_obj, file = file, vwidth = 1600, vheight = 1000)
+      htmlwidgets::saveWidget(leaflet_obj, file, selfcontained = TRUE)
     }
   )
   
