@@ -1,32 +1,32 @@
 # ---- Load Required Libraries ----
-# This section installs and loads all necessary packages for the Shiny app.
-# It checks if each package is installed and installs it if not, then loads them.
-
-required_packages <- c(
-  "shiny", "leaflet", "dplyr", "readr", "sf", "DT", "shinythemes", "lwgeom",
-  "rnaturalearth", "rnaturalearthdata", "RColorBrewer", "webshot",
-  "writexl", "plotly", "shinyjs", "viridisLite", "ggplot2", "htmlwidgets", "purrr"
-)
-for (pkg in required_packages) {
-  if (!requireNamespace(pkg, quietly = TRUE)) {
-    install.packages(pkg)
-  }
-}
-
-# Load the libraries after ensuring they are installed.
-lapply(required_packages, library, character.only = TRUE)
+# All packages are pre-installed in the Docker image
+library(shiny)
+library(leaflet)
+library(dplyr)
+library(readr)
+library(sf)
+library(DT)
+library(shinythemes)
+library(lwgeom)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(RColorBrewer)
+library(webshot)
+library(writexl)
+library(plotly)
+library(shinyjs)
+library(viridisLite)
+library(ggplot2)
+library(htmlwidgets)
+library(purrr)
 useShinyjs()
-# Ensure PhantomJS is installed for webshot functionality (used for map downloads).
-if (!webshot::is_phantomjs_installed()) {
-  webshot::install_phantomjs()
-}
 
 
 # ---- Docker Instructions ----
 # Set Shiny app to listen on all interfaces and a specific port for Docker compatibility.
 
 options(shiny.host = "0.0.0.0")
-options(shiny.port = 3838) # Also 8180 is a valid option
+options(shiny.port = 3838)
 
 
 # ---- Load the Data ----
