@@ -1605,7 +1605,14 @@ server <- function(input, output, session) {
             col = "white",
             lwd = 0.5
           ) +
-          tm_title(title_text, position = c("left", "top"), size = 1.2) +
+          tm_credits(title_text, 
+                     position = c("left", "TOP"), 
+                     size = 1.2,
+                     bg.color = "white",
+                     bg.alpha = 1,
+                     frame = TRUE,
+                     frame.col = "black",
+                     frame.lwd = 1) +
           tm_layout(
             legend.position = c("left", "bottom"),
             frame = FALSE,
@@ -1617,11 +1624,11 @@ server <- function(input, output, session) {
           )
         
         # Save to PNG - use higher width for world map aspect ratio
-        tmap_save(tm_map, 
-                  filename = file, 
-                  width = 2400,   # Increased width
-                  height = 1000,  # Keep height
-                  units = "px", 
+        tmap_save(tm_map,
+                  filename = file,
+                  width = 2400, # Increased width
+                  height = 1000, # Keep height
+                  units = "px",
                   dpi = 150)
         
       }, error = function(e) {
