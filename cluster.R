@@ -44,3 +44,21 @@ cluster_data_2022 <- cluster_data[cluster_data$Year == 2022, ]
 
 # Remove the Year column
 cluster_data_2022 <- cluster_data_2022[, colnames(cluster_data_2022) != "Year"]
+
+# Number of missing values per variable (column)
+missing_per_variable <- colSums(is.na(cluster_data_2022))
+print("Missing values per variable:")
+print(missing_per_variable)
+
+# Number of missing values per each "Region" value
+# First, add a temporary column for row-wise missing count
+cluster_data_2022$missing_count <- rowSums(is.na(cluster_data_2022))
+
+# Then, aggregate by Region
+missing_per_region <- aggregate(missing_count ~ Region, data = cluster_data_2022, FUN = sum)
+
+# Remove the temporary column
+cluster_data_2022$missing_count <- NULL
+
+print("Missing values per Region:")
+print(missing_per_region)
