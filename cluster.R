@@ -1,6 +1,9 @@
 library(reshape2)
 library(viridis)
 library(ggplot2)
+library(psych)
+library(moments)  
+library(gridExtra)
 
 # Local development environment
 path_data <- "C:/Users/schia/Documents/GitHub/world-map/church-data-map-world-main"
@@ -50,6 +53,106 @@ cluster_data_2022 <- cluster_data[cluster_data$Year == 2022, ]
 
 # Remove the Year column
 cluster_data_2022 <- cluster_data_2022[, colnames(cluster_data_2022) != "Year"]
+
+#---- Descriptive statistics ---- 
+
+# Filter only countries for descriptive statistics
+country_data <- cluster_data_2022[cluster_data_2022$`Region type` == "Country", ]
+
+# Select only the numeric variables (exclude Region and Region type)
+numeric_vars <- country_data[, !names(country_data) %in% c("Region", "Region type")]
+
+# Summary Statistics Table
+
+# Create comprehensive summary statistics
+summary_stats <- data.frame(
+  N = sapply(numeric_vars, function(x) sum(!is.na(x))),
+  Mean = sapply(numeric_vars, function(x) round(mean(x, na.rm = TRUE), 2)),
+  SD = sapply(numeric_vars, function(x) round(sd(x, na.rm = TRUE), 2)),
+  Min = sapply(numeric_vars, function(x) round(min(x, na.rm = TRUE), 2)),
+  Max = sapply(numeric_vars, function(x) round(max(x, na.rm = TRUE), 2)),
+  Median = sapply(numeric_vars, function(x) round(median(x, na.rm = TRUE), 2)),
+  Missing_Pct = sapply(numeric_vars, function(x) round(sum(is.na(x))/length(x)*100, 1)),
+  Skewness = sapply(numeric_vars, function(x) round(skewness(x, na.rm = TRUE), 2))
+)
+
+# Sort by variable type (for better readability)
+print(summary_stats)
+
+
+# found some weird values : 
+print(cluster_data_2022$`Catholics per 100 inhabitants`) # ---> 7297 is impossible 
+print(cluster_data_2022$`Yearly ordinations of diocesan priests as share of those incardinated on January 1`) # same 
+print(cluster_data_2022$`Yearly deaths of diocesan priests as share of those incardinated on January 1`) # 1667? 
+print(cluster_data_2022$`Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1`) # 1429? 
+print(cluster_data_2022$`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants`) # again I am not sure about this 7297
+print(cluster_data_2022$`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics`) #same 
+print(cluster_data_2022$`Philosophy+theology candidates for diocesan and religious clergy per 100 priests`)# same 
+
+
+#Debug
+dfc <- subset(cluster_data_2022, `Region type` == "Country")
+
+# Value 7297 
+cat("Value 7297:\n")
+cat(paste(rep("-", 80), collapse = ""), "\n")
+idx_7297_cath <- which(dfc$`Catholics per 100 inhabitants` == 7297)
+idx_7297_ord <- which(dfc$`Yearly ordinations of diocesan priests as share of those incardinated on January 1` == 7297)
+idx_7297_voc_inhab <- which(dfc$`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants` == 7297)
+idx_7297_voc_cath <- which(dfc$`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics` == 7297)
+idx_7297_priests <- which(dfc$`Philosophy+theology candidates for diocesan and religious clergy per 100 priests` == 7297)
+
+if (length(idx_7297_cath) > 0) {
+  cat("Catholics per 100 inhabitants = 7297:\n")
+  print(dfc$Region[idx_7297_cath])
+}
+if (length(idx_7297_ord) > 0) {
+  cat("\nYearly ordinations... = 7297:\n")
+  print(dfc$Region[idx_7297_ord])
+}
+if (length(idx_7297_voc_inhab) > 0) {
+  cat("\nVocation rate per 100k inhabitants = 7297:\n")
+  print(dfc$Region[idx_7297_voc_inhab])
+}
+if (length(idx_7297_voc_cath) > 0) {
+  cat("\nVocation rate per 100k Catholics = 7297:\n")
+  print(dfc$Region[idx_7297_voc_cath])
+}
+if (length(idx_7297_priests) > 0) {
+  cat("\nPer 100 priests = 7297:\n")
+  print(dfc$Region[idx_7297_priests])
+}
+
+# Value 1667
+cat("\n\nValue 1667:\n")
+cat(paste(rep("-", 80), collapse = ""), "\n")
+idx_1667 <- which(dfc$`Yearly deaths of diocesan priests as share of those incardinated on January 1` == 1667)
+if (length(idx_1667) > 0) {
+  print(dfc$Region[idx_1667])
+} else {
+  cat("No country found\n")
+}
+
+# Value 1429
+cat("\n\nValue 1429:\n")
+cat(paste(rep("-", 80), collapse = ""), "\n")
+idx_1429 <- which(dfc$`Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1` == 1429)
+if (length(idx_1429) > 0) {
+  print(dfc$Region[idx_1429])
+} else {
+  cat("No country found\n")
+}
+
+all_indices <- unique(c(idx_7297_cath, idx_7297_ord, idx_7297_voc_inhab, 
+                        idx_7297_voc_cath, idx_7297_priests, idx_1667, idx_1429))
+
+if (length(all_indices) > 0) {
+  print(unique(dfc$Region[all_indices]))
+}
+
+
+# Histograms for Representative Variables
+
 
 #---- Analysis of the missing values ---- 
 # Number of missing values per variable (column)
