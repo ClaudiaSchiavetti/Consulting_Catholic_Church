@@ -62,6 +62,9 @@ cluster_data[cluster_data$Region == "Finland", "Yearly ordinations minus deaths 
 cluster_data[cluster_data$Region == "Sri Lanka", "Confirmations per 1000 Catholics"] <- 
   cluster_data[cluster_data$Region == "Sri Lanka", "Confirmations per 1000 Catholics"] / 100
 
+cluster_data[cluster_data$Region == "Mali", "Confirmations per 1000 Catholics"] <- 
+  8.29
+
 # Create cluster_data_2022 by filtering rows where Year == 2022
 cluster_data_2022 <- cluster_data[cluster_data$Year == 2022, ]
 
@@ -253,7 +256,4 @@ if(nrow(missing_summary) > 0) {
   
   print(p3)
 }
-
-
-#---- Imputation ---- 
 
