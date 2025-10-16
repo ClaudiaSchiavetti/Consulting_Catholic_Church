@@ -1,3 +1,5 @@
+rm(list = ls())
+
 library(reshape2)
 library(viridis)
 library(ggplot2)
@@ -6,9 +8,10 @@ library(moments)
 library(gridExtra)
 
 # Local development environment
-path_data <- "C:/Users/schia/Documents/GitHub/world-map/church-data-map-world-main"
-#path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+#path_data <- "C:/Users/schia/Documents/GitHub/world-map/church-data-map-world-main"
+path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_data)
+
 
 #---- Create the dataset ---- 
 
@@ -48,11 +51,23 @@ columns_to_keep <- c(
 # Create the subset dataframe
 cluster_data <- final_geo_table[, columns_to_keep]
 
+# Manual corrections
+
+cluster_data[cluster_data$Region == "French Guiana", "Yearly deaths of diocesan priests as share of those incardinated on January 1"] <- 
+  cluster_data[cluster_data$Region == "French Guiana", "Yearly deaths of diocesan priests as share of those incardinated on January 1"] / 100
+
+cluster_data[cluster_data$Region == "Finland", "Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1"] <- 
+  cluster_data[cluster_data$Region == "Finland", "Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1"] / 100
+
+cluster_data[cluster_data$Region == "Sri Lanka", "Confirmations per 1000 Catholics"] <- 
+  cluster_data[cluster_data$Region == "Sri Lanka", "Confirmations per 1000 Catholics"] / 100
+
 # Create cluster_data_2022 by filtering rows where Year == 2022
 cluster_data_2022 <- cluster_data[cluster_data$Year == 2022, ]
 
 # Remove the Year column
 cluster_data_2022 <- cluster_data_2022[, colnames(cluster_data_2022) != "Year"]
+
 
 #---- Descriptive statistics ---- 
 
@@ -79,49 +94,8 @@ summary_stats <- data.frame(
 # Sort by variable type (for better readability)
 print(summary_stats)
 
-
-# found some weird values : 
-print(cluster_data_2022$`Catholics per 100 inhabitants`) # ---> 7297 is impossible 
-print(cluster_data_2022$`Yearly ordinations of diocesan priests as share of those incardinated on January 1`) # same 
-print(cluster_data_2022$`Yearly deaths of diocesan priests as share of those incardinated on January 1`) # 1667? 
-print(cluster_data_2022$`Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1`) # 1429? 
-print(cluster_data_2022$`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants`) # again I am not sure about this 7297
-print(cluster_data_2022$`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics`) #same 
-print(cluster_data_2022$`Philosophy+theology candidates for diocesan and religious clergy per 100 priests`)# same 
-
-
 #Debug
 dfc <- subset(cluster_data_2022, `Region type` == "Country")
-
-# Value 7297 
-cat("Value 7297:\n")
-cat(paste(rep("-", 80), collapse = ""), "\n")
-idx_7297_cath <- which(dfc$`Catholics per 100 inhabitants` == 7297)
-idx_7297_ord <- which(dfc$`Yearly ordinations of diocesan priests as share of those incardinated on January 1` == 7297)
-idx_7297_voc_inhab <- which(dfc$`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants` == 7297)
-idx_7297_voc_cath <- which(dfc$`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics` == 7297)
-idx_7297_priests <- which(dfc$`Philosophy+theology candidates for diocesan and religious clergy per 100 priests` == 7297)
-
-if (length(idx_7297_cath) > 0) {
-  cat("Catholics per 100 inhabitants = 7297:\n")
-  print(dfc$Region[idx_7297_cath])
-}
-if (length(idx_7297_ord) > 0) {
-  cat("\nYearly ordinations... = 7297:\n")
-  print(dfc$Region[idx_7297_ord])
-}
-if (length(idx_7297_voc_inhab) > 0) {
-  cat("\nVocation rate per 100k inhabitants = 7297:\n")
-  print(dfc$Region[idx_7297_voc_inhab])
-}
-if (length(idx_7297_voc_cath) > 0) {
-  cat("\nVocation rate per 100k Catholics = 7297:\n")
-  print(dfc$Region[idx_7297_voc_cath])
-}
-if (length(idx_7297_priests) > 0) {
-  cat("\nPer 100 priests = 7297:\n")
-  print(dfc$Region[idx_7297_priests])
-}
 
 # Value 1667
 cat("\n\nValue 1667:\n")
@@ -143,8 +117,7 @@ if (length(idx_1429) > 0) {
   cat("No country found\n")
 }
 
-all_indices <- unique(c(idx_7297_cath, idx_7297_ord, idx_7297_voc_inhab, 
-                        idx_7297_voc_cath, idx_7297_priests, idx_1667, idx_1429))
+all_indices <- unique(c(idx_1667, idx_1429))
 
 if (length(all_indices) > 0) {
   print(unique(dfc$Region[all_indices]))
