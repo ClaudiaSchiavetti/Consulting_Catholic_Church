@@ -6,6 +6,8 @@ library(ggplot2)
 library(psych)
 library(moments)  
 library(gridExtra)
+library(scales)
+library(tidyr)
 
 # Local development environment
 path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
@@ -97,7 +99,8 @@ summary_stats <- data.frame(
 # Sort by variable type (for better readability)
 print(summary_stats)
 
-# Histograms for Representative Variables
+
+# Histograms for Representative Variables -- made a unique code after the standardization but we can add something here if needed
 
 
 #---- Analysis of the missing values ---- 
@@ -134,14 +137,6 @@ cluster_data_2022$missing_count <- rowSums(is.na(cluster_data_2022))
 missing_per_region <- aggregate(missing_count ~ Region, data = cluster_data_2022, FUN = sum)
 
 # Remove the temporary column
-cluster_data_2022$missing_count <- NULL
-
-print("Missing values per Region:")
-print(missing_per_region)
-
-# Number of missing values per each "Region" value
-cluster_data_2022$missing_count <- rowSums(is.na(cluster_data_2022))
-missing_per_region <- aggregate(missing_count ~ Region, data = cluster_data_2022, FUN = sum)
 cluster_data_2022$missing_count <- NULL
 
 print("Missing values per Region:")
@@ -226,4 +221,176 @@ if(nrow(missing_summary) > 0) {
   
   print(p3)
 }
+
+#---- Standardization ---- 
+
+# Function to apply the standardization plan
+standardize_data <- function(data) {
+  
+  # Helper function for logit transformation with small epsilon
+  logit_transform <- function(p, epsilon = 1e-6) {
+    p_adjusted <- pmin(pmax(p, epsilon), 1 - epsilon)
+    log(p_adjusted / (1 - p_adjusted))
+  }
+  
+  # Create a copy of the data to avoid modifying the original
+  data_std <- data
+  
+  # Catholics per 100 inhabitants: just z-score
+  data_std[, 3] <- scale(data[, 3])
+  
+  # Catholics in thousands: log(x+1), then z-score
+  data_std[, 4] <- scale(log(data[, 4] + 1))
+  
+  # Area in km²: log(x), then z-score
+  data_std[, 5] <- scale(log(data[, 5]))
+  
+  # Catholics per pastoral centre: log(x+1), then z-score
+  data_std[, 6] <- scale(log(data[, 6] + 1))
+  
+  # Yearly ordinations (%): divide by 100, logit, then z-score
+  data_std[, 7] <- scale(logit_transform(data[, 7] / 100))
+  
+  # Yearly deaths (%): divide by 100, logit, then z-score
+  data_std[, 8] <- scale(logit_transform(data[, 8] / 100))
+  
+  # Yearly defections (%): divide by 100, logit, then z-score
+  data_std[, 9] <- scale(logit_transform(data[, 9] / 100))
+  
+  # Yearly ordinations - deaths - defections (%): only z-score (can be negative)
+  data_std[, 10] <- scale(data[, 10])
+  
+  # Candidates for diocesan clergy: log(x+1), then z-score
+  data_std[, 11] <- scale(log(data[, 11] + 1))
+  
+  # Candidates for religious clergy: log(x+1), then z-score
+  data_std[, 12] <- scale(log(data[, 12] + 1))
+  
+  # Vocation rate per 100k inhabitants: log(x+1), then z-score
+  data_std[, 13] <- scale(log(data[, 13] + 1))
+  
+  # Vocation rate per 100k Catholics: log(x+1), then z-score
+  data_std[, 14] <- scale(log(data[, 14] + 1))
+  
+  # Candidates per 100 priests: z-score only (moderate skew)
+  data_std[, 15] <- scale(data[, 15])
+  
+  # Infant baptisms (absolute): log(x+1), then z-score
+  data_std[, 16] <- scale(log(data[, 16] + 1))
+  
+  # Adult baptisms (absolute): log(x+1), then z-score
+  data_std[, 17] <- scale(log(data[, 17] + 1))
+  
+  # Baptisms (absolute): log(x+1), then z-score
+  data_std[, 18] <- scale(log(data[, 18] + 1))
+  
+  # Infant baptisms per 1000 Catholics: log(x+1), then z-score
+  data_std[, 19] <- scale(log(data[, 19] + 1))
+  
+  # Marriages between Catholics: log(x+1), then z-score
+  data_std[, 20] <- scale(log(data[, 20] + 1))
+  
+  # Mixed marriages: log(x+1), then z-score
+  data_std[, 21] <- scale(log(data[, 21] + 1))
+  
+  # Marriages (absolute): log(x+1), then z-score
+  data_std[, 22] <- scale(log(data[, 22] + 1))
+  
+  # Marriages per 1000 Catholics: z-score only (mild skew)
+  data_std[, 23] <- scale(data[, 23])
+  
+  # Confirmations per 1000 Catholics: log(x+1), then z-score
+  data_std[, 24] <- scale(log(data[, 24] + 1))
+  
+  # First Communions per 1000 Catholics: log(x+1), then z-score
+  data_std[, 25] <- scale(log(data[, 25] + 1))
+  
+  return(data_std)
+}
+
+# Apply the standardization
+cluster_data_2022_std <- standardize_data(cluster_data_2022)
+
+# Verify the transformation
+summary(cluster_data_2022_std[, 3:25])
+
+#Plot
+
+# Function to create before/after comparison with density and skewness
+create_comparison_plot <- function(data_before, data_after, col_index, var_name, transformation) {
+  
+  # Prepare data
+  df <- data.frame(
+    Before = data_before[, col_index],
+    After = as.vector(data_after[, col_index])
+  )
+  
+  # Remove any infinite or NA values
+  df <- df[is.finite(df$Before) & is.finite(df$After), ]
+  
+  # Calculate skewness
+  skew_before <- round(skewness(df$Before, na.rm = TRUE), 2)
+  skew_after <- round(skewness(df$After, na.rm = TRUE), 2)
+  
+  # Reshape for ggplot
+  df_long <- pivot_longer(df, cols = c(Before, After), 
+                          names_to = "Stage", values_to = "Value")
+  
+  # Set factor levels to control order (Before first)
+  df_long$Stage <- factor(df_long$Stage, levels = c("Before", "After"))
+  
+  # Create density + histogram comparison
+  p <- ggplot(df_long, aes(x = Value, fill = Stage)) +
+    geom_histogram(aes(y = after_stat(density)), alpha = 0.5, 
+                   position = "identity", bins = 30) +
+    geom_density(alpha = 0.3, linewidth = 1) +
+    facet_wrap(~Stage, scales = "free") +
+    scale_fill_viridis(discrete = TRUE, option = "D", begin = 0.3, end = 0.8) +
+    scale_x_continuous(labels = label_comma(accuracy = 0.01)) +
+    scale_y_continuous(labels = label_comma(accuracy = 0.001)) +
+    labs(title = var_name,
+         subtitle = paste0("Transformation: ", transformation,
+                           "\nSkewness Before: ", skew_before, 
+                           "  |  Skewness After: ", skew_after),
+         x = "Value", y = "Density") +
+    theme_minimal() +
+    theme(legend.position = "none",
+          plot.title = element_text(size = 10, face = "bold"),
+          plot.subtitle = element_text(size = 8.5, color = "gray40"))
+  
+  return(p)
+}
+
+# Create plots for the four specified variables
+
+# 1. Catholics per 100 inhabitants (Column 3) - Z-score only
+plot1 <- create_comparison_plot(
+  cluster_data_2022, cluster_data_2022_std, 3,
+  "Catholics per 100 inhabitants", "Z-score only"
+)
+
+# 2. Catholics in thousands (Column 4) - log(x+1) → z-score
+plot2 <- create_comparison_plot(
+  cluster_data_2022, cluster_data_2022_std, 4,
+  "Catholics in thousands", "log(x+1) → z-score"
+)
+
+# 3. Yearly ordinations of diocesan priests (Column 7) - Proportion → logit → z-score
+plot3 <- create_comparison_plot(
+  cluster_data_2022, cluster_data_2022_std, 7,
+  "Yearly ordinations of diocesan priests (%)", "Proportion → logit → z-score"
+)
+
+# 4. Area in km² (Column 5) - log(x) → z-score
+plot4 <- create_comparison_plot(
+  cluster_data_2022, cluster_data_2022_std, 5,
+  "Area in km²", "log(x) → z-score"
+)
+
+# Arrange all plots in a grid
+grid.arrange(
+  plot1, plot2, plot3, plot4,
+  ncol = 2, nrow = 2,
+  top = "Distribution Comparison: Before and After Standardization"
+)
 
