@@ -8,15 +8,15 @@ library(moments)
 library(gridExtra)
 
 # Local development environment
-#path_data <- "C:/Users/schia/Documents/GitHub/world-map/church-data-map-world-main"
-path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+#path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_data)
 
 
 #---- Create the dataset ---- 
 
 # Read the dataset, preserving original column names with spaces
-final_geo_table <- read.csv("final_geo_table.csv", check.names = FALSE)
+final_geo_table <- read.csv("final_geo_table.csv", sep= ";", check.names = FALSE)
 
 # Define the list of columns to keep, using exact names with spaces
 columns_to_keep <- c(
@@ -96,36 +96,6 @@ summary_stats <- data.frame(
 
 # Sort by variable type (for better readability)
 print(summary_stats)
-
-#Debug
-dfc <- subset(cluster_data_2022, `Region type` == "Country")
-
-# Value 1667
-cat("\n\nValue 1667:\n")
-cat(paste(rep("-", 80), collapse = ""), "\n")
-idx_1667 <- which(dfc$`Yearly deaths of diocesan priests as share of those incardinated on January 1` == 1667)
-if (length(idx_1667) > 0) {
-  print(dfc$Region[idx_1667])
-} else {
-  cat("No country found\n")
-}
-
-# Value 1429
-cat("\n\nValue 1429:\n")
-cat(paste(rep("-", 80), collapse = ""), "\n")
-idx_1429 <- which(dfc$`Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1` == 1429)
-if (length(idx_1429) > 0) {
-  print(dfc$Region[idx_1429])
-} else {
-  cat("No country found\n")
-}
-
-all_indices <- unique(c(idx_1667, idx_1429))
-
-if (length(all_indices) > 0) {
-  print(unique(dfc$Region[all_indices]))
-}
-
 
 # Histograms for Representative Variables
 
