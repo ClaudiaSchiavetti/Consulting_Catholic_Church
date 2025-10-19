@@ -37,14 +37,14 @@ options(shiny.port = 3838)
 if (file.exists("/srv/shiny-server/final_geo_table.csv")) {
   # Docker environment
   setwd("/srv/shiny-server")
-  data <- read.csv("final_geo_table.csv", check.names = FALSE)
+  data <- read.csv("final_geo_table.csv", sep = ";", check.names = FALSE)
   abbreviations_file <- "variable_abbreviations.csv"
 } else {
   # Local development environment
-  #path_outputs <- "C:/Users/schia/Documents/GitHub/world-map/church-data-map-world-main"
-  path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+  path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church/Map"
+  #path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
   setwd(path_outputs)
-  data <- read.csv("final_geo_table.csv", check.names = FALSE)
+  data <- read.csv("final_geo_table.csv", sep = ";", check.names = FALSE)
   abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
 }
 
