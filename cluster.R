@@ -316,6 +316,12 @@ summary(cluster_data_2022_std[, 3:25])
 
 #Plot
 
+# Define the transformation groups and choose one representative variable from each:
+# Group 1: Z-score only (bounded or mild skew)
+# Group 2: Log(x+1) then z-score (count data with high skew)
+# Group 3: Logit then z-score (percentage data)
+# Group 4: Log(x) then z-score (area data, no zeros)
+
 # Function to create before/after comparison with density and skewness
 create_comparison_plot <- function(data_before, data_after, col_index, var_name, transformation) {
   
