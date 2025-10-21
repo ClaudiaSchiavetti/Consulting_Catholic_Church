@@ -10,8 +10,8 @@ library(scales)
 library(tidyr)
 
 # Local development environment
-path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+#path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_data)
 
 
@@ -29,15 +29,24 @@ columns_to_keep <- c(
   "Catholics in thousands",
   "Area in km^2",
   "Catholics per pastoral centre",
+  "Parishes with diocesan pastor", 
+  "Parishes with religious pastor", 
+  "Parishes without pastor administered by another priest",
+  "Parishes without pastor entrusted to permanent deacons",
+  "Parishes without pastor entrusted to non-priest religious men",
+  "Parishes without pastor entrusted to religious women",
+  "Parishes without pastor entrusted to laypeople", 
+  "Parishes entirely vacant", 
+  "Catholics per priest",
   "Yearly ordinations of diocesan priests as share of those incardinated on January 1",
   "Yearly deaths of diocesan priests as share of those incardinated on January 1",
   "Yearly defections of diocesan priests as share of those incardinated at January 1",
   "Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1",
-  "Candidates for diocesan clergy in theology centres",
-  "Candidates for religious clergy in theology centres",
   "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants",
   "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics",
   "Philosophy+theology candidates for diocesan and religious clergy per 100 priests",
+  "Candidates for diocesan clergy in theology centres",
+  "Candidates for religious clergy in theology centres",
   "Infant baptisms (people up to 7 years old)",
   "Adult baptisms (people over 7 years old)",
   "Baptisms",
