@@ -76,38 +76,66 @@ cluster_data[cluster_data$Region == "Sri Lanka", "Confirmations per 1000 Catholi
 cluster_data[cluster_data$Region == "Mali", "Confirmations per 1000 Catholics"] <- 
   8.29
 
-# Create cluster_data_2022 by filtering rows where Year == 2022
-cluster_data_2022 <- cluster_data[cluster_data$Year == 2022, ]
+# Create country_data by filtering rows where Year == 2022
+country_data <- cluster_data[cluster_data$Year == 2022, ]
 
 # Remove the Year column
-cluster_data_2022 <- cluster_data_2022[, colnames(cluster_data_2022) != "Year"]
+country_data <- country_data[, colnames(country_data) != "Year"]
+
+# Filter only countries for descriptive statistics
+country_data <- country_data[country_data$`Region type` == "Country", ]
+
+# Remove countries with high percentage of missing values
+countries_to_remove <- c("Dem. Peoples Rep. Of Korea", "China (Mainland)")
+
+# Filter out these countries from cluster_data_2022
+country_data <- country_data[!country_data$Region %in% countries_to_remove, ]
 
 
 #---- Descriptive statistics ---- 
 
-# Filter only countries for descriptive statistics
-country_data <- cluster_data_2022[cluster_data_2022$`Region type` == "Country", ]
-
-# Select only the numeric variables (exclude Region and Region type)
-numeric_vars <- country_data[, !names(country_data) %in% c("Region", "Region type")]
-
-# Summary Statistics Table
+# Select only the numeric variables (exclude Region type)
+analysis_data <- country_data[, !names(country_data) %in% c("Region type")]
 
 # Create comprehensive summary statistics
 summary_stats <- data.frame(
-  N = sapply(numeric_vars, function(x) sum(!is.na(x))),
-  Mean = sapply(numeric_vars, function(x) round(mean(x, na.rm = TRUE), 2)),
-  SD = sapply(numeric_vars, function(x) round(sd(x, na.rm = TRUE), 2)),
-  Min = sapply(numeric_vars, function(x) round(min(x, na.rm = TRUE), 2)),
-  Max = sapply(numeric_vars, function(x) round(max(x, na.rm = TRUE), 2)),
-  Median = sapply(numeric_vars, function(x) round(median(x, na.rm = TRUE), 2)),
-  Missing_Pct = sapply(numeric_vars, function(x) round(sum(is.na(x))/length(x)*100, 1)),
-  Skewness = sapply(numeric_vars, function(x) round(skewness(x, na.rm = TRUE), 2))
+  N = sapply(analysis_data[,-1], function(x) sum(!is.na(x))),
+  Mean = sapply(analysis_data[,-1], function(x) round(mean(x, na.rm = TRUE), 2)),
+  SD = sapply(analysis_data[,-1], function(x) round(sd(x, na.rm = TRUE), 2)),
+  Min = sapply(analysis_data[,-1], function(x) round(min(x, na.rm = TRUE), 2)),
+  Max = sapply(analysis_data[,-1], function(x) round(max(x, na.rm = TRUE), 2)),
+  Median = sapply(analysis_data[,-1], function(x) round(median(x, na.rm = TRUE), 2)),
+  Missing_Pct = sapply(analysis_data[,-1], function(x) round(sum(is.na(x))/length(x)*100, 1)),
+  Skewness = sapply(analysis_data[,-1], function(x) round(skewness(x, na.rm = TRUE), 2))
 )
 
 # Sort by variable type (for better readability)
 print(summary_stats)
 
+## Apply the desired variable mutations
+
+# Catholics per km^2: divide col 3 by col 4
+analysis_data[, 3] <- analysis_data[, 3] * 1000 / analysis_data[, 4]
+colnames(analysis_data)[3] <- "Catholics per km^2"
+
+# Share of diocesan pastors
+analysis_data[, 6] <- analysis_data[, 6] / (analysis_data[, 6] + analysis_data[, 7])
+colnames(analysis_data)[6] <- "Share of diocesan pastors"
+
+# Share of parishes administered by priests
+analysis_data[, 8] <- (analysis_data[, 6] + analysis_data[, 7] + 
+                        analysis_data[, 8]) / (analysis_data[, 6] + 
+                        analysis_data[, 7] + analysis_data[, 8] +
+                        analysis_data[, 9] + analysis_data[, 10] +
+                        analysis_data[, 11] + analysis_data[, 12])
+colnames(analysis_data)[8] <- "Share of parishes administered by priests"
+
+## TO DROP: columns 4,7,9-11.
+analysis_data <- analysis_data[, -c(4, 7, 9:11)]
+names(analysis_data)
+
+## TO NORMALIZE BEFORE COMPUTING Z-SCORE [numbered after dropping the prev. cols!!!]: 
+## columns 7,8,17-21,23-25
 
 # Histograms for Representative Variables -- made a unique code after the standardization but we can add something here if needed
 
@@ -116,50 +144,93 @@ print(summary_stats)
 # Function to apply the standardization plan
 standardize_data <- function(data) {
   
-  # Helper function for logit transformation with small epsilon
-  logit_transform <- function(p, epsilon = 1e-6) {
+  # Log Transformation with Dynamic Epsilon
+  log_transform <- function(x) {
+    # Identify non-zero values excluding exactly 0.007297
+    non_zero <- x[x != 0.007297]
+    
+    # Handle case where there are no valid non-zero values
+    if (length(non_zero) == 0) {
+      epsilon <- 1e-6  # Fallback to a small constant if no valid min found
+    } else {
+      min_val <- min(non_zero)
+      epsilon <- 0.5 * min_val
+    }
+    
+    # Apply log transformation with added epsilon
+    log(x + epsilon)
+  }
+  
+  # Logit Transformation with Dynamic Epsilon
+  logit_transform <- function(p) {
+    # Identify non-zero values excluding exactly 0.007297 (assuming p in [0,1])
+    non_zero <- p[p != 0.007297]
+    
+    # Handle case where there are no valid non-zero values
+    if (length(non_zero) == 0) {
+      epsilon <- 1e-6  # Fallback to a small constant if no valid min found
+    } else {
+      min_val <- min(non_zero)
+      epsilon <- 0.5 * min_val
+    }
+    
+    # Adjust p to [epsilon, 1 - epsilon] to avoid log(0) or division by zero
     p_adjusted <- pmin(pmax(p, epsilon), 1 - epsilon)
+    
+    # Apply logit transformation
     log(p_adjusted / (1 - p_adjusted))
   }
   
   # Create a copy of the data to avoid modifying the original
   data_std <- data
   
-  # Catholics per 100 inhabitants: just z-score
-  data_std[, 3] <- scale(data[, 3])
+  # Catholics per 100 inhabitants: rescaling, logit
+  data_std[, 2] <- scale(logit_transform(data[, 2]/100))
   
-  # Catholics in thousands: log(x+1), then z-score
-  data_std[, 4] <- scale(log(data[, 4] + 1))
+  # Catholics per km^2: log
+  data_std[, 3] <- scale(log_transform(data[, 3]))
   
-  # Area in km²: log(x), then z-score
-  data_std[, 5] <- scale(log(data[, 5]))
+  # Catholics per pastoral centre: log
+  data_std[, 4] <- scale(log_transform(data[, 4]))
   
-  # Catholics per pastoral centre: log(x+1), then z-score
-  data_std[, 6] <- scale(log(data[, 6] + 1))
+  # Share of diocesan pastors: logit
+  data_std[, 5] <- scale(logit_transform(data[, 5]))
   
-  # Yearly ordinations (%): divide by 100, logit, then z-score
-  data_std[, 7] <- scale(logit_transform(data[, 7] / 100))
+  # Share of parishes administered by priests: logit
+  data_std[, 6] <- scale(logit_transform(data[, 6]))
   
-  # Yearly deaths (%): divide by 100, logit, then z-score
-  data_std[, 8] <- scale(logit_transform(data[, 8] / 100))
+  ## NORMALIZE THE FOLLOWING TWO:
   
-  # Yearly defections (%): divide by 100, logit, then z-score
-  data_std[, 9] <- scale(logit_transform(data[, 9] / 100))
+  # Parishes without pastor entrusted to laypeople: normaliz, log
+  data_std[, 7] <- scale(log_transform(data[, 7]))
   
-  # Yearly ordinations - deaths - defections (%): only z-score (can be negative)
-  data_std[, 10] <- scale(data[, 10])
+  # Parishes entirely vacant: normaliz, log
+  data_std[, 8] <- scale(log_transform(data[, 8]))
   
-  # Candidates for diocesan clergy: log(x+1), then z-score
-  data_std[, 11] <- scale(log(data[, 11] + 1))
+  ##
   
-  # Candidates for religious clergy: log(x+1), then z-score
-  data_std[, 12] <- scale(log(data[, 12] + 1))
+  # Catholics per priest: log
+  data_std[, 9] <- scale(log_transform(data[, 9]))
   
-  # Vocation rate per 100k inhabitants: log(x+1), then z-score
-  data_std[, 13] <- scale(log(data[, 13] + 1))
+  # Share of ordinations of diocesan priests: rescaling, logit
+  data_std[, 10] <- scale(logit_transform(data[, 10]/100))
   
-  # Vocation rate per 100k Catholics: log(x+1), then z-score
-  data_std[, 14] <- scale(log(data[, 14] + 1))
+  # Share of deaths of diocesan priests: rescaling, logit
+  data_std[, 11] <- scale(logit_transform(data[, 11]/100))
+  
+  # Share of defections of diocesan priests: rescaling, logit
+  data_std[, 12] <- scale(logit_transform(data[, 12]/100))
+  
+  # Share of ordinations minus deaths and defections of diocesan priests: rescaling only
+  data_std[, 13] <- scale(data[, 13]/100)
+  
+  # Vocation rate per 100k inhabitants: rescaling, logit
+  data_std[, 14] <- scale(logit_transform(data[, 14])/100000)
+  
+  # Vocation rate per 100k Catholics: rescaling, logit
+  data_std[, 15] <- scale(logit_transform(data[, 15])/100000)
+  
+  ## Go on from here for columns 16-28
   
   # Candidates per 100 priests: z-score only (moderate skew)
   data_std[, 15] <- scale(data[, 15])
