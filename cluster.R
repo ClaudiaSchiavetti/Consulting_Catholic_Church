@@ -109,24 +109,70 @@ print(summary_stats)
 ## Apply the desired variable mutations
 
 # Catholics per km^2: divide col 3 by col 4
-analysis_data[, 3] <- analysis_data[, 3] * 1000 / analysis_data[, 4]
-colnames(analysis_data)[3] <- "Catholics per km^2"
+analysis_data$`Catholics per km^2` <- analysis_data[, 3] * 1000 / analysis_data[, 4]
 
 # Share of diocesan pastors
-analysis_data[, 6] <- analysis_data[, 6] / (analysis_data[, 6] + analysis_data[, 7])
-colnames(analysis_data)[6] <- "Share of diocesan pastors"
+# analysis_data[, 6] <- analysis_data[, 6] / (analysis_data[, 6] + analysis_data[, 7])
+# colnames(analysis_data)[6] <- "Share of diocesan pastors"
+# 
+# # Share of parishes administered by priests
+# analysis_data[, 8] <- (analysis_data[, 6] + analysis_data[, 7] + 
+#                         analysis_data[, 8]) / (analysis_data[, 6] + 
+#                         analysis_data[, 7] + analysis_data[, 8] +
+#                         analysis_data[, 9] + analysis_data[, 10] +
+#                         analysis_data[, 11] + analysis_data[, 12])
+# colnames(analysis_data)[8] <- "Share of parishes administered by priests"
 
-# Share of parishes administered by priests
-analysis_data[, 8] <- (analysis_data[, 6] + analysis_data[, 7] + 
-                        analysis_data[, 8]) / (analysis_data[, 6] + 
-                        analysis_data[, 7] + analysis_data[, 8] +
-                        analysis_data[, 9] + analysis_data[, 10] +
-                        analysis_data[, 11] + analysis_data[, 12])
-colnames(analysis_data)[8] <- "Share of parishes administered by priests"
+# totals
+tot_all <- rowSums(analysis_data[, 6:13], na.rm = TRUE)     # includes 'entirely vacant'
+tot_with_person <- rowSums(analysis_data[, 6:12], na.rm = TRUE)
+
+# Share of diocesan pastors among parishes that have a pastor
+analysis_data$`Share of diocesan pastors` <-
+  analysis_data$`Parishes with diocesan pastor` /
+  (analysis_data$`Parishes with diocesan pastor` + analysis_data$`Parishes with religious pastor`)
+
+# Share of parishes administered by priests (of ALL parishes)
+analysis_data$`Share of parishes administered by priests` <-
+  (analysis_data$`Parishes with diocesan pastor` +
+     analysis_data$`Parishes with religious pastor` +
+     analysis_data$`Parishes without pastor administered by another priest`) / tot_all
+
+# Share of parishes among all pastoral workers (exclude vacant)
+analysis_data$`Share priests+deacons among pastoral workers` <-
+  (analysis_data$`Parishes with diocesan pastor` +
+     analysis_data$`Parishes with religious pastor` +
+     analysis_data$`Parishes without pastor administered by another priest` +
+     analysis_data$`Parishes without pastor entrusted to permanent deacons`) / tot_with_person
+
+# Adult baptisms shares
+analysis_data$`Adult baptisms share of all baptisms` <-
+  analysis_data$`Adult baptisms (people over 7 years old)` /
+  analysis_data$`Baptisms`
+
+analysis_data$`Adult baptisms share of Catholics` <-
+  analysis_data$`Adult baptisms (people over 7 years old)` /
+  (analysis_data$`Catholics in thousand` * 1000)
+
+# Wedding proportions
+analysis_data$`Share of Catholic-Catholic marriages` <-
+  analysis_data$`Marriages between Catholics` /
+  analysis_data$`Marriages`
+
+analysis_data$`Share of mixed marriages` <-
+  analysis_data$`Mixed marriages` /
+  analysis_data$`Marriages`
+
+# Confirmations vs First Communions ratio
+analysis_data$`Confirmations to First Communions ratio` <-
+  analysis_data$`Confirmations per 1000 Catholics` /
+  analysis_data$`First Communions per 1000 Catholics`
+
+
 
 ## TO DROP: columns 4,7,9-11.
-analysis_data <- analysis_data[, -c(4, 7, 9:11)]
-names(analysis_data)
+# analysis_data <- analysis_data[, -c(4, 7, 9:11)]
+# names(analysis_data)
 
 ## TO NORMALIZE BEFORE COMPUTING Z-SCORE [numbered after dropping the prev. cols!!!]: 
 ## columns 7,8,17-21,23-25
