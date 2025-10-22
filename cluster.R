@@ -10,8 +10,8 @@ library(scales)
 library(tidyr)
 
 # Local development environment
-#path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+#path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_data)
 
 
@@ -84,12 +84,6 @@ country_data <- country_data[, colnames(country_data) != "Year"]
 
 # Filter only countries for descriptive statistics
 country_data <- country_data[country_data$`Region type` == "Country", ]
-
-# Remove countries with high percentage of missing values
-countries_to_remove <- c("Dem. Peoples Rep. Of Korea", "China (Mainland)")
-
-# Filter out these countries from cluster_data_2022
-country_data <- country_data[!country_data$Region %in% countries_to_remove, ]
 
 
 #---- Descriptive statistics ---- 
