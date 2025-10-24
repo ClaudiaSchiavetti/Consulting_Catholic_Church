@@ -163,16 +163,8 @@ analysis_data$`Share of mixed marriages` <-
   analysis_data$`Mixed marriages` /
   analysis_data$`Marriages`
 
-# Confirmations vs First Communions ratio
-analysis_data$`Confirmations to First Communions ratio` <-
-  analysis_data$`Confirmations per 1000 Catholics` /
-  analysis_data$`First Communions per 1000 Catholics`
-
-
-
-## TO DROP: columns 4,7,9-11.
-# analysis_data <- analysis_data[, -c(4, 7, 9:11)]
-# names(analysis_data)
+#TO DROP
+clustering_data <- analysis_data[, -c(3, 4, 6:13, 22:26, 28:30, 39)]
 
 ## TO NORMALIZE BEFORE COMPUTING Z-SCORE [numbered after dropping the prev. cols!!!]: 
 ## columns 7,8,17-21,23-25
@@ -181,138 +173,111 @@ analysis_data$`Confirmations to First Communions ratio` <-
 
 #---- Standardization ---- 
 
-# Function to apply the standardization plan
+# Fixed epsilon transformations
+log_transform <- function(x) {
+  epsilon <- 1e-6
+  log(x + epsilon)
+}
+
+logit_transform <- function(p) {
+  epsilon <- 1e-6
+  p_adjusted <- pmin(pmax(p, epsilon), 1 - epsilon)
+  log(p_adjusted / (1 - p_adjusted))
+}
+
 standardize_data <- function(data) {
   
-  # Log Transformation with Dynamic Epsilon
-  log_transform <- function(x) {
-    # Identify non-zero values excluding exactly 0.007297
-    non_zero <- x[x != 0.007297]
-    
-    # Handle case where there are no valid non-zero values
-    if (length(non_zero) == 0) {
-      epsilon <- 1e-6  # Fallback to a small constant if no valid min found
-    } else {
-      min_val <- min(non_zero)
-      epsilon <- 0.5 * min_val
-    }
-    
-    # Apply log transformation with added epsilon
-    log(x + epsilon)
-  }
-  
-  # Logit Transformation with Dynamic Epsilon
-  logit_transform <- function(p) {
-    # Identify non-zero values excluding exactly 0.007297 (assuming p in [0,1])
-    non_zero <- p[p != 0.007297]
-    
-    # Handle case where there are no valid non-zero values
-    if (length(non_zero) == 0) {
-      epsilon <- 1e-6  # Fallback to a small constant if no valid min found
-    } else {
-      min_val <- min(non_zero)
-      epsilon <- 0.5 * min_val
-    }
-    
-    # Adjust p to [epsilon, 1 - epsilon] to avoid log(0) or division by zero
-    p_adjusted <- pmin(pmax(p, epsilon), 1 - epsilon)
-    
-    # Apply logit transformation
-    log(p_adjusted / (1 - p_adjusted))
-  }
-  
-  # Create a copy of the data to avoid modifying the original
   data_std <- data
   
-  # Catholics per 100 inhabitants: rescaling, logit
-  data_std[, 2] <- scale(logit_transform(data[, 2]/100))
+  # ========================================================================
+  # GROUP 1: PROPORTIONS/SHARES (0-1) → Logit + Scale
+  # ========================================================================
   
-  # Catholics per km^2: log
+  # Column 2: Catholics per 100 inhabitants → rescale, logit, scale
+  data_std[, 2] <- scale(logit_transform(data[, 2] / 100))
+  
+  # Column 5: Yearly ordinations share → rescale, logit, scale
+  data_std[, 5] <- scale(logit_transform(data[, 5] / 100))
+  
+  # Column 6: Yearly deaths share → rescale, logit, scale
+  data_std[, 6] <- scale(logit_transform(data[, 6] / 100))
+  
+  # Column 7: Yearly defections share → rescale, logit, scale
+  data_std[, 7] <- scale(logit_transform(data[, 7] / 100))
+  
+  # Column 17: Share of diocesan pastors → logit, scale
+  data_std[, 17] <- scale(logit_transform(data[, 17]))
+  
+  # Column 18: Share of parishes administered by priests → logit, scale
+  data_std[, 18] <- scale(logit_transform(data[, 18]))
+  
+  # Column 19: Share priests+deacons → logit, scale
+  data_std[, 19] <- scale(logit_transform(data[, 19]))
+  
+  # Column 20: Adult baptisms share → logit, scale
+  data_std[, 20] <- scale(logit_transform(data[, 20]))
+  
+  # Column 21: Share of Catholic-Catholic marriages → logit, scale
+  data_std[, 21] <- scale(logit_transform(data[, 21]))
+  
+  # Column 22: Share of mixed marriages → logit, scale
+  data_std[, 22] <- scale(logit_transform(data[, 22]))
+  
+  # ========================================================================
+  # GROUP 2: RATES (very small) → Logit + Scale
+  # ========================================================================
+  
+  # Column 9: Vocation rate per 100k inhabitants → rescale, logit, scale
+  data_std[, 9] <- scale(logit_transform(data[, 9] / 100000))
+  
+  # Column 10: Vocation rate per 100k Catholics → rescale, logit, scale
+  data_std[, 10] <- scale(logit_transform(data[, 10] / 100000))
+  
+  # ========================================================================
+  # GROUP 3: RATIOS/DENSITIES (highly skewed) → Log + Scale
+  # ========================================================================
+  
+  # Column 3: Catholics per pastoral centre → log, scale
   data_std[, 3] <- scale(log_transform(data[, 3]))
   
-  # Catholics per pastoral centre: log
+  # Column 4: Catholics per priest → log, scale
   data_std[, 4] <- scale(log_transform(data[, 4]))
   
-  # Share of diocesan pastors: logit
-  data_std[, 5] <- scale(logit_transform(data[, 5]))
+  # Column 12: Infant baptisms per 1000 Catholics → log, scale
+  data_std[, 12] <- scale(log_transform(data[, 12]))
   
-  # Share of parishes administered by priests: logit
-  data_std[, 6] <- scale(logit_transform(data[, 6]))
+  # Column 13: Marriages per 1000 Catholics → log, scale
+  data_std[, 13] <- scale(log_transform(data[, 13]))
   
-  ## NORMALIZE THE FOLLOWING TWO:
+  # Column 14: Confirmations per 1000 Catholics → log, scale
+  data_std[, 14] <- scale(log_transform(data[, 14]))
   
-  # Parishes without pastor entrusted to laypeople: normaliz, log
-  data_std[, 7] <- scale(log_transform(data[, 7]))
+  # Column 15: First Communions per 1000 Catholics → log, scale
+  data_std[, 15] <- scale(log_transform(data[, 15]))
   
-  # Parishes entirely vacant: normaliz, log
-  data_std[, 8] <- scale(log_transform(data[, 8]))
+  # Column 16: Catholics per km^2 → log, scale
+  data_std[, 16] <- scale(log_transform(data[, 16]))
   
-  ##
+  # ========================================================================
+  # GROUP 4: MODERATELY SKEWED → Just Scale
+  # ========================================================================
   
-  # Catholics per priest: log
-  data_std[, 9] <- scale(log_transform(data[, 9]))
+  # Column 11: Philosophy+theology candidates per 100 priests → scale only
+  data_std[, 11] <- scale(data[, 11])
   
-  # Share of ordinations of diocesan priests: rescaling, logit
-  data_std[, 10] <- scale(logit_transform(data[, 10]/100))
+  # ========================================================================
+  # GROUP 5: CONTAINS NEGATIVES → Rescale + Scale
+  # ========================================================================
   
-  # Share of deaths of diocesan priests: rescaling, logit
-  data_std[, 11] <- scale(logit_transform(data[, 11]/100))
-  
-  # Share of defections of diocesan priests: rescaling, logit
-  data_std[, 12] <- scale(logit_transform(data[, 12]/100))
-  
-  # Share of ordinations minus deaths and defections of diocesan priests: rescaling only
-  data_std[, 13] <- scale(data[, 13]/100)
-  
-  # Vocation rate per 100k inhabitants: rescaling, logit
-  data_std[, 14] <- scale(logit_transform(data[, 14])/100000)
-  
-  # Vocation rate per 100k Catholics: rescaling, logit
-  data_std[, 15] <- scale(logit_transform(data[, 15])/100000)
-  
-  ## Go on from here for columns 16-28
-  
-  # Candidates per 100 priests: z-score only (moderate skew)
-  data_std[, 15] <- scale(data[, 15])
-  
-  # Infant baptisms (absolute): log(x+1), then z-score
-  data_std[, 16] <- scale(log(data[, 16] + 1))
-  
-  # Adult baptisms (absolute): log(x+1), then z-score
-  data_std[, 17] <- scale(log(data[, 17] + 1))
-  
-  # Baptisms (absolute): log(x+1), then z-score
-  data_std[, 18] <- scale(log(data[, 18] + 1))
-  
-  # Infant baptisms per 1000 Catholics: log(x+1), then z-score
-  data_std[, 19] <- scale(log(data[, 19] + 1))
-  
-  # Marriages between Catholics: log(x+1), then z-score
-  data_std[, 20] <- scale(log(data[, 20] + 1))
-  
-  # Mixed marriages: log(x+1), then z-score
-  data_std[, 21] <- scale(log(data[, 21] + 1))
-  
-  # Marriages (absolute): log(x+1), then z-score
-  data_std[, 22] <- scale(log(data[, 22] + 1))
-  
-  # Marriages per 1000 Catholics: z-score only (mild skew)
-  data_std[, 23] <- scale(data[, 23])
-  
-  # Confirmations per 1000 Catholics: log(x+1), then z-score
-  data_std[, 24] <- scale(log(data[, 24] + 1))
-  
-  # First Communions per 1000 Catholics: log(x+1), then z-score
-  data_std[, 25] <- scale(log(data[, 25] + 1))
+  # Column 8: Ordinations minus deaths/defections → rescale, scale
+  data_std[, 8] <- scale(data[, 8] / 100)
   
   return(data_std)
 }
 
-# Apply the standardization
-cluster_data_2022_std <- standardize_data(cluster_data_2022)
-
-# Verify the transformation
-summary(cluster_data_2022_std[, 3:25])
+# Apply standardization
+clustering_data_std <- standardize_data(clustering_data)
+summary(clustering_data_std)
 
 #Plot
 
