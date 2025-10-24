@@ -123,15 +123,16 @@ colnames(analysis_data)[4] <- "Catholics per km^2"
 analysis_data[, 6] <- analysis_data[, 6] / (analysis_data[, 6] + analysis_data[, 7])
 colnames(analysis_data)[6] <- "Share of diocesan pastors"
 
-# Non-vacant parishes administered by priests per Catholic (clergy capabilities?)
-analysis_data[, 8] <- (analysis_data[, 6] + analysis_data[, 7] + 
-                         analysis_data[, 8]) / (analysis_data[, 3] * 1000)
-colnames(analysis_data)[8] <- "Non-vacant parishes administered by priests per Catholic"
+# Non-vacant parishes administered by non-pastor priests per Catholic (clergy capabilities?)
+analysis_data[, 8] <- analysis_data[, 8] / (analysis_data[, 3] * 1000)
+colnames(analysis_data)[8] <- "Non-vacant parishes administered by non-pastor priests per Catholic"
 
-# Share of non-vacant parishes without priest entrusted to laypeople (rootedness of democratic values?)
-analysis_data[, 12] <- analysis_data[, 12] / (analysis_data[, 9] + analysis_data[, 10] + 
-                                                analysis_data[, 11] + analysis_data[, 12])
-colnames(analysis_data)[12] <- "Share of non-vacant parishes without priest entrusted to laypeople"
+# Share of non-vacant parishes entrusted to religious women or laypeople (strength of egalitarian/democratic values?)
+analysis_data[, 12] <- (analysis_data[, 11] + analysis_data[, 12]) / (analysis_data[, 6] + analysis_data[, 7] + 
+                                                                      analysis_data[, 8] + analysis_data[, 9] + 
+                                                                      analysis_data[, 10] + analysis_data[, 11] +
+                                                                      analysis_data[, 12])
+colnames(analysis_data)[12] <- "Share of non-vacant parishes entrusted to religious women or laypeople"
 
 # Parishes entirely vacant per Catholic (decline of religious practice?)
 analysis_data[, 13] <- analysis_data[, 13] / (analysis_data[, 3] * 1000)
@@ -180,6 +181,8 @@ colnames(analysis_data)[33] <- "First Communions per Catholic"
 ## TO DROP: columns 3,7,9-11,18,27,31,34.
 analysis_data <- analysis_data[, -c(3, 7, 9:11, 18, 27, 31, 34)]
 names(analysis_data)
+
+summary(analysis_data)
 
 #for (i in 2:ncol(analysis_data)) {
 #  col_name <- names(analysis_data)[i]
@@ -236,6 +239,7 @@ standardize_data <- function(data) {
   
   # Catholics per 100 inhabitants: rescaling, logit
   data_std[, 2] <- logit_transform(data[, 2]/100)
+  colnames(data_std)[2] <- "Share of Catholics"
   
   # Catholics per km^2: log
   data_std[, 3] <- log_transform(data[, 3])
@@ -246,10 +250,10 @@ standardize_data <- function(data) {
   # Share of diocesan pastors: logit
   data_std[, 5] <- logit_transform(data[, 5])
   
-  # Non-vacant parishes administered by priests per Catholic: log
+  # Non-vacant parishes administered by non-pastor priests per Catholic: log
   data_std[, 6] <- log_transform(data[, 6])
   
-  # Share of non-vacant parishes without priest entrusted to laypeople: logit
+  # Share of non-vacant parishes entrusted to religious women or laypeople: logit
   data_std[, 7] <- logit_transform(data[, 7])
   
   # Parishes entirely vacant per Catholic: log
@@ -267,14 +271,17 @@ standardize_data <- function(data) {
   # Share of defections of diocesan priests: rescaling, logit
   data_std[, 12] <- logit_transform(data[, 12]/100)
   
-  # Vocation rate per 100k inhabitants: rescaling, logit
+  # Vocation rate per 100k inhabitant: rescaling, logit
   data_std[, 13] <- logit_transform(data[, 13]/100000)
+  colnames(data_std)[13] <- "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per inhabitant"
   
   # Vocation rate per 100k Catholics: rescaling, logit
   data_std[, 14] <- logit_transform(data[, 14]/100000)
+  colnames(data_std)[14] <- "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per Catholic"
   
-  # Candidates per 100 priests: rescaling, log
+  # Candidates for diocesan and religious clergy per 100 priests: rescaling, log
   data_std[, 15] <- log_transform(data[, 15]*100)
+  colnames(data_std)[15] <- "Philosophy+theology candidates for diocesan and religious clergy per priest"
   
   # Candidates for diocesan clergy in theology centres per Catholic: log
   data_std[, 16] <- log_transform(data[, 16])
@@ -315,6 +322,29 @@ cluster_data_2022_std <- standardize_data(analysis_data)
 # Verify the transformation
 summary(cluster_data_2022_std[, 2:25])
 
+# Compute correlation matrix, handling NAs with pairwise complete observations
+cor_matrix <- cor(cluster_data_2022_std[, 2:25], use = "pairwise.complete.obs")
+
+# Melt the correlation matrix for ggplot
+melted_cor <- melt(cor_matrix)
+
+# Load stringr for str_wrap
+library(stringr)
+
+# Create the correlation heatmap with monochromatic scale and filtered labels
+ggplot(data = melted_cor, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "black", mid = "white", high = "black", midpoint = 0, limits = c(-1, 1), name = "Correlation") +
+  geom_text(aes(label = ifelse(abs(value) > 0.8, round(value, 2), "")), color = "white", size = 3) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 20)) +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 20)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.title = element_blank(),
+        panel.grid = element_blank()) +
+  coord_fixed() +
+  labs(title = "Correlation Heatmap of Standardized Variables")
 #Plot
 
 # Define the transformation groups and choose one representative variable from each:
