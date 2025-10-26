@@ -1,26 +1,29 @@
 rm(list = ls())
 
+# Load libraries
 library(reshape2)
 library(viridis)
 library(ggplot2)
 library(psych)
-library(moments)  
+library(moments)
 library(gridExtra)
 library(scales)
 library(tidyr)
+library(dplyr)
+library(stringr)
 
-# Local development environment
+# Set working directory
 #path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
 path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_data)
 
 
-#---- Create the dataset ---- 
+# ---- Data Loading and Initial Processing ----
 
-# Read the dataset, preserving original column names with spaces
-final_geo_table <- read.csv("final_geo_table.csv", sep= ";", check.names = FALSE)
+# Read the dataset, preserving original column names
+final_geo_table <- read.csv("final_geo_table.csv", sep = ";", check.names = FALSE)
 
-# Define the list of columns to keep, using exact names with spaces
+# Define columns to keep
 columns_to_keep <- c(
   "Region",
   "Year",
@@ -29,14 +32,14 @@ columns_to_keep <- c(
   "Catholics in thousands",
   "Area in km^2",
   "Catholics per pastoral centre",
-  "Parishes with diocesan pastor", 
-  "Parishes with religious pastor", 
+  "Parishes with diocesan pastor",
+  "Parishes with religious pastor",
   "Parishes without pastor administered by another priest",
   "Parishes without pastor entrusted to permanent deacons",
   "Parishes without pastor entrusted to non-priest religious men",
   "Parishes without pastor entrusted to religious women",
-  "Parishes without pastor entrusted to laypeople", 
-  "Parishes entirely vacant", 
+  "Parishes without pastor entrusted to laypeople",
+  "Parishes entirely vacant",
   "Catholics per priest",
   "Yearly ordinations of diocesan priests as share of those incardinated on January 1",
   "Yearly deaths of diocesan priests as share of those incardinated on January 1",
@@ -60,278 +63,339 @@ columns_to_keep <- c(
   "Inhabitants in thousands"
 )
 
-# Create the subset dataframe
-cluster_data <- final_geo_table[, columns_to_keep]
+# Subset to relevant columns
+cluster_data <- final_geo_table %>% select(all_of(columns_to_keep))
 
-# Manual corrections
+# Apply manual corrections for specific data issues
+cluster_data <- cluster_data %>%
+  mutate(
+    `Yearly deaths of diocesan priests as share of those incardinated on January 1` = if_else(
+      Region == "French Guiana",
+      `Yearly deaths of diocesan priests as share of those incardinated on January 1` / 100,
+      `Yearly deaths of diocesan priests as share of those incardinated on January 1`
+    ),
+    `Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1` = if_else(
+      Region == "Finland",
+      `Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1` / 100,
+      `Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1`
+    ),
+    `Confirmations per 1000 Catholics` = if_else(
+      Region == "Sri Lanka",
+      `Confirmations per 1000 Catholics` / 100,
+      `Confirmations per 1000 Catholics`
+    ),
+    `Confirmations per 1000 Catholics` = if_else(
+      Region == "Mali",
+      8.29,
+      `Confirmations per 1000 Catholics`
+    )
+  )
 
-cluster_data[cluster_data$Region == "French Guiana", "Yearly deaths of diocesan priests as share of those incardinated on January 1"] <- 
-  cluster_data[cluster_data$Region == "French Guiana", "Yearly deaths of diocesan priests as share of those incardinated on January 1"] / 100
-
-cluster_data[cluster_data$Region == "Finland", "Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1"] <- 
-  cluster_data[cluster_data$Region == "Finland", "Yearly ordinations minus deaths and defections of diocesan priests as share of those incardinated on January 1"] / 100
-
-cluster_data[cluster_data$Region == "Sri Lanka", "Confirmations per 1000 Catholics"] <- 
-  cluster_data[cluster_data$Region == "Sri Lanka", "Confirmations per 1000 Catholics"] / 100
-
-cluster_data[cluster_data$Region == "Mali", "Confirmations per 1000 Catholics"] <- 
-  8.29
-
-# Create country_data by filtering rows where Year == 2022
-country_data <- cluster_data[cluster_data$Year == 2022, ]
-
-# Remove the Year column
-country_data <- country_data[, colnames(country_data) != "Year"]
-
-# Filter only countries for descriptive statistics
-country_data <- country_data[country_data$`Region type` == "Country", ]
-
-# Remove countries with high percentage of missing values
+# Filter to 2022 country-level data and remove unwanted countries
 countries_to_remove <- c("Dem. Peoples Rep. Of Korea", "China (Mainland)")
 
-# Filter out these countries from cluster_data_2022
-country_data <- country_data[!country_data$Region %in% countries_to_remove, ]
+country_data <- cluster_data %>%
+  filter(Year == 2022, `Region type` == "Country") %>%
+  filter(!Region %in% countries_to_remove) %>%
+  select(-Year, -`Region type`)
+
+# Print summary statistics
+summary(country_data)
 
 
-#---- Descriptive statistics ---- 
+# ---- Variable Mutations and Feature Engineering ----
 
-# Select only the numeric variables (exclude Region type)
-analysis_data <- country_data[, !names(country_data) %in% c("Region type")]
+# Perform mutations and select only the final desired columns
+analysis_data <- country_data %>%
+  mutate(
+    `Catholics per km^2` = (`Catholics in thousands` * 1000) / `Area in km^2`,
+    `Share of diocesan pastors` = `Parishes with diocesan pastor` / (`Parishes with diocesan pastor` + `Parishes with religious pastor`),
+    `Non-vacant parishes administered by non-pastor priests per Catholic` = `Parishes without pastor administered by another priest` / (`Catholics in thousands` * 1000),
+    `Share of non-vacant parishes entrusted to religious women or laypeople` = (`Parishes without pastor entrusted to religious women` + `Parishes without pastor entrusted to laypeople`) /
+      (`Parishes with diocesan pastor` + `Parishes with religious pastor` + `Parishes without pastor administered by another priest` +
+         `Parishes without pastor entrusted to permanent deacons` + `Parishes without pastor entrusted to non-priest religious men` +
+         `Parishes without pastor entrusted to religious women` + `Parishes without pastor entrusted to laypeople`),
+    `Parishes entirely vacant per Catholic` = `Parishes entirely vacant` / (`Catholics in thousands` * 1000),
+    `Candidates for diocesan clergy in theology centres per Catholic` = `Candidates for diocesan clergy in theology centres` / (`Catholics in thousands` * 1000),
+    `Candidates for religious clergy in theology centres per Catholic` = `Candidates for religious clergy in theology centres` / (`Catholics in thousands` * 1000),
+    `Infant baptisms (people up to 7 years old) per Catholic` = `Infant baptisms (people up to 7 years old)` / (`Catholics in thousands` * 1000),
+    `Adult baptisms (people over 7 years old) per Catholic` = `Adult baptisms (people over 7 years old)` / (`Catholics in thousands` * 1000),
+    `Baptisms per inhabitant` = `Baptisms` / (`Inhabitants in thousands` * 1000),
+    `Marriages between Catholics per Catholic` = `Marriages between Catholics` / (`Catholics in thousands` * 1000),
+    `Mixed marriages per inhabitant` = `Mixed marriages` / (`Inhabitants in thousands` * 1000),
+    `Share of mixed marriages` = `Mixed marriages per inhabitant` / (`Marriages between Catholics per Catholic` + `Mixed marriages per inhabitant`),
+    `Confirmations per Catholic` = `Confirmations per 1000 Catholics` / 1000,
+    `First Communions per Catholic` = `First Communions per 1000 Catholics` / 1000
+  ) %>%
+  select(
+    Region,
+    `Catholics per 100 inhabitants`,
+    `Catholics per km^2`,
+    `Catholics per pastoral centre`,
+    `Share of diocesan pastors`,
+    `Non-vacant parishes administered by non-pastor priests per Catholic`,
+    `Share of non-vacant parishes entrusted to religious women or laypeople`,
+    `Parishes entirely vacant per Catholic`,
+    `Catholics per priest`,
+    `Yearly ordinations of diocesan priests as share of those incardinated on January 1`,
+    `Yearly deaths of diocesan priests as share of those incardinated on January 1`,
+    `Yearly defections of diocesan priests as share of those incardinated at January 1`,
+    `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants`,
+    `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics`,
+    `Philosophy+theology candidates for diocesan and religious clergy per 100 priests`,
+    `Candidates for diocesan clergy in theology centres per Catholic`,
+    `Candidates for religious clergy in theology centres per Catholic`,
+    `Infant baptisms (people up to 7 years old) per Catholic`,
+    `Adult baptisms (people over 7 years old) per Catholic`,
+    `Baptisms per inhabitant`,
+    `Marriages between Catholics per Catholic`,
+    `Mixed marriages per inhabitant`,
+    `Share of mixed marriages`,
+    `Confirmations per Catholic`,
+    `First Communions per Catholic`
+  )
 
-# Create comprehensive summary statistics
-summary_stats <- data.frame(
-  N = sapply(analysis_data[,-1], function(x) sum(!is.na(x))),
-  Mean = sapply(analysis_data[,-1], function(x) round(mean(x, na.rm = TRUE), 2)),
-  SD = sapply(analysis_data[,-1], function(x) round(sd(x, na.rm = TRUE), 2)),
-  Min = sapply(analysis_data[,-1], function(x) round(min(x, na.rm = TRUE), 2)),
-  Max = sapply(analysis_data[,-1], function(x) round(max(x, na.rm = TRUE), 2)),
-  Median = sapply(analysis_data[,-1], function(x) round(median(x, na.rm = TRUE), 2)),
-  Missing_Pct = sapply(analysis_data[,-1], function(x) round(sum(is.na(x))/length(x)*100, 1)),
-  Skewness = sapply(analysis_data[,-1], function(x) round(skewness(x, na.rm = TRUE), 2))
-)
-
-# Sort by variable type (for better readability)
-print(summary_stats)
-
-## Apply the desired variable mutations
-
-# Catholics per km^2: divide col 3 by col 4
-analysis_data[, 4] <- (analysis_data[, 3] * 1000) / analysis_data[, 4]
-colnames(analysis_data)[4] <- "Catholics per km^2"
-
-# Share of diocesan pastors (historical rootedness of the Church?)
-analysis_data[, 6] <- analysis_data[, 6] / (analysis_data[, 6] + analysis_data[, 7])
-colnames(analysis_data)[6] <- "Share of diocesan pastors"
-
-# Non-vacant parishes administered by non-pastor priests per Catholic (clergy capabilities?)
-analysis_data[, 8] <- analysis_data[, 8] / (analysis_data[, 3] * 1000)
-colnames(analysis_data)[8] <- "Non-vacant parishes administered by non-pastor priests per Catholic"
-
-# Share of non-vacant parishes entrusted to religious women or laypeople (strength of egalitarian/democratic values?)
-analysis_data[, 12] <- (analysis_data[, 11] + analysis_data[, 12]) / (analysis_data[, 6] + analysis_data[, 7] + 
-                                                                      analysis_data[, 8] + analysis_data[, 9] + 
-                                                                      analysis_data[, 10] + analysis_data[, 11] +
-                                                                      analysis_data[, 12])
-colnames(analysis_data)[12] <- "Share of non-vacant parishes entrusted to religious women or laypeople"
-
-# Parishes entirely vacant per Catholic (decline of religious practice?)
-analysis_data[, 13] <- analysis_data[, 13] / (analysis_data[, 3] * 1000)
-colnames(analysis_data)[13] <- "Parishes entirely vacant per Catholic"
-
-# Candidates for diocesan clergy in theology centres: normalize per Catholic
-analysis_data[, 22] <- analysis_data[, 22] / (analysis_data[, 3] * 1000)
-colnames(analysis_data)[22] <- "Candidates for diocesan clergy in theology centres per Catholic"
-
-# Candidates for religious clergy in theology centres: normalize per Catholic
-analysis_data[, 23] <- analysis_data[, 23] / (analysis_data[, 3] * 1000)
-colnames(analysis_data)[23] <- "Candidates for religious clergy in theology centres per Catholic"
-
-# Infant baptisms (people up to 7 years old): normalize per Catholic (familial transmission of faith?)
-analysis_data[, 24] <- analysis_data[, 24] / (analysis_data[, 3] * 1000)
-colnames(analysis_data)[24] <- "Infant baptisms (people up to 7 years old) per Catholic"
-
-# Adult baptisms (people over 7 years old): normalize per Catholic (efficacy of evangelization?)
-analysis_data[, 25] <- analysis_data[, 25] / (analysis_data[, 3] * 1000)
-colnames(analysis_data)[25] <- "Adult baptisms (people over 7 years old) per Catholic"
-
-# Baptisms: normalize per inhabitant (Church growth?)
-analysis_data[, 26] <- analysis_data[, 26] / (analysis_data[, 34] * 1000)
-colnames(analysis_data)[26] <- "Baptisms per inhabitant"
-
-# Marriages between Catholics: normalize per Catholic (piety of Catholic couples?)
-analysis_data[, 28] <- analysis_data[, 28] / (analysis_data[, 3] * 1000)
-colnames(analysis_data)[28] <- "Marriages between Catholics per Catholic"
-
-# Mixed marriages: normalize per inhabitant (marital evangelization potential?)
-analysis_data[, 29] <- analysis_data[, 29] / (analysis_data[, 34] * 1000)
-colnames(analysis_data)[29] <- "Mixed marriages per inhabitant"
-
-# Share of mixed marriages (religious diversity/secularization/Church growth???)
-analysis_data[, 30] <- analysis_data[, 29] / (analysis_data[, 28] + analysis_data[, 29])
-colnames(analysis_data)[30] <- "Share of mixed marriages"
-
-# Confirmations per Catholic
-analysis_data[, 32] <- analysis_data[, 32] / (analysis_data[, 3] * 1000)
-colnames(analysis_data)[32] <- "Confirmations per Catholic"
-
-# First Communions per Catholic
-analysis_data[, 33] <- analysis_data[, 33] / (analysis_data[, 3] * 1000)
-colnames(analysis_data)[33] <- "First Communions per Catholic"
-
-## TO DROP: columns 3,7,9-11,18,27,31,34.
-analysis_data <- analysis_data[, -c(3, 7, 9:11, 18, 27, 31, 34)]
+# Print column names and summary for verification
 names(analysis_data)
-
 summary(analysis_data)
 
-#for (i in 2:ncol(analysis_data)) {
-#  col_name <- names(analysis_data)[i]
-#  min_val <- min(analysis_data[, i], na.rm = TRUE)
-#  print(paste(col_name, "- Min:", min_val))
-#}
 
-# Histograms for Representative Variables -- made a unique code after the standardization but we can add something here if needed
+# ---- Transformation Functions ----
 
-#---- Standardization ---- 
+# Small constant used in place of ".."
+small_constant <- 0.007297
 
-# Log computation adjusted with ad-hoc epsilon
+# Log transformation with adjusted epsilon
 log_transform <- function(x) {
-  # Identify non-zero values excluding exactly 0.007297
-  non_zero <- x[x > 0 & x != 0.007297]
+  # Exclude zeros and specific value 0.007297 for min calculation
+  non_zero <- x[x > 0 & x != small_constant]
   
-  # Handle case where there are no valid non-zero values
+  # Fallback epsilon if no valid non-zero values
   if (length(non_zero) == 0) {
-    epsilon <- 1e-6  # Fallback to a small constant if no valid min found
+    epsilon <- 1e-6
   } else {
     min_val <- min(non_zero, na.rm = TRUE)
     epsilon <- 0.5 * min_val
   }
   
-  # Adjusted log computation
+  # Apply adjusted log
   log(x + epsilon)
 }
 
-# Logit computation adjusted with ad-hoc epsilon
+# Logit transformation with adjusted epsilon
 logit_transform <- function(p) {
-  # Identify non-zero values excluding exactly 0.007297
-  non_zero <- p[p > 0 & p != 0.007297]
+  # Exclude zeros and specific value 0.007297 for min calculation
+  non_zero <- p[p > 0 & p != small_constant]
   
-  # Handle case where there are no valid non-zero values
+  # Fallback epsilon if no valid non-zero values
   if (length(non_zero) == 0) {
-    epsilon <- 1e-6  # Fallback to a small constant if no valid min found
+    epsilon <- 1e-6
   } else {
     min_val <- min(non_zero, na.rm = TRUE)
     epsilon <- 0.5 * min_val
   }
   
-  # Adjust p to [epsilon, 1 - epsilon] to avoid log(0) or division by zero
+  # Adjust p to avoid log(0) or division by zero
   p_adjusted <- pmin(pmax(p, epsilon), 1 - epsilon)
   
-  # Adjusted logit computation
+  # Apply adjusted logit
   log(p_adjusted / (1 - p_adjusted))
 }
 
-# Function to apply the standardization plan
+
+# ---- Standardization ----
+
+# Function to apply transformations and renames
 standardize_data <- function(data) {
-  
-  # Create a copy of the data to avoid modifying the original
-  data_std <- data
-  
-  # Catholics per 100 inhabitants: rescaling, logit
-  data_std[, 2] <- logit_transform(data[, 2]/100)
-  colnames(data_std)[2] <- "Share of Catholics"
-  
-  # Catholics per km^2: log
-  data_std[, 3] <- log_transform(data[, 3])
-  
-  # Catholics per pastoral centre: log
-  data_std[, 4] <- log_transform(data[, 4])
-  
-  # Share of diocesan pastors: logit
-  data_std[, 5] <- logit_transform(data[, 5])
-  
-  # Non-vacant parishes administered by non-pastor priests per Catholic: log
-  data_std[, 6] <- log_transform(data[, 6])
-  
-  # Share of non-vacant parishes entrusted to religious women or laypeople: logit
-  data_std[, 7] <- logit_transform(data[, 7])
-  
-  # Parishes entirely vacant per Catholic: log
-  data_std[, 8] <- log_transform(data[, 8])
-  
-  # Catholics per priest: log
-  data_std[, 9] <- log_transform(data[, 9])
-  
-  # Share of ordinations of diocesan priests: rescaling, logit
-  data_std[, 10] <- logit_transform(data[, 10]/100)
-  
-  # Share of deaths of diocesan priests: rescaling, logit
-  data_std[, 11] <- logit_transform(data[, 11]/100)
-  
-  # Share of defections of diocesan priests: rescaling, logit
-  data_std[, 12] <- logit_transform(data[, 12]/100)
-  
-  # Vocation rate per 100k inhabitant: rescaling, logit
-  data_std[, 13] <- logit_transform(data[, 13]/100000)
-  colnames(data_std)[13] <- "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per inhabitant"
-  
-  # Vocation rate per 100k Catholics: rescaling, logit
-  data_std[, 14] <- logit_transform(data[, 14]/100000)
-  colnames(data_std)[14] <- "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per Catholic"
-  
-  # Candidates for diocesan and religious clergy per 100 priests: rescaling, log
-  data_std[, 15] <- log_transform(data[, 15]*100)
-  colnames(data_std)[15] <- "Philosophy+theology candidates for diocesan and religious clergy per priest"
-  
-  # Candidates for diocesan clergy in theology centres per Catholic: log
-  data_std[, 16] <- log_transform(data[, 16])
-  
-  # Candidates for religious clergy in theology centres per Catholic: log
-  data_std[, 17] <- log_transform(data[, 17])
-  
-  # Infant baptisms (people up to 7 years old) per Catholic: log
-  data_std[, 18] <- log_transform(data[, 18])
-  
-  # Adult baptisms (people over 7 years old) per Catholic: log
-  data_std[, 19] <- log_transform(data[, 19])
-  
-  # Baptisms per inhabitant: logit
-  data_std[, 20] <- logit_transform(data[, 20])
-  
-  # Marriages between Catholics per Catholic: log
-  data_std[, 21] <- log_transform(data[, 21])
-  
-  # Mixed marriages per inhabitant: log
-  data_std[, 22] <- log_transform(data[, 22])
-  
-  # Share of mixed marriages: 
-  data_std[, 23] <- logit_transform(data[, 23])
-  
-  # Confirmations per Catholic
-  data_std[, 24] <- log_transform(data[, 24])
-  
-  # First Communions per Catholic
-  data_std[, 25] <- log_transform(data[, 25])
+  data_std <- data %>%
+    mutate(
+      `Share of Catholics` = logit_transform(`Catholics per 100 inhabitants` / 100),
+      `Catholics per km^2` = log_transform(`Catholics per km^2`),
+      `Catholics per pastoral centre` = log_transform(`Catholics per pastoral centre`),
+      `Share of diocesan pastors` = logit_transform(`Share of diocesan pastors`),
+      `Non-vacant parishes administered by non-pastor priests per Catholic` = log_transform(`Non-vacant parishes administered by non-pastor priests per Catholic`),
+      `Share of non-vacant parishes entrusted to religious women or laypeople` = logit_transform(`Share of non-vacant parishes entrusted to religious women or laypeople`),
+      `Parishes entirely vacant per Catholic` = log_transform(`Parishes entirely vacant per Catholic`),
+      `Catholics per priest` = log_transform(`Catholics per priest`),
+      `Yearly ordinations of diocesan priests as share of those incardinated on January 1` = logit_transform(`Yearly ordinations of diocesan priests as share of those incardinated on January 1` / 100),
+      `Yearly deaths of diocesan priests as share of those incardinated on January 1` = logit_transform(`Yearly deaths of diocesan priests as share of those incardinated on January 1` / 100),
+      `Yearly defections of diocesan priests as share of those incardinated at January 1` = logit_transform(`Yearly defections of diocesan priests as share of those incardinated at January 1` / 100),
+      `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per inhabitant` = logit_transform(`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants` / 100000),
+      `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per Catholic` = logit_transform(`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics` / 100000),
+      `Philosophy+theology candidates for diocesan and religious clergy per priest` = log_transform(`Philosophy+theology candidates for diocesan and religious clergy per 100 priests` * 100),
+      `Candidates for diocesan clergy in theology centres per Catholic` = log_transform(`Candidates for diocesan clergy in theology centres per Catholic`),
+      `Candidates for religious clergy in theology centres per Catholic` = log_transform(`Candidates for religious clergy in theology centres per Catholic`),
+      `Infant baptisms (people up to 7 years old) per Catholic` = log_transform(`Infant baptisms (people up to 7 years old) per Catholic`),
+      `Adult baptisms (people over 7 years old) per Catholic` = log_transform(`Adult baptisms (people over 7 years old) per Catholic`),
+      `Baptisms per inhabitant` = logit_transform(`Baptisms per inhabitant`),
+      `Marriages between Catholics per Catholic` = log_transform(`Marriages between Catholics per Catholic`),
+      `Mixed marriages per inhabitant` = log_transform(`Mixed marriages per inhabitant`),
+      `Share of mixed marriages` = logit_transform(`Share of mixed marriages`),
+      `Confirmations per Catholic` = log_transform(`Confirmations per Catholic`),
+      `First Communions per Catholic` = log_transform(`First Communions per Catholic`)
+    ) %>%
+    select(
+      Region,
+      `Share of Catholics`,
+      `Catholics per km^2`,
+      `Catholics per pastoral centre`,
+      `Share of diocesan pastors`,
+      `Non-vacant parishes administered by non-pastor priests per Catholic`,
+      `Share of non-vacant parishes entrusted to religious women or laypeople`,
+      `Parishes entirely vacant per Catholic`,
+      `Catholics per priest`,
+      `Yearly ordinations of diocesan priests as share of those incardinated on January 1`,
+      `Yearly deaths of diocesan priests as share of those incardinated on January 1`,
+      `Yearly defections of diocesan priests as share of those incardinated at January 1`,
+      `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per inhabitant`,
+      `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per Catholic`,
+      `Philosophy+theology candidates for diocesan and religious clergy per priest`,
+      `Candidates for diocesan clergy in theology centres per Catholic`,
+      `Candidates for religious clergy in theology centres per Catholic`,
+      `Infant baptisms (people up to 7 years old) per Catholic`,
+      `Adult baptisms (people over 7 years old) per Catholic`,
+      `Baptisms per inhabitant`,
+      `Marriages between Catholics per Catholic`,
+      `Mixed marriages per inhabitant`,
+      `Share of mixed marriages`,
+      `Confirmations per Catholic`,
+      `First Communions per Catholic`
+    )
   
   return(data_std)
 }
 
-# Apply the standardization
+# Apply standardization
 cluster_data_2022_std <- standardize_data(analysis_data)
 
-# Verify the transformation
-summary(cluster_data_2022_std[, 2:25])
+# Verify transformations with summary (numeric columns only)
+summary(cluster_data_2022_std %>% select(-Region))
 
-# Compute correlation matrix, handling NAs with pairwise complete observations
-cor_matrix <- cor(cluster_data_2022_std[, 2:25], use = "pairwise.complete.obs")
 
-# Melt the correlation matrix for ggplot
+# ---- Transformation diagnostics ----
+
+# Define sigmoid function for logit inverse
+sigmoid <- function(y) {
+  1 / (1 + exp(-y))
+}
+
+# Create back-transformed dataset directly from standardized data
+back_transformed_data <- cluster_data_2022_std %>%
+  mutate(
+    # Logit inverses: simple sigmoid, then scale back to original range
+    `Catholics per 100 inhabitants_back` = sigmoid(`Share of Catholics`) * 100,
+    `Share of diocesan pastors_back` = sigmoid(`Share of diocesan pastors`),
+    `Share of non-vacant parishes entrusted to religious women or laypeople_back` = sigmoid(`Share of non-vacant parishes entrusted to religious women or laypeople`),
+    `Yearly ordinations of diocesan priests as share of those incardinated on January 1_back` = sigmoid(`Yearly ordinations of diocesan priests as share of those incardinated on January 1`) * 100,
+    `Yearly deaths of diocesan priests as share of those incardinated on January 1_back` = sigmoid(`Yearly deaths of diocesan priests as share of those incardinated on January 1`) * 100,
+    `Yearly defections of diocesan priests as share of those incardinated at January 1_back` = sigmoid(`Yearly defections of diocesan priests as share of those incardinated at January 1`) * 100,
+    `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants_back` = sigmoid(`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per inhabitant`) * 100000,
+    `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics_back` = sigmoid(`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per Catholic`) * 100000,
+    `Baptisms per inhabitant_back` = sigmoid(`Baptisms per inhabitant`),
+    `Share of mixed marriages_back` = sigmoid(`Share of mixed marriages`),
+    
+    # Log inverses: simple exp(y), with scaling where applicable (no epsilon subtraction)
+    `Catholics per km^2_back` = exp(`Catholics per km^2`),
+    `Catholics per pastoral centre_back` = exp(`Catholics per pastoral centre`),
+    `Non-vacant parishes administered by non-pastor priests per Catholic_back` = exp(`Non-vacant parishes administered by non-pastor priests per Catholic`),
+    `Parishes entirely vacant per Catholic_back` = exp(`Parishes entirely vacant per Catholic`),
+    `Catholics per priest_back` = exp(`Catholics per priest`),
+    `Philosophy+theology candidates for diocesan and religious clergy per 100 priests_back` = exp(`Philosophy+theology candidates for diocesan and religious clergy per priest`) / 100, # Since forward was log(*100)
+    `Candidates for diocesan clergy in theology centres per Catholic_back` = exp(`Candidates for diocesan clergy in theology centres per Catholic`),
+    `Candidates for religious clergy in theology centres per Catholic_back` = exp(`Candidates for religious clergy in theology centres per Catholic`),
+    `Infant baptisms (people up to 7 years old) per Catholic_back` = exp(`Infant baptisms (people up to 7 years old) per Catholic`),
+    `Adult baptisms (people over 7 years old) per Catholic_back` = exp(`Adult baptisms (people over 7 years old) per Catholic`),
+    `Marriages between Catholics per Catholic_back` = exp(`Marriages between Catholics per Catholic`),
+    `Mixed marriages per inhabitant_back` = exp(`Mixed marriages per inhabitant`),
+    `Confirmations per Catholic_back` = exp(`Confirmations per Catholic`),
+    `First Communions per Catholic_back` = exp(`First Communions per Catholic`)
+  ) %>%
+  select(Region, ends_with("_back"))
+
+# Print summary of back-transformed data for verification
+summary(back_transformed_data %>% select(-Region))
+
+# Assuming same row order, add RowID
+analysis_data$RowID <- 1:nrow(analysis_data)
+back_transformed_data$RowID <- 1:nrow(back_transformed_data)
+
+# Join by RowID and Region for safety
+plot_data <- inner_join(analysis_data, back_transformed_data, by = c("Region", "RowID")) %>%
+  select(-RowID)
+
+# List of variable names (original)
+var_names <- c(
+  "Catholics per 100 inhabitants",
+  "Catholics per km^2",
+  "Catholics per pastoral centre",
+  "Share of diocesan pastors",
+  "Non-vacant parishes administered by non-pastor priests per Catholic",
+  "Share of non-vacant parishes entrusted to religious women or laypeople",
+  "Parishes entirely vacant per Catholic",
+  "Catholics per priest",
+  "Yearly ordinations of diocesan priests as share of those incardinated on January 1",
+  "Yearly deaths of diocesan priests as share of those incardinated on January 1",
+  "Yearly defections of diocesan priests as share of those incardinated at January 1",
+  "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants",
+  "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics",
+  "Philosophy+theology candidates for diocesan and religious clergy per 100 priests",
+  "Candidates for diocesan clergy in theology centres per Catholic",
+  "Candidates for religious clergy in theology centres per Catholic",
+  "Infant baptisms (people up to 7 years old) per Catholic",
+  "Adult baptisms (people over 7 years old) per Catholic",
+  "Baptisms per inhabitant",
+  "Marriages between Catholics per Catholic",
+  "Mixed marriages per inhabitant",
+  "Share of mixed marriages",
+  "Confirmations per Catholic",
+  "First Communions per Catholic"
+)
+
+# Corresponding back names
+back_names <- paste0(var_names, "_back")
+
+# Create scatterplots
+plots <- list()
+for (i in seq_along(var_names)) {
+  orig_col <- var_names[i]
+  back_col <- back_names[i]
+  
+  # Use complete cases for plotting
+  temp_data <- plot_data %>%
+    select(all_of(c(orig_col, back_col, "Region"))) %>%
+    filter(complete.cases(select(., -Region)))
+  
+  if (nrow(temp_data) > 0) {
+    p <- ggplot(temp_data, aes(x = .data[[orig_col]], y = .data[[back_col]])) +
+      geom_point(alpha = 0.6) +
+      geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") + # y = x line for reference
+      labs(title = str_wrap(paste("Original vs Back-Transformed:", orig_col), width = 40),
+           x = "Original", y = "Back-Transformed") +
+      theme_minimal()
+    
+    plots[[i]] <- p
+  }
+}
+
+# Display plots in six different 2x2 grids
+grid.arrange(grobs = plots[1:4], ncol = 2, top = "Grid 1")
+grid.arrange(grobs = plots[5:8], ncol = 2, top = "Grid 2")
+grid.arrange(grobs = plots[9:12], ncol = 2, top = "Grid 3")
+grid.arrange(grobs = plots[13:16], ncol = 2, top = "Grid 4")
+grid.arrange(grobs = plots[17:20], ncol = 2, top = "Grid 5")
+grid.arrange(grobs = plots[21:24], ncol = 2, top = "Grid 6")
+
+
+# ---- Correlation Analysis and Visualization ----
+
+# Compute correlation matrix (pairwise complete for NAs)
+numeric_std <- cluster_data_2022_std %>% select(-Region)
+cor_matrix <- cor(numeric_std, use = "pairwise.complete.obs")
+
+# Melt for plotting
 melted_cor <- melt(cor_matrix)
 
-# Load stringr for str_wrap
-library(stringr)
-
-# Create the correlation heatmap with monochromatic scale and filtered labels
+# Create correlation heatmap
 ggplot(data = melted_cor, aes(x = Var1, y = Var2, fill = value)) +
   geom_tile(color = "white") +
   scale_fill_gradient2(low = "black", mid = "white", high = "black", midpoint = 0, limits = c(-1, 1), name = "Correlation") +
@@ -339,13 +403,17 @@ ggplot(data = melted_cor, aes(x = Var1, y = Var2, fill = value)) +
   scale_x_discrete(labels = function(x) str_wrap(x, width = 20)) +
   scale_y_discrete(labels = function(x) str_wrap(x, width = 20)) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 8),
-        axis.text.y = element_text(size = 8),
-        axis.title = element_blank(),
-        panel.grid = element_blank()) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 8),
+    axis.title = element_blank(),
+    panel.grid = element_blank()
+  ) +
   coord_fixed() +
   labs(title = "Correlation Heatmap of Standardized Variables")
-#Plot
+
+
+# ---- Density and skewness diagnostics [not yet modified] ----
 
 # Define the transformation groups and choose one representative variable from each:
 # Group 1: Z-score only (bounded or mild skew)
@@ -398,41 +466,9 @@ create_comparison_plot <- function(data_before, data_after, col_index, var_name,
   return(p)
 }
 
-# Create plots for the four specified variables
-
-# 1. Catholics per 100 inhabitants (Column 3) - Z-score only
-plot1 <- create_comparison_plot(
-  cluster_data_2022, cluster_data_2022_std, 3,
-  "Catholics per 100 inhabitants", "Z-score only"
-)
-
-# 2. Catholics in thousands (Column 4) - log(x+1) → z-score
-plot2 <- create_comparison_plot(
-  cluster_data_2022, cluster_data_2022_std, 4,
-  "Catholics in thousands", "log(x+1) → z-score"
-)
-
-# 3. Yearly ordinations of diocesan priests (Column 7) - Proportion → logit → z-score
-plot3 <- create_comparison_plot(
-  cluster_data_2022, cluster_data_2022_std, 7,
-  "Yearly ordinations of diocesan priests (%)", "Proportion → logit → z-score"
-)
-
-# 4. Area in km² (Column 5) - log(x) → z-score
-plot4 <- create_comparison_plot(
-  cluster_data_2022, cluster_data_2022_std, 5,
-  "Area in km²", "log(x) → z-score"
-)
-
-# Arrange all plots in a grid
-grid.arrange(
-  plot1, plot2, plot3, plot4,
-  ncol = 2, nrow = 2,
-  top = "Distribution Comparison: Before and After Standardization"
-)
-
 
 #---- Analysis of the missing values ---- 
+
 # Number of missing values per variable (column)
 missing_per_variable <- colSums(is.na(cluster_data_2022))
 print("Missing values per variable:")
@@ -551,18 +587,4 @@ if(nrow(missing_summary) > 0) {
   
   print(p3)
 }
-
-
-# Remove 
-
-# Remove countries with high percentage of missing values
-countries_to_remove <- c("Dem. Peoples Rep. Of Korea", "China (Mainland)")
-
-# Filter out these countries from cluster_data_2022
-cluster_data_2022 <- cluster_data_2022[!cluster_data_2022$Region %in% countries_to_remove, ]
-
-# Also filter from cluster_data_2022_std (the standardized version)
-cluster_data_2022_std <- cluster_data_2022_std[!cluster_data_2022_std$Region %in% countries_to_remove, ]
-
-
 
