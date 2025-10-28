@@ -626,3 +626,55 @@ imputed_z <- data.frame(Region = zscores$Region, imputed_numeric)
 
 # View the first few rows to check
 head(imputed_z)
+
+# Extract numeric variables
+numeric_imp <- imputed_z %>% select(-Region)
+
+# Convert to matrix for easier computation
+data_matrix <- as.matrix(numeric_imp)
+
+# Define the Huber loss function
+huber_loss <- function(e, delta = 1.345) {  # delta=1.345 is a common choice for 95% efficiency
+  ifelse(abs(e) <= delta, 0.5 * e^2, delta * abs(e) - 0.5 * delta^2)
+}
+
+# Define the Huber distance function between two vectors
+huber_distance <- function(x, y, delta = 1.345) {
+  diffs <- x - y
+  sqrt(sum(huber_loss(diffs, delta)))
+}
+
+# Compute the pairwise Huber distance matrix
+# Note: This uses a loop for simplicity; for large n (>1000 rows), consider parallelization or optimization
+n <- nrow(data_matrix)
+dist_matrix <- matrix(0, n, n)
+for (i in 1:(n-1)) {
+  for (j in (i+1):n) {
+    dist_matrix[i, j] <- huber_distance(data_matrix[i, ], data_matrix[j, ])
+    dist_matrix[j, i] <- dist_matrix[i, j]  # Symmetric
+  }
+}
+
+# Convert to dist object
+huber_dist <- as.dist(dist_matrix)
+
+# Perform hierarchical clustering with Ward's method
+# Use "ward.D2" for the unsquared version (recommended for distance matrices)
+hc <- hclust(huber_dist, method = "ward.D2")
+
+# Plot the dendrogram
+plot(hc, labels = imputed_z$Region, main = "Hierarchical Clustering Dendrogram (Huber Distance, Ward's Linkage)",
+     xlab = "Regions/Units", sub = NULL, hang = -1)
+
+# To cut the dendrogram into k clusters (e.g., k=3), and get cluster assignments
+k <- 3  # Choose based on dendrogram or validation
+clusters <- cutree(hc, k = k)
+imputed_z$Cluster <- clusters  # Add to dataframe
+
+# View cluster assignments
+table(imputed_z$Cluster, imputed_z$Region)  # Summary by Region
+
+# Optional: For validation, compute cophenetic correlation to check how well the dendrogram preserves distances
+coph_cor <- cor(huber_dist, cophenetic(hc))
+print(paste("Cophenetic Correlation:", round(coph_cor, 3)))  # Closer to 1 is better
+
