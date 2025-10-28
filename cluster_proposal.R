@@ -11,6 +11,7 @@ library(scales)
 library(tidyr)
 library(dplyr)
 library(stringr)
+library(VIM)
 
 # Set working directory
 #path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
@@ -485,7 +486,7 @@ create_comparison_plot <- function(data_before, data_after, col_index, var_name,
 }
 
 
-#---- Analysis of the missing values [not yet modified] ---- 
+# ---- Analysis of the missing values [not yet modified] ---- 
 
 # Number of missing values per variable (column)
 missing_per_variable <- colSums(is.na(cluster_data_2022))
@@ -613,3 +614,15 @@ zscores <- cluster_data_2022_std %>%
   mutate(across(where(is.numeric), ~ (.-mean(., na.rm=TRUE))/sd(., na.rm=TRUE)))
 summary(zscores)
 
+numeric_z <- zscores %>% select(-Region)
+
+# Perform KNN imputation: k=15 nearest neighbors, using Euclidean distance (default in VIM::kNN).
+# It computes distances based on available (non-NA) values, scaling them appropriately.
+# Set imp_var=FALSE to avoid adding imputation indicator columns.
+imputed_numeric <- kNN(numeric_z, k = 15, dist_var = colnames(numeric_z), imp_var = FALSE)
+
+# Combine the imputed numeric data with the original 'Region' column
+imputed_z <- data.frame(Region = zscores$Region, imputed_numeric)
+
+# View the first few rows to check
+head(imputed_z)
