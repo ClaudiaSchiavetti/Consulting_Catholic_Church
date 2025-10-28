@@ -413,6 +413,24 @@ ggplot(data = melted_cor, aes(x = Var1, y = Var2, fill = value)) +
   labs(title = "Correlation Heatmap of Standardized Variables")
 
 
+# ---- Missing values ----
+
+missing_info_tidy <- cluster_data_2022_std %>%
+  mutate(Row_Index = row_number()) %>%
+  pivot_longer(cols = -c(Row_Index, Region), names_to = "Variable", values_to = "Value") %>%
+  filter(is.na(Value)) %>%
+  select(Row_Index, Region, Variable) %>%
+  arrange(Region, Variable)
+
+print(missing_info_tidy)
+
+# Summary with tidyverse
+missing_summary_tidy <- missing_info_tidy %>%
+  count(Region, Variable, name = "Missing_Count")
+
+print(missing_summary_tidy, n = nrow(missing_summary_tidy))
+
+
 # ---- Density and skewness diagnostics [not yet modified] ----
 
 # Define the transformation groups and choose one representative variable from each:
@@ -467,7 +485,7 @@ create_comparison_plot <- function(data_before, data_after, col_index, var_name,
 }
 
 
-#---- Analysis of the missing values ---- 
+#---- Analysis of the missing values [not yet modified] ---- 
 
 # Number of missing values per variable (column)
 missing_per_variable <- colSums(is.na(cluster_data_2022))
@@ -587,4 +605,11 @@ if(nrow(missing_summary) > 0) {
   
   print(p3)
 }
+
+
+# ---- Cluster analysis proper ----
+
+zscores <- cluster_data_2022_std %>%
+  mutate(across(where(is.numeric), ~ (.-mean(., na.rm=TRUE))/sd(., na.rm=TRUE)))
+summary(zscores)
 
