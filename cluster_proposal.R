@@ -16,6 +16,9 @@ library(stringr)
 library(VIM)
 library(ggdendro)
 library(plotly)
+library(NbClust)
+library(cluster)
+library(factoextra)
 
 # Set working directory
 path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
@@ -700,17 +703,24 @@ pt_ggdend <- ggdendrogram(pt_hc, rotate = TRUE, size = 2) +
 pt_interactive_dend <- ggplotly(pt_ggdend)
 pt_interactive_dend
 
-# To cut the dendrogram into k clusters (e.g., k=3), and get cluster assignments
-k <- 3  # Choose based on dendrogram or validation
-pt_clusters <- cutree(pt_hc, k = k)
-imputed_z$`PT cluster` <- pt_clusters  # Add to dataframe
+# CH index (variance ratio criterion) for k choice
+pt_nb_res <- NbClust(pt_data_matrix, diss = pt_huber_dist, 
+                  distance = NULL, min.nc = 2, max.nc = 15, 
+                  method = "ward.D2", index = "ch")  # Or "all" for 30 indices
+pt_nb_res$Best.nc  # Optimal k by CH
 
-# View cluster assignments
-table(imputed_z$`PT cluster`, imputed_z$Region)  # Summary by Region
+# Silhouette method for k choice
+fviz_nbclust(imputed_z[, population_territory],
+             FUNcluster = function(x, k) list(cluster = cutree(pt_hc, k = k)),  # Wrap in list(cluster = ...)
+             method = "silhouette", k.max = 15,
+             diss = pt_huber_dist) + 
+  labs(title = "Silhouette Method for Optimal k")
+
+# k=2 is optimal for both methods
 
 # For validation, compute cophenetic correlation to check how well the dendrogram preserves distances
 pt_coph_cor <- cor(pt_huber_dist, cophenetic(pt_hc))
-print(paste("Cophenetic Correlation:", round(pt_coph_cor, 3)))  # Closer to 1 is better
+print(paste("Cophenetic Correlation:", round(pt_coph_cor, 2)))  # Closer to 1 is better
 
 
 # ---- Cluster analysis: clergy and sacraments  ----
@@ -785,16 +795,23 @@ cs_ggdend <- ggdendrogram(cs_hc, rotate = TRUE, size = 2) +
 cs_interactive_dend <- ggplotly(cs_ggdend)
 cs_interactive_dend
 
-# To cut the dendrogram into k clusters (e.g., k=3), and get cluster assignments
-k <- 3  # Choose based on dendrogram or validation
-cs_clusters <- cutree(cs_hc, k = k)
-imputed_z$`CS cluster` <- cs_clusters  # Add to dataframe
+# CH index (variance ratio criterion) for k choice
+cs_nb_res <- NbClust(cs_data_matrix, diss = cs_huber_dist, 
+                  distance = NULL, min.nc = 2, max.nc = 15, 
+                  method = "ward.D2", index = "ch")  # Or "all" for 30 indices
+cs_nb_res$Best.nc  # Optimal k by CH
 
-# View cluster assignments
-table(imputed_z$`CS cluster`, imputed_z$Region)  # Summary by Region
+# Silhouette method for k choice
+fviz_nbclust(imputed_z[, clergy_sacraments],
+             FUNcluster = function(x, k) list(cluster = cutree(cs_hc, k = k)),  # Wrap in list(cluster = ...)
+             method = "silhouette", k.max = 15,
+             diss = cs_huber_dist) + 
+  labs(title = "Silhouette Method for Optimal k")
+
+# k=2 is optimal for both methods
 
 # For validation, compute cophenetic correlation to check how well the dendrogram preserves distances
 cs_coph_cor <- cor(cs_huber_dist, cophenetic(cs_hc))
-print(paste("Cophenetic Correlation:", round(cs_coph_cor, 3)))  # Closer to 1 is better
+print(paste("Cophenetic Correlation:", round(cs_coph_cor, 2)))  # Closer to 1 is better
 
 
