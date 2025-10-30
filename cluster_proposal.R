@@ -311,6 +311,80 @@ analysis_data <- country_data %>%
 names(analysis_data)
 summary(analysis_data)
 
+#Check for "new" missing values and decide what to do 
+
+missingness_per_country <- analysis_data %>%
+  mutate(
+    # Count NAs per row (country)
+    n_missing = rowSums(is.na(select(., -Region))),
+    # Count total variables (excluding Region)
+    n_total_vars = ncol(.) - 1,
+    # Calculate percentage missing
+    pct_missing = (n_missing / n_total_vars) * 100
+  ) %>%
+  select(Region, n_missing, n_total_vars, pct_missing) %>%
+  arrange(desc(n_missing))
+
+# View countries with ANY missing data
+missingness_per_country %>%
+  filter(n_missing > 0)
+
+# Summary statistics
+cat("Total countries:", nrow(analysis_data), "\n")
+cat("Countries with ANY missing:", sum(missingness_per_country$n_missing > 0), "\n")
+cat("Countries with >20% missing:", sum(missingness_per_country$pct_missing > 20), "\n")
+cat("Countries with >10% missing:", sum(missingness_per_country$pct_missing > 10), "\n")
+cat("Countries with >5% missing:", sum(missingness_per_country$pct_missing > 5), "\n")
+
+high_missingness_countries <- missingness_per_country %>%
+  filter(pct_missing > 20)
+
+print(high_missingness_countries)
+
+if (nrow(high_missingness_countries) > 0) {
+  
+  for (country in high_missingness_countries$Region) {
+    cat("Country:", country, "\n")
+    
+    # Get all variables that are NA for this country
+    missing_vars <- analysis_data %>%
+      filter(Region == country) %>%
+      select(-Region) %>%
+      select(where(~is.na(.))) %>%
+      names()
+    
+    cat("Missing variables (", length(missing_vars), "):\n", sep = "")
+    for (var in missing_vars) {
+      cat("  -", var, "\n")
+    }
+    cat("\n")
+  }
+}
+
+moderate_missingness_countries <- missingness_per_country %>%
+  filter(pct_missing > 5 & pct_missing <= 20)
+
+print(moderate_missingness_countries)
+
+if (nrow(moderate_missingness_countries) > 0) {
+  
+  for (country in moderate_missingness_countries$Region) {
+    cat("Country:", country, "\n")
+    
+    missing_vars <- analysis_data %>%
+      filter(Region == country) %>%
+      select(-Region) %>%
+      select(where(~is.na(.))) %>%
+      names()
+    
+    cat("Missing variables (", length(missing_vars), "):\n", sep = "")
+    for (var in missing_vars) {
+      cat("  -", var, "\n")
+    }
+    cat("\n")
+  }
+}
+
 
 # ---- Transformation Functions ----
 
