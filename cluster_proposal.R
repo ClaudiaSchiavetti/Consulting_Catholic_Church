@@ -1,3 +1,5 @@
+# ---- Libraries and work setup ----
+
 rm(list = ls())
 
 # Load libraries
@@ -12,10 +14,12 @@ library(tidyr)
 library(dplyr)
 library(stringr)
 library(VIM)
+library(ggdendro)
+library(plotly)
 
 # Set working directory
-path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+#path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_data)
 
 
@@ -118,7 +122,7 @@ print(missing_summary_tidy, n = nrow(missing_summary_tidy))
 # Filter to 2022 country-level data and remove unwanted countries
 countries_to_remove <- c("Dem. Peoples Rep. Of Korea", "China (Mainland)")
 
-country_data <- cluster_data %>%
+country_data <- country_data %>%
   filter(!Region %in% countries_to_remove)
  
 
@@ -613,7 +617,7 @@ create_comparison_plot <- function(data_before, data_after, col_index, var_name,
 }
 
 
-# ---- Cluster analysis proper ----
+# ---- Imputation of NaNs ----
 
 zscores <- cluster_data_2022_std %>%
   mutate(across(where(is.numeric), ~ (.-mean(., na.rm=TRUE))/sd(., na.rm=TRUE)))
@@ -630,13 +634,27 @@ imputed_numeric <- kNN(numeric_z, k = 15, dist_var = colnames(numeric_z), imp_va
 imputed_z <- data.frame(Region = zscores$Region, imputed_numeric)
 
 # View the first few rows to check
+colnames(imputed_z) <- colnames(zscores)
 head(imputed_z)
 
+
+# ---- Cluster analysis: population and territory  ----
+
+# Define list of variables
+population_territory <- c("Share of Catholics",
+                          "Catholics per km^2",
+                          "Catholics per pastoral centre",
+                          "Share of diocesan pastors",
+                          "Non-vacant parishes administered by non-pastor priests per Catholic",
+                          "Share of non-vacant parishes entrusted to religious women or laypeople",
+                          "Parishes entirely vacant per Catholic",
+                          "Catholics per priest")
+
 # Extract numeric variables
-numeric_imp <- imputed_z %>% select(-Region)
+popu_terr <- imputed_z %>% select(all_of(population_territory))
 
 # Convert to matrix for easier computation
-data_matrix <- as.matrix(numeric_imp)
+pt_data_matrix <- as.matrix(popu_terr)
 
 # Define the Huber loss function
 huber_loss <- function(e, delta = 1.345) {  # delta=1.345 is a common choice for 95% efficiency
@@ -651,35 +669,133 @@ huber_distance <- function(x, y, delta = 1.345) {
 
 # Compute the pairwise Huber distance matrix
 # Note: This uses a loop for simplicity; for large n (>1000 rows), consider parallelization or optimization
-n <- nrow(data_matrix)
-dist_matrix <- matrix(0, n, n)
+n <- nrow(pt_data_matrix)
+pt_dist_matrix <- matrix(0, n, n)
 for (i in 1:(n-1)) {
   for (j in (i+1):n) {
-    dist_matrix[i, j] <- huber_distance(data_matrix[i, ], data_matrix[j, ])
-    dist_matrix[j, i] <- dist_matrix[i, j]  # Symmetric
+    pt_dist_matrix[i, j] <- huber_distance(pt_data_matrix[i, ], pt_data_matrix[j, ])
+    pt_dist_matrix[j, i] <- pt_dist_matrix[i, j]  # Symmetric
   }
 }
 
 # Convert to dist object
-huber_dist <- as.dist(dist_matrix)
+pt_huber_dist <- as.dist(pt_dist_matrix)
 
 # Perform hierarchical clustering with Ward's method
 # Use "ward.D2" for the unsquared version (recommended for distance matrices)
-hc <- hclust(huber_dist, method = "ward.D2")
+pt_hc <- hclust(pt_huber_dist, method = "ward.D2")
 
 # Plot the dendrogram
-plot(hc, labels = imputed_z$Region, main = "Hierarchical Clustering Dendrogram (Huber Distance, Ward's Linkage)",
-     xlab = "Regions/Units", sub = NULL, hang = -1)
+plot(pt_hc, 
+     labels = imputed_z$Region, 
+     main = "Clustering according to population and territory",
+     xlab = "Countries", 
+     sub = NULL, 
+     horiz = TRUE, 
+     cex = 0.4)  # Smaller label size; try 0.3-0.6 based on your display
+
+# Interactive dendrogram
+pt_ggdend <- ggdendrogram(pt_hc, rotate = TRUE, size = 2) + 
+  theme(axis.text.x = element_text(size = 6, angle = 90))  # Rotate and small text
+
+pt_interactive_dend <- ggplotly(pt_ggdend)
+pt_interactive_dend
 
 # To cut the dendrogram into k clusters (e.g., k=3), and get cluster assignments
 k <- 3  # Choose based on dendrogram or validation
-clusters <- cutree(hc, k = k)
-imputed_z$Cluster <- clusters  # Add to dataframe
+pt_clusters <- cutree(pt_hc, k = k)
+imputed_z$`PT cluster` <- pt_clusters  # Add to dataframe
 
 # View cluster assignments
-table(imputed_z$Cluster, imputed_z$Region)  # Summary by Region
+table(imputed_z$`PT cluster`, imputed_z$Region)  # Summary by Region
 
-# Optional: For validation, compute cophenetic correlation to check how well the dendrogram preserves distances
-coph_cor <- cor(huber_dist, cophenetic(hc))
-print(paste("Cophenetic Correlation:", round(coph_cor, 3)))  # Closer to 1 is better
+# For validation, compute cophenetic correlation to check how well the dendrogram preserves distances
+pt_coph_cor <- cor(pt_huber_dist, cophenetic(pt_hc))
+print(paste("Cophenetic Correlation:", round(pt_coph_cor, 3)))  # Closer to 1 is better
+
+
+# ---- Cluster analysis: clergy and sacraments  ----
+
+# Define list of variables
+clergy_sacraments <- c("Yearly ordinations of diocesan priests as share of those incardinated on January 1",
+                       "Yearly deaths of diocesan priests as share of those incardinated on January 1",
+                       "Yearly defections of diocesan priests as share of those incardinated at January 1",
+                       "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per inhabitant",
+                       "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per Catholic",
+                       "Philosophy+theology candidates for diocesan and religious clergy per priest",
+                       "Candidates for diocesan clergy in theology centres per Catholic",
+                       "Candidates for religious clergy in theology centres per Catholic",
+                       "Infant baptisms (people up to 7 years old) per Catholic",
+                       "Adult baptisms (people over 7 years old) per Catholic",
+                       "Baptisms per inhabitant",
+                       "Marriages between Catholics per Catholic",
+                       "Mixed marriages per inhabitant",
+                       "Share of mixed marriages",
+                       "Confirmations per Catholic",
+                       "First Communions per Catholic")
+
+# Extract numeric variables
+numeric_imp <- imputed_z %>% select(all_of(clergy_sacraments))
+colnames(numeric_imp) <- clergy_sacraments  # exclude "Region"
+
+# Convert to matrix for easier computation
+cs_data_matrix <- as.matrix(numeric_imp)
+
+# Define the Huber loss function
+huber_loss <- function(e, delta = 1.345) {  # delta=1.345 is a common choice for 95% efficiency
+  ifelse(abs(e) <= delta, 0.5 * e^2, delta * abs(e) - 0.5 * delta^2)
+}
+
+# Define the Huber distance function between two vectors
+huber_distance <- function(x, y, delta = 1.345) {
+  diffs <- x - y
+  sqrt(sum(huber_loss(diffs, delta)))
+}
+
+# Compute the pairwise Huber distance matrix
+# Note: This uses a loop for simplicity; for large n (>1000 rows), consider parallelization or optimization
+n <- nrow(cs_data_matrix)
+cs_dist_matrix <- matrix(0, n, n)
+for (i in 1:(n-1)) {
+  for (j in (i+1):n) {
+    cs_dist_matrix[i, j] <- huber_distance(cs_data_matrix[i, ], cs_data_matrix[j, ])
+    cs_dist_matrix[j, i] <- cs_dist_matrix[i, j]  # Symmetric
+  }
+}
+
+# Convert to dist object
+cs_huber_dist <- as.dist(cs_dist_matrix)
+
+# Perform hierarchical clustering with Ward's method
+# Use "ward.D2" for the unsquared version (recommended for distance matrices)
+cs_hc <- hclust(cs_huber_dist, method = "ward.D2")
+
+# Plot the dendrogram
+plot(cs_hc, 
+     labels = imputed_z$Region,
+     main = "Clustering according to clergy and sacraments",
+     xlab = "Regions", 
+     sub = NULL, 
+     hang = -1, 
+     cex = 0.4)  # Smaller label size; try 0.3-0.6 based on your display
+
+# Interactive dendrogram
+cs_ggdend <- ggdendrogram(cs_hc, rotate = TRUE, size = 2) + 
+  theme(axis.text.x = element_text(size = 6, angle = 90))  # Rotate and small text
+
+cs_interactive_dend <- ggplotly(cs_ggdend)
+cs_interactive_dend
+
+# To cut the dendrogram into k clusters (e.g., k=3), and get cluster assignments
+k <- 3  # Choose based on dendrogram or validation
+cs_clusters <- cutree(cs_hc, k = k)
+imputed_z$`CS cluster` <- cs_clusters  # Add to dataframe
+
+# View cluster assignments
+table(imputed_z$`CS cluster`, imputed_z$Region)  # Summary by Region
+
+# For validation, compute cophenetic correlation to check how well the dendrogram preserves distances
+cs_coph_cor <- cor(cs_huber_dist, cophenetic(cs_hc))
+print(paste("Cophenetic Correlation:", round(cs_coph_cor, 3)))  # Closer to 1 is better
+
 
