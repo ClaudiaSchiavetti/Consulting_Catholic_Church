@@ -705,8 +705,8 @@ pt_interactive_dend
 
 # CH index (variance ratio criterion) for k choice
 pt_nb_res <- NbClust(pt_data_matrix, diss = pt_huber_dist, 
-                  distance = NULL, min.nc = 2, max.nc = 15, 
-                  method = "ward.D2", index = "ch")  # Or "all" for 30 indices
+                     distance = NULL, min.nc = 2, max.nc = 15, 
+                     method = "ward.D2", index = "ch")  # Or "all" for 30 indices
 pt_nb_res$Best.nc  # Optimal k by CH
 
 # Silhouette method for k choice
@@ -797,8 +797,8 @@ cs_interactive_dend
 
 # CH index (variance ratio criterion) for k choice
 cs_nb_res <- NbClust(cs_data_matrix, diss = cs_huber_dist, 
-                  distance = NULL, min.nc = 2, max.nc = 15, 
-                  method = "ward.D2", index = "ch")  # Or "all" for 30 indices
+                     distance = NULL, min.nc = 2, max.nc = 15, 
+                     method = "ward.D2", index = "ch")  # Or "all" for 30 indices
 cs_nb_res$Best.nc  # Optimal k by CH
 
 # Silhouette method for k choice
@@ -813,5 +813,4 @@ fviz_nbclust(imputed_z[, clergy_sacraments],
 # For validation, compute cophenetic correlation to check how well the dendrogram preserves distances
 cs_coph_cor <- cor(cs_huber_dist, cophenetic(cs_hc))
 print(paste("Cophenetic Correlation:", round(cs_coph_cor, 2)))  # Closer to 1 is better
-
 
