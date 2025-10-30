@@ -18,8 +18,8 @@ library(ggdendro)
 library(plotly)
 
 # Set working directory
-#path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+#path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_data)
 
 
@@ -119,21 +119,13 @@ missing_summary_tidy <- missing_info_tidy %>%
 
 print(missing_summary_tidy, n = nrow(missing_summary_tidy))
 
-# Filter to 2022 country-level data and remove unwanted countries
-countries_to_remove <- c("Dem. Peoples Rep. Of Korea", "China (Mainland)")
 
-country_data <- country_data %>%
-  filter(!Region %in% countries_to_remove)
- 
+# Check of the missing values per variable and per country + graphs
 
-# Print summary statistics
-summary(country_data)
-
-
-# ---- Analysis of the missing values [not yet modified] ---- 
+#Per variable
 
 # Number of missing values per variable (column)
-missing_per_variable <- colSums(is.na(cluster_data_2022))
+missing_per_variable <- colSums(is.na(country_data))
 print("Missing values per variable:")
 print(missing_per_variable)
 
@@ -158,23 +150,21 @@ p1 <- ggplot(missing_df, aes(x = reorder(Variable, Missing_Count), y = Missing_C
 
 print(p1)
 
-# Number of missing values per each "Region" value
+#Per country
+
 # First, add a temporary column for row-wise missing count
-cluster_data_2022$missing_count <- rowSums(is.na(cluster_data_2022))
+country_data$missing_count <- rowSums(is.na(country_data))
 
 # Then, aggregate by Region
-missing_per_region <- aggregate(missing_count ~ Region, data = cluster_data_2022, FUN = sum)
+missing_per_region <- aggregate(missing_count ~ Region, data = country_data, FUN = sum)
 
 # Remove the temporary column
-cluster_data_2022$missing_count <- NULL
+country_data$missing_count <- NULL
 
 print("Missing values per Region:")
 print(missing_per_region)
 
 # Heatmap
-
-# Filter only rows where Region type equals "Country"
-country_data <- cluster_data_2022[cluster_data_2022$`Region type` == "Country", ]
 
 # Get the Country column (which is the "Region" column for countries)
 country_names <- country_data$Region
@@ -215,43 +205,52 @@ if(nrow(countries_with_missing) > 0) {
   print("No countries with missing values found")
 }
 
-# Percentage of missing data per country
+# Data columns only
+vars_to_check <- setdiff(names(country_data), "Region")
 
-# Get countries with missing values
-rows_with_missing_idx <- rowSums(is.na(country_data)) > 0
-missing_summary <- country_data[rows_with_missing_idx, c("Region", "Region type")]
-names(missing_summary)[1] <- "Country"  # Rename Region to Country for clarity
+# Row-wise missing count
+country_data$Missing_Count <- rowSums(is.na(country_data[, vars_to_check]))
 
-# Calculate missing counts
-missing_summary$Missing_Count <- rowSums(is.na(country_data[rows_with_missing_idx, ]))
-missing_summary$Missing_Percentage <- round(
-  (missing_summary$Missing_Count / 
-     (ncol(country_data) - 2)) * 100, 1)  # -2 for Region and Region type
+# Summary (only countries with any missing)
+missing_summary <- subset(country_data, Missing_Count > 0, select = c("Region","Missing_Count"))
+names(missing_summary)[1] <- "Country"
+missing_summary$Missing_Percentage <- round(missing_summary$Missing_Count / length(vars_to_check) * 100, 1)
 
-print("Countries with missing values:")
-print(missing_summary[order(-missing_summary$Missing_Count), ])
-
-# Plot
-if(nrow(missing_summary) > 0) {
-  p3 <- ggplot(missing_summary, aes(x = reorder(Country, Missing_Percentage), 
-                                    y = Missing_Percentage, fill = Missing_Percentage)) +
+# Bar "heatmap" (p3)
+if (nrow(missing_summary) > 0) {
+  library(ggplot2); library(viridis)
+  p3 <- ggplot(missing_summary,
+               aes(x = reorder(Country, Missing_Percentage),
+                   y = Missing_Percentage,
+                   fill = Missing_Percentage)) +
     geom_bar(stat = "identity") +
     scale_fill_viridis(option = "D") +
     coord_flip() +
     labs(title = "Percentage of Missing Data per Country",
-         x = "Country",
-         y = "% of Variables Missing",
-         fill = "% Missing") +
+         x = "Country", y = "% of Variables Missing", fill = "% Missing") +
     theme_minimal() +
     geom_text(aes(label = paste0(Missing_Percentage, "%")), hjust = -0.2, size = 3) +
     geom_hline(yintercept = 50, linetype = "dashed", color = "red", alpha = 0.7) +
-    annotate("text", x = nrow(missing_summary), y = 50, 
-             label = "50% threshold", vjust = -0.5, color = "red")
-  
+    annotate("text", x = nrow(missing_summary), y = 50,
+             label = "50% threshold", vjust = -0.5, color = "red") +
+    expand_limits(y = max(50, max(missing_summary$Missing_Percentage)) * 1.05)
   print(p3)
+} else {
+  message("No countries with missing values found")
 }
 
+#remove temp column
+country_data$Missing_Count <- NULL
 
+
+# Filter to 2022 country-level data and remove unwanted countries
+countries_to_remove <- c("Dem. Peoples Rep. Of Korea", "China (Mainland)")
+
+country_data <- country_data %>%
+  filter(!Region %in% countries_to_remove)
+
+# Print summary statistics
+summary(country_data)
 
 # ---- Variable Mutations and Feature Engineering ----
 
