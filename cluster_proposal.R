@@ -838,57 +838,54 @@ design2_final <- design2_data %>%
 
 # ---- Transformation diagnostics ----
 
+# Create diagnostics for BOTH designs separately since they have different 
+# country sets and transformations
+
+# DESIGN 1 DIAGNOSTICS
+
 # Define sigmoid function for logit inverse
 sigmoid <- function(y) {
   1 / (1 + exp(-y))
 }
 
-# Create back-transformed dataset directly from standardized data
-back_transformed_data <- cluster_data_2022_std %>%
+# Get the transformed data BEFORE z-score (design1_data has log/logit transforms but not z-scores yet)
+design1_transformed_only <- cluster_data_2022_std %>%
+  select(Region, all_of(population_territory_transformed))
+
+# Create back-transformed dataset for Design 1
+design1_back_transformed <- design1_transformed_only %>%
   mutate(
-    # Logit inverses: simple sigmoid, then scale back to original range
+    # Logit inverses
     `Catholics per 100 inhabitants_back` = sigmoid(`Share of Catholics`) * 100,
     `Share of diocesan pastors_back` = sigmoid(`Share of diocesan pastors`),
-    `Share of non-vacant parishes entrusted to religious women or laypeople_back` = sigmoid(`Share of non-vacant parishes entrusted to religious women or laypeople`),
-    `Yearly ordinations of diocesan priests as share of those incardinated on January 1_back` = sigmoid(`Yearly ordinations of diocesan priests as share of those incardinated on January 1`) * 100,
-    `Yearly deaths of diocesan priests as share of those incardinated on January 1_back` = sigmoid(`Yearly deaths of diocesan priests as share of those incardinated on January 1`) * 100,
-    `Yearly defections of diocesan priests as share of those incardinated at January 1_back` = sigmoid(`Yearly defections of diocesan priests as share of those incardinated at January 1`) * 100,
-    `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants_back` = sigmoid(`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per inhabitant`) * 100000,
-    `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics_back` = sigmoid(`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per Catholic`) * 100000,
-    `Baptisms per inhabitant_back` = sigmoid(`Baptisms per inhabitant`),
-    `Share of mixed marriages_back` = sigmoid(`Share of mixed marriages`),
+    `Share of non-vacant parishes entrusted to religious women or laypeople_back` = 
+      sigmoid(`Share of non-vacant parishes entrusted to religious women or laypeople`),
     
-    # Log inverses: simple exp(y), with scaling where applicable (no epsilon subtraction)
+    # Log inverses
     `Catholics per km^2_back` = exp(`Catholics per km^2`),
     `Catholics per pastoral centre_back` = exp(`Catholics per pastoral centre`),
-    `Non-vacant parishes administered by non-pastor priests per Catholic_back` = exp(`Non-vacant parishes administered by non-pastor priests per Catholic`),
+    `Non-vacant parishes administered by non-pastor priests per Catholic_back` = 
+      exp(`Non-vacant parishes administered by non-pastor priests per Catholic`),
     `Parishes entirely vacant per Catholic_back` = exp(`Parishes entirely vacant per Catholic`),
-    `Catholics per priest_back` = exp(`Catholics per priest`),
-    `Philosophy+theology candidates for diocesan and religious clergy per 100 priests_back` = exp(`Philosophy+theology candidates for diocesan and religious clergy per priest`) / 100, # Since forward was log(*100)
-    `Candidates for diocesan clergy in theology centres per Catholic_back` = exp(`Candidates for diocesan clergy in theology centres per Catholic`),
-    `Candidates for religious clergy in theology centres per Catholic_back` = exp(`Candidates for religious clergy in theology centres per Catholic`),
-    `Infant baptisms (people up to 7 years old) per Catholic_back` = exp(`Infant baptisms (people up to 7 years old) per Catholic`),
-    `Adult baptisms (people over 7 years old) per Catholic_back` = exp(`Adult baptisms (people over 7 years old) per Catholic`),
-    `Marriages between Catholics per Catholic_back` = exp(`Marriages between Catholics per Catholic`),
-    `Mixed marriages per inhabitant_back` = exp(`Mixed marriages per inhabitant`),
-    `Confirmations per Catholic_back` = exp(`Confirmations per Catholic`),
-    `First Communions per Catholic_back` = exp(`First Communions per Catholic`)
+    `Catholics per priest_back` = exp(`Catholics per priest`)
   ) %>%
   select(Region, ends_with("_back"))
 
-# Print summary of back-transformed data for verification
-summary(back_transformed_data %>% select(-Region))
+# Join with original data
+design1_plot_data <- analysis_data %>%
+  select(Region, 
+         `Catholics per 100 inhabitants`,
+         `Catholics per km^2`,
+         `Catholics per pastoral centre`,
+         `Share of diocesan pastors`,
+         `Non-vacant parishes administered by non-pastor priests per Catholic`,
+         `Share of non-vacant parishes entrusted to religious women or laypeople`,
+         `Parishes entirely vacant per Catholic`,
+         `Catholics per priest`) %>%
+  inner_join(design1_back_transformed, by = "Region")
 
-# Assuming same row order, add RowID
-analysis_data$RowID <- 1:nrow(analysis_data)
-back_transformed_data$RowID <- 1:nrow(back_transformed_data)
-
-# Join by RowID and Region for safety
-plot_data <- inner_join(analysis_data, back_transformed_data, by = c("Region", "RowID")) %>%
-  select(-RowID)
-
-# List of variable names (original)
-var_names <- c(
+# Variable names for Design 1
+design1_var_names <- c(
   "Catholics per 100 inhabitants",
   "Catholics per km^2",
   "Catholics per pastoral centre",
@@ -896,7 +893,106 @@ var_names <- c(
   "Non-vacant parishes administered by non-pastor priests per Catholic",
   "Share of non-vacant parishes entrusted to religious women or laypeople",
   "Parishes entirely vacant per Catholic",
-  "Catholics per priest",
+  "Catholics per priest"
+)
+
+design1_back_names <- paste0(design1_var_names, "_back")
+
+# Create scatterplots for Design 1
+design1_plots <- list()
+for (i in seq_along(design1_var_names)) {
+  orig_col <- design1_var_names[i]
+  back_col <- design1_back_names[i]
+  
+  temp_data <- design1_plot_data %>%
+    select(all_of(c(orig_col, back_col, "Region"))) %>%
+    filter(complete.cases(select(., -Region)))
+  
+  if (nrow(temp_data) > 0) {
+    p <- ggplot(temp_data, aes(x = .data[[orig_col]], y = .data[[back_col]])) +
+      geom_point(alpha = 0.6, color = "#440154FF") +
+      geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+      labs(title = str_wrap(paste("Design 1:", orig_col), width = 35),
+           x = "Original", y = "Back-Transformed") +
+      theme_minimal() +
+      theme(plot.title = element_text(size = 9))
+    
+    design1_plots[[i]] <- p
+  }
+}
+
+# Display Design 1 plots
+grid.arrange(grobs = design1_plots[1:4], ncol = 2, 
+             top = "Design 1: Transformation Verification (Part 1)")
+grid.arrange(grobs = design1_plots[5:8], ncol = 2, 
+             top = "Design 1: Transformation Verification (Part 2)")
+
+# DESIGN 2 DIAGNOSTICS
+
+# Get Design 2 transformed data (BEFORE z-score)
+design2_transformed_only <- design2_transformed %>%
+  select(Region, all_of(clergy_sacraments_transformed))
+
+# Create back-transformed dataset for Design 2
+design2_back_transformed <- design2_transformed_only %>%
+  mutate(
+    # Logit inverses
+    `Yearly ordinations of diocesan priests as share of those incardinated on January 1_back` = 
+      sigmoid(`Yearly ordinations of diocesan priests as share of those incardinated on January 1`) * 100,
+    `Yearly deaths of diocesan priests as share of those incardinated on January 1_back` = 
+      sigmoid(`Yearly deaths of diocesan priests as share of those incardinated on January 1`) * 100,
+    `Yearly defections of diocesan priests as share of those incardinated at January 1_back` = 
+      sigmoid(`Yearly defections of diocesan priests as share of those incardinated at January 1`) * 100,
+    `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants_back` = 
+      sigmoid(`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per inhabitant`) * 100000,
+    `Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics_back` = 
+      sigmoid(`Vocation rate - philosophy+theology candidates for diocesan and religious clergy per Catholic`) * 100000,
+    `Baptisms per inhabitant_back` = sigmoid(`Baptisms per inhabitant`),
+    `Share of mixed marriages_back` = sigmoid(`Share of mixed marriages`),
+    
+    # Log inverses
+    `Philosophy+theology candidates for diocesan and religious clergy per 100 priests_back` = 
+      exp(`Philosophy+theology candidates for diocesan and religious clergy per priest`) / 100,
+    `Candidates for diocesan clergy in theology centres per Catholic_back` = 
+      exp(`Candidates for diocesan clergy in theology centres per Catholic`),
+    `Candidates for religious clergy in theology centres per Catholic_back` = 
+      exp(`Candidates for religious clergy in theology centres per Catholic`),
+    `Infant baptisms (people up to 7 years old) per Catholic_back` = 
+      exp(`Infant baptisms (people up to 7 years old) per Catholic`),
+    `Adult baptisms (people over 7 years old) per Catholic_back` = 
+      exp(`Adult baptisms (people over 7 years old) per Catholic`),
+    `Marriages between Catholics per Catholic_back` = 
+      exp(`Marriages between Catholics per Catholic`),
+    `Mixed marriages per inhabitant_back` = exp(`Mixed marriages per inhabitant`),
+    `Confirmations per Catholic_back` = exp(`Confirmations per Catholic`),
+    `First Communions per Catholic_back` = exp(`First Communions per Catholic`)
+  ) %>%
+  select(Region, ends_with("_back"))
+
+# Join with original filtered data (design2_raw)
+design2_plot_data <- design2_raw %>%
+  select(Region, all_of(c(
+    "Yearly ordinations of diocesan priests as share of those incardinated on January 1",
+    "Yearly deaths of diocesan priests as share of those incardinated on January 1",
+    "Yearly defections of diocesan priests as share of those incardinated at January 1",
+    "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand inhabitants",
+    "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per 100 thousand Catholics",
+    "Philosophy+theology candidates for diocesan and religious clergy per 100 priests",
+    "Candidates for diocesan clergy in theology centres per Catholic",
+    "Candidates for religious clergy in theology centres per Catholic",
+    "Infant baptisms (people up to 7 years old) per Catholic",
+    "Adult baptisms (people over 7 years old) per Catholic",
+    "Baptisms per inhabitant",
+    "Marriages between Catholics per Catholic",
+    "Mixed marriages per inhabitant",
+    "Share of mixed marriages",
+    "Confirmations per Catholic",
+    "First Communions per Catholic"
+  ))) %>%
+  inner_join(design2_back_transformed, by = "Region")
+
+# Variable names for Design 2
+design2_var_names <- c(
   "Yearly ordinations of diocesan priests as share of those incardinated on January 1",
   "Yearly deaths of diocesan priests as share of those incardinated on January 1",
   "Yearly defections of diocesan priests as share of those incardinated at January 1",
@@ -915,83 +1011,114 @@ var_names <- c(
   "First Communions per Catholic"
 )
 
-# Corresponding back names
-back_names <- paste0(var_names, "_back")
+design2_back_names <- paste0(design2_var_names, "_back")
 
-# Create scatterplots
-plots <- list()
-for (i in seq_along(var_names)) {
-  orig_col <- var_names[i]
-  back_col <- back_names[i]
+# Create scatterplots for Design 2
+design2_plots <- list()
+for (i in seq_along(design2_var_names)) {
+  orig_col <- design2_var_names[i]
+  back_col <- design2_back_names[i]
   
-  # Use complete cases for plotting
-  temp_data <- plot_data %>%
+  temp_data <- design2_plot_data %>%
     select(all_of(c(orig_col, back_col, "Region"))) %>%
     filter(complete.cases(select(., -Region)))
   
   if (nrow(temp_data) > 0) {
     p <- ggplot(temp_data, aes(x = .data[[orig_col]], y = .data[[back_col]])) +
-      geom_point(alpha = 0.6) +
-      geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") + # y = x line for reference
-      labs(title = str_wrap(paste("Original vs Back-Transformed:", orig_col), width = 40),
+      geom_point(alpha = 0.6, color = "#21908CFF") +
+      geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+      labs(title = str_wrap(paste("Design 2:", orig_col), width = 35),
            x = "Original", y = "Back-Transformed") +
-      theme_minimal()
+      theme_minimal() +
+      theme(plot.title = element_text(size = 9))
     
-    plots[[i]] <- p
+    design2_plots[[i]] <- p
   }
 }
 
-# Display plots in six different 2x2 grids
-grid.arrange(grobs = plots[1:4], ncol = 2, top = "Grid 1")
-grid.arrange(grobs = plots[5:8], ncol = 2, top = "Grid 2")
-grid.arrange(grobs = plots[9:12], ncol = 2, top = "Grid 3")
-grid.arrange(grobs = plots[13:16], ncol = 2, top = "Grid 4")
-grid.arrange(grobs = plots[17:20], ncol = 2, top = "Grid 5")
-grid.arrange(grobs = plots[21:24], ncol = 2, top = "Grid 6")
-
+# Display Design 2 plots (4 grids of 4 plots each)
+grid.arrange(grobs = design2_plots[1:4], ncol = 2, 
+             top = "Design 2: Transformation Verification (Part 1)")
+grid.arrange(grobs = design2_plots[5:8], ncol = 2, 
+             top = "Design 2: Transformation Verification (Part 2)")
+grid.arrange(grobs = design2_plots[9:12], ncol = 2, 
+             top = "Design 2: Transformation Verification (Part 3)")
+grid.arrange(grobs = design2_plots[13:16], ncol = 2, 
+             top = "Design 2: Transformation Verification (Part 4)")
 
 # ---- Correlation Analysis and Visualization ----
 
-# Compute correlation matrix (pairwise complete for NAs)
-numeric_std <- cluster_data_2022_std %>% select(-Region)
-cor_matrix <- cor(numeric_std, use = "pairwise.complete.obs")
+# DESIGN 1 CORRELATION ANALYSIS
+
+# Compute correlation matrix for Design 1 (after transformations, before z-scores)
+design1_numeric <- design1_transformed_only %>% select(-Region)
+design1_cor_matrix <- cor(design1_numeric, use = "pairwise.complete.obs")
 
 # Melt for plotting
-melted_cor <- melt(cor_matrix)
+design1_melted_cor <- melt(design1_cor_matrix)
 
-# Create correlation heatmap
-ggplot(data = melted_cor, aes(x = Var1, y = Var2, fill = value)) +
+# Create correlation heatmap for Design 1
+design1_cor_plot <- ggplot(data = design1_melted_cor, aes(x = Var1, y = Var2, fill = value)) +
   geom_tile(color = "white") +
-  scale_fill_gradient2(low = "black", mid = "white", high = "black", midpoint = 0, limits = c(-1, 1), name = "Correlation") +
-  geom_text(aes(label = ifelse(abs(value) > 0.8, round(value, 2), "")), color = "white", size = 3) +
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 20)) +
-  scale_y_discrete(labels = function(x) str_wrap(x, width = 20)) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
+                       midpoint = 0, limits = c(-1, 1), name = "Correlation") +
+  geom_text(aes(label = ifelse(abs(value) > 0.7, round(value, 2), "")), 
+            color = "black", size = 2.5) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 15)) +
   theme_minimal() +
   theme(
-    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 8),
-    axis.text.y = element_text(size = 8),
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 7),
+    axis.text.y = element_text(size = 7),
     axis.title = element_blank(),
     panel.grid = element_blank()
   ) +
   coord_fixed() +
-  labs(title = "Correlation Heatmap of Standardized Variables")
+  labs(title = "Design 1: Correlation Heatmap (Population & Territory)")
+
+print(design1_cor_plot)
+
+# DESIGN 2 CORRELATION ANALYSIS
+
+# Compute correlation matrix for Design 2 (after transformations, before z-scores)
+design2_numeric <- design2_transformed_only %>% select(-Region)
+design2_cor_matrix <- cor(design2_numeric, use = "pairwise.complete.obs")
+
+# Melt for plotting
+design2_melted_cor <- melt(design2_cor_matrix)
+
+# Create correlation heatmap for Design 2
+design2_cor_plot <- ggplot(data = design2_melted_cor, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
+                       midpoint = 0, limits = c(-1, 1), name = "Correlation") +
+  geom_text(aes(label = ifelse(abs(value) > 0.7, round(value, 2), "")), 
+            color = "black", size = 2.5) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 15)) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 7),
+    axis.text.y = element_text(size = 7),
+    axis.title = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  coord_fixed() +
+  labs(title = "Design 2: Correlation Heatmap (Clergy & Sacraments)")
+
+print(design2_cor_plot)
 
 
-# ---- Density and skewness diagnostics [not yet modified] ----
-
-# Define the transformation groups and choose one representative variable from each:
-# Group 1: Z-score only (bounded or mild skew)
-# Group 2: Log(x+1) then z-score (count data with high skew)
-# Group 3: Logit then z-score (percentage data)
-# Group 4: Log(x) then z-score (area data, no zeros)
+# ---- Density and skewness diagnostics ----
 
 # Function to create before/after comparison with density and skewness
-create_comparison_plot <- function(data_before, data_after, col_index, var_name, transformation) {
+create_comparison_plot <- function(data_before, data_after, var_name_before, 
+                                   var_name_after, transformation_type) {
   
   # Prepare data
   df <- data.frame(
-    Before = data_before[, col_index],
-    After = as.vector(data_after[, col_index])
+    Before = data_before[[var_name_before]],
+    After = data_after[[var_name_after]]
   )
   
   # Remove any infinite or NA values
@@ -1005,7 +1132,7 @@ create_comparison_plot <- function(data_before, data_after, col_index, var_name,
   df_long <- pivot_longer(df, cols = c(Before, After), 
                           names_to = "Stage", values_to = "Value")
   
-  # Set factor levels to control order (Before first)
+  # Set factor levels
   df_long$Stage <- factor(df_long$Stage, levels = c("Before", "After"))
   
   # Create density + histogram comparison
@@ -1015,20 +1142,96 @@ create_comparison_plot <- function(data_before, data_after, col_index, var_name,
     geom_density(alpha = 0.3, linewidth = 1) +
     facet_wrap(~Stage, scales = "free") +
     scale_fill_viridis(discrete = TRUE, option = "D", begin = 0.3, end = 0.8) +
-    scale_x_continuous(labels = label_comma(accuracy = 0.01)) +
-    scale_y_continuous(labels = label_comma(accuracy = 0.001)) +
-    labs(title = var_name,
-         subtitle = paste0("Transformation: ", transformation,
-                           "\nSkewness Before: ", skew_before, 
-                           "  |  Skewness After: ", skew_after),
+    labs(title = str_wrap(var_name_before, width = 40),
+         subtitle = paste0("Transform: ", transformation_type,
+                           " | Skew Before: ", skew_before, 
+                           " | Skew After: ", skew_after),
          x = "Value", y = "Density") +
     theme_minimal() +
     theme(legend.position = "none",
-          plot.title = element_text(size = 10, face = "bold"),
-          plot.subtitle = element_text(size = 8.5, color = "gray40"))
+          plot.title = element_text(size = 9, face = "bold"),
+          plot.subtitle = element_text(size = 7.5, color = "gray40"))
   
   return(p)
 }
+
+# DESIGN 1: Density & Skewness Diagnostics
+
+# Select a few representative variables from Design 1
+design1_density_plots <- list()
+
+# Variable 1: Catholics per 100 inhabitants (logit transform)
+design1_density_plots[[1]] <- create_comparison_plot(
+  analysis_data, design1_transformed_only,
+  "Catholics per 100 inhabitants", "Share of Catholics",
+  "Logit"
+)
+
+# Variable 2: Catholics per km^2 (log transform)
+design1_density_plots[[2]] <- create_comparison_plot(
+  analysis_data, design1_transformed_only,
+  "Catholics per km^2", "Catholics per km^2",
+  "Log"
+)
+
+# Variable 3: Share of diocesan pastors (logit transform)
+design1_density_plots[[3]] <- create_comparison_plot(
+  analysis_data, design1_transformed_only,
+  "Share of diocesan pastors", "Share of diocesan pastors",
+  "Logit"
+)
+
+# Variable 4: Catholics per priest (log transform)
+design1_density_plots[[4]] <- create_comparison_plot(
+  analysis_data, design1_transformed_only,
+  "Catholics per priest", "Catholics per priest",
+  "Log"
+)
+
+# Display Design 1 plots
+grid.arrange(grobs = design1_density_plots[1:4], ncol = 2,
+             top = "Design 1: Distribution Changes After Transformation")
+
+# DESIGN 2: Density & Skewness Diagnostics
+
+# Select representative variables from Design 2
+design2_density_plots <- list()
+
+# Variable 1: Yearly ordinations (logit transform)
+design2_density_plots[[1]] <- create_comparison_plot(
+  design2_raw, design2_transformed_only,
+  "Yearly ordinations of diocesan priests as share of those incardinated on January 1",
+  "Yearly ordinations of diocesan priests as share of those incardinated on January 1",
+  "Logit"
+)
+
+# Variable 2: Infant baptisms per Catholic (log transform)
+design2_density_plots[[2]] <- create_comparison_plot(
+  design2_raw, design2_transformed_only,
+  "Infant baptisms (people up to 7 years old) per Catholic",
+  "Infant baptisms (people up to 7 years old) per Catholic",
+  "Log"
+)
+
+# Variable 3: Share of mixed marriages (logit transform)
+design2_density_plots[[3]] <- create_comparison_plot(
+  design2_raw, design2_transformed_only,
+  "Share of mixed marriages",
+  "Share of mixed marriages",
+  "Logit"
+)
+
+# Variable 4: Confirmations per Catholic (log transform)
+design2_density_plots[[4]] <- create_comparison_plot(
+  design2_raw, design2_transformed_only,
+  "Confirmations per Catholic",
+  "Confirmations per Catholic",
+  "Log"
+)
+
+# Display Design 2 plots
+grid.arrange(grobs = design2_density_plots[1:4], ncol = 2,
+             top = "Design 2: Distribution Changes After Transformation")
 
 # ---- Imputation of NaNs ----
 
