@@ -255,27 +255,94 @@ country_data <- country_data %>%
 # Print summary statistics
 summary(country_data)
 
-# ---- Variable Mutations and Feature Engineering ----
+# ---- Variable Mutations and Feature Engineering + Imputation ----
 
 # Perform mutations and select only the final desired columns
 analysis_data <- country_data %>%
   mutate(
+    # Simple divisions - these are fine
     `Catholics per km^2` = (`Catholics in thousands` * 1000) / `Area in km^2`,
-    `Share of diocesan pastors` = `Parishes with diocesan pastor` / (`Parishes with diocesan pastor` + `Parishes with religious pastor`),
-    `Non-vacant parishes administered by non-pastor priests per Catholic` = `Parishes without pastor administered by another priest` / (`Catholics in thousands` * 1000),
-    `Share of non-vacant parishes entrusted to religious women or laypeople` = (`Parishes without pastor entrusted to religious women` + `Parishes without pastor entrusted to laypeople`) /
-      (`Parishes with diocesan pastor` + `Parishes with religious pastor` + `Parishes without pastor administered by another priest` +
-         `Parishes without pastor entrusted to permanent deacons` + `Parishes without pastor entrusted to non-priest religious men` +
-         `Parishes without pastor entrusted to religious women` + `Parishes without pastor entrusted to laypeople`),
-    `Parishes entirely vacant per Catholic` = `Parishes entirely vacant` / (`Catholics in thousands` * 1000),
-    `Candidates for diocesan clergy in theology centres per Catholic` = `Candidates for diocesan clergy in theology centres` / (`Catholics in thousands` * 1000),
-    `Candidates for religious clergy in theology centres per Catholic` = `Candidates for religious clergy in theology centres` / (`Catholics in thousands` * 1000),
-    `Infant baptisms (people up to 7 years old) per Catholic` = `Infant baptisms (people up to 7 years old)` / (`Catholics in thousands` * 1000),
-    `Adult baptisms (people over 7 years old) per Catholic` = `Adult baptisms (people over 7 years old)` / (`Catholics in thousands` * 1000),
-    `Baptisms per inhabitant` = `Baptisms` / (`Inhabitants in thousands` * 1000),
-    `Marriages between Catholics per Catholic` = `Marriages between Catholics` / (`Catholics in thousands` * 1000),
-    `Mixed marriages per inhabitant` = `Mixed marriages` / (`Inhabitants in thousands` * 1000),
-    `Share of mixed marriages` = `Mixed marriages per inhabitant` / (`Marriages between Catholics per Catholic` + `Mixed marriages per inhabitant`),
+    
+    # Share variables with 0/0 protection
+    `Share of diocesan pastors` = ifelse(
+      (`Parishes with diocesan pastor` + `Parishes with religious pastor`) == 0,
+      0,
+      `Parishes with diocesan pastor` / (`Parishes with diocesan pastor` + `Parishes with religious pastor`)
+    ),
+    
+    # Per-Catholic rates - ADD PROTECTION for 0 Catholics
+    `Non-vacant parishes administered by non-pastor priests per Catholic` = ifelse(
+      `Catholics in thousands` == 0,
+      0,
+      `Parishes without pastor administered by another priest` / (`Catholics in thousands` * 1000)
+    ),
+    
+    `Share of non-vacant parishes entrusted to religious women or laypeople` = {
+      numerator <- `Parishes without pastor entrusted to religious women` + `Parishes without pastor entrusted to laypeople`
+      denominator <- `Parishes with diocesan pastor` + `Parishes with religious pastor` + 
+        `Parishes without pastor administered by another priest` +
+        `Parishes without pastor entrusted to permanent deacons` + 
+        `Parishes without pastor entrusted to non-priest religious men` +
+        `Parishes without pastor entrusted to religious women` + 
+        `Parishes without pastor entrusted to laypeople`
+      ifelse(denominator == 0, 0, numerator / denominator)
+    },
+    
+    `Parishes entirely vacant per Catholic` = ifelse(
+      `Catholics in thousands` == 0,
+      0,
+      `Parishes entirely vacant` / (`Catholics in thousands` * 1000)
+    ),
+    
+    `Candidates for diocesan clergy in theology centres per Catholic` = ifelse(
+      `Catholics in thousands` == 0,
+      0,
+      `Candidates for diocesan clergy in theology centres` / (`Catholics in thousands` * 1000)
+    ),
+    
+    `Candidates for religious clergy in theology centres per Catholic` = ifelse(
+      `Catholics in thousands` == 0,
+      0,
+      `Candidates for religious clergy in theology centres` / (`Catholics in thousands` * 1000)
+    ),
+    
+    `Infant baptisms (people up to 7 years old) per Catholic` = ifelse(
+      `Catholics in thousands` == 0,
+      0,
+      `Infant baptisms (people up to 7 years old)` / (`Catholics in thousands` * 1000)
+    ),
+    
+    `Adult baptisms (people over 7 years old) per Catholic` = ifelse(
+      `Catholics in thousands` == 0,
+      0,
+      `Adult baptisms (people over 7 years old)` / (`Catholics in thousands` * 1000)
+    ),
+    
+    `Baptisms per inhabitant` = ifelse(
+      `Inhabitants in thousands` == 0,
+      0,
+      `Baptisms` / (`Inhabitants in thousands` * 1000)
+    ),
+    
+    `Marriages between Catholics per Catholic` = ifelse(
+      `Catholics in thousands` == 0,
+      0,
+      `Marriages between Catholics` / (`Catholics in thousands` * 1000)
+    ),
+    
+    `Mixed marriages per inhabitant` = ifelse(
+      `Inhabitants in thousands` == 0,
+      0,
+      `Mixed marriages` / (`Inhabitants in thousands` * 1000)
+    ),
+    
+    `Share of mixed marriages` = ifelse(
+      (`Mixed marriages` + `Marriages between Catholics`) == 0,
+      0,
+      `Mixed marriages` / (`Mixed marriages` + `Marriages between Catholics`)
+    ),
+    
+    # Simple conversions - these are fine
     `Confirmations per Catholic` = `Confirmations per 1000 Catholics` / 1000,
     `First Communions per Catholic` = `First Communions per 1000 Catholics` / 1000
   ) %>%
@@ -907,27 +974,25 @@ create_comparison_plot <- function(data_before, data_after, col_index, var_name,
   return(p)
 }
 
-
 # ---- Imputation of NaNs ----
 
-zscores <- cluster_data_2022_std %>%
-  mutate(across(where(is.numeric), ~ (.-mean(., na.rm=TRUE))/sd(., na.rm=TRUE)))
-summary(zscores)
-
-numeric_z <- zscores %>% select(-Region)
-
-# Perform KNN imputation: k=15 nearest neighbors, using Euclidean distance (default in VIM::kNN).
-# It computes distances based on available (non-NA) values, scaling them appropriately.
-# Set imp_var=FALSE to avoid adding imputation indicator columns.
-imputed_numeric <- kNN(numeric_z, k = 15, dist_var = colnames(numeric_z), imp_var = FALSE)
-
-# Combine the imputed numeric data with the original 'Region' column
-imputed_z <- data.frame(Region = zscores$Region, imputed_numeric)
-
-# View the first few rows to check
-colnames(imputed_z) <- colnames(zscores)
-head(imputed_z)
-
+# zscores <- cluster_data_2022_std %>%
+#   mutate(across(where(is.numeric), ~ (.-mean(., na.rm=TRUE))/sd(., na.rm=TRUE)))
+# summary(zscores)
+# 
+# numeric_z <- zscores %>% select(-Region)
+# 
+# # Perform KNN imputation: k=15 nearest neighbors, using Euclidean distance (default in VIM::kNN).
+# # It computes distances based on available (non-NA) values, scaling them appropriately.
+# # Set imp_var=FALSE to avoid adding imputation indicator columns.
+# imputed_numeric <- kNN(numeric_z, k = 15, dist_var = colnames(numeric_z), imp_var = FALSE)
+# 
+# # Combine the imputed numeric data with the original 'Region' column
+# imputed_z <- data.frame(Region = zscores$Region, imputed_numeric)
+# 
+# # View the first few rows to check
+# colnames(imputed_z) <- colnames(zscores)
+# head(imputed_z)
 
 # ---- Cluster analysis: population and territory  ----
 
