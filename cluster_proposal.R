@@ -455,218 +455,218 @@ if (nrow(moderate_missingness_countries) > 0) {
 #Check exactly from where these NaN originate, to see if they are true O
 
 
-# Get all countries with any missing values
-countries_with_missing <- missingness_per_country %>%
-  filter(n_missing > 0) %>%
-  pull(Region)
-
-diagnose_variable <- function(var_name, data_full) {
-  
-  # Get countries where this variable is NA
-  na_countries <- data_full %>%
-    filter(is.na(.data[[var_name]])) %>%
-    pull(Region)
-  
-  if (length(na_countries) == 0) {
-    return(NULL)
-  }
-  
-  # Define which raw columns to check based on variable name
-  # This maps derived variables back to their input columns
-  
-  raw_cols <- list()
-  
-  if (var_name == "Share of diocesan pastors") {
-    raw_cols <- c("Parishes with diocesan pastor", "Parishes with religious pastor")
-  } else if (var_name == "Share of non-vacant parishes entrusted to religious women or laypeople") {
-    raw_cols <- c("Parishes with diocesan pastor", "Parishes with religious pastor",
-                  "Parishes without pastor administered by another priest",
-                  "Parishes without pastor entrusted to permanent deacons",
-                  "Parishes without pastor entrusted to non-priest religious men",
-                  "Parishes without pastor entrusted to religious women",
-                  "Parishes without pastor entrusted to laypeople")
-  } else if (grepl("per Catholic", var_name)) {
-    raw_cols <- c("Catholics in thousands")
-    # Add numerator based on variable name
-    if (grepl("Infant baptisms", var_name)) {
-      raw_cols <- c(raw_cols, "Infant baptisms (people up to 7 years old)")
-    } else if (grepl("Adult baptisms", var_name)) {
-      raw_cols <- c(raw_cols, "Adult baptisms (people over 7 years old)")
-    } else if (grepl("Marriages between Catholics", var_name)) {
-      raw_cols <- c(raw_cols, "Marriages between Catholics")
-    } else if (grepl("Candidates for diocesan clergy in theology", var_name)) {
-      raw_cols <- c(raw_cols, "Candidates for diocesan clergy in theology centres")
-    } else if (grepl("Candidates for religious clergy in theology", var_name)) {
-      raw_cols <- c(raw_cols, "Candidates for religious clergy in theology centres")
-    } else if (grepl("Non-vacant parishes administered by non-pastor", var_name)) {
-      raw_cols <- c(raw_cols, "Parishes without pastor administered by another priest")
-    } else if (grepl("Parishes entirely vacant", var_name)) {
-      raw_cols <- c(raw_cols, "Parishes entirely vacant")
-    }
-  } else if (grepl("per inhabitant", var_name)) {
-    raw_cols <- c("Inhabitants in thousands")
-    if (grepl("Baptisms per inhabitant", var_name)) {
-      raw_cols <- c(raw_cols, "Baptisms")
-    } else if (grepl("Mixed marriages", var_name)) {
-      raw_cols <- c(raw_cols, "Mixed marriages")
-    }
-  } else if (var_name == "Share of mixed marriages") {
-    raw_cols <- c("Marriages between Catholics", "Mixed marriages", 
-                  "Catholics in thousands", "Inhabitants in thousands")
-  }
-  
-  # Get raw data for these countries
-  raw_data <- country_data %>%
-    filter(Region %in% na_countries) %>%
-    select(Region, any_of(raw_cols))
-  
-  return(raw_data)
-}
-
-
-vars_with_missing <- analysis_data %>%
-  select(-Region) %>%
-  summarise(across(everything(), ~sum(is.na(.)))) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "n_missing") %>%
-  filter(n_missing > 0) %>%
-  arrange(desc(n_missing))
-
-cat("Variables with missing values:\n")
-print(vars_with_missing)
-
-for (i in 1:nrow(vars_with_missing)) {
-  var <- vars_with_missing$variable[i]
-  n_miss <- vars_with_missing$n_missing[i]
-  
-  cat("\n")
-  cat("=" %>% rep(80) %>% paste(collapse = ""), "\n")
-  cat("VARIABLE:", var, "\n")
-  cat("Number of countries with NA:", n_miss, "\n")
-  cat("=" %>% rep(80) %>% paste(collapse = ""), "\n\n")
-  
-  # Get the raw data that drives this variable
-  raw_diag <- diagnose_variable(var, analysis_data)
-  
-  if (!is.null(raw_diag)) {
-    print(raw_diag)
-    
-    # Analyze the pattern
-    cat("\nPATTERN ANALYSIS:\n")
-    
-    # Check if all values are 0
-    numeric_cols <- raw_diag %>% select(-Region) %>% select(where(is.numeric))
-    
-    if (ncol(numeric_cols) > 0) {
-      all_zeros <- raw_diag %>%
-        select(-Region) %>%
-        select(where(is.numeric)) %>%
-        summarise(across(everything(), ~all(. == 0, na.rm = TRUE)))
-      
-      for (col in names(all_zeros)) {
-        if (all_zeros[[col]]) {
-          cat("  - ALL countries have", col, "= 0 (STRUCTURAL ZERO)\n")
-        } else {
-          # Check individual values
-          has_zero <- raw_diag %>% filter(.data[[col]] == 0) %>% pull(Region)
-          has_nonzero <- raw_diag %>% filter(.data[[col]] > 0) %>% pull(Region)
-          has_na <- raw_diag %>% filter(is.na(.data[[col]])) %>% pull(Region)
-          
-          if (length(has_zero) > 0) {
-            cat("  -", col, "= 0 for:", paste(has_zero, collapse = ", "), "\n")
-          }
-          if (length(has_nonzero) > 0) {
-            cat("  -", col, "> 0 for:", paste(has_nonzero, collapse = ", "), "\n")
-          }
-          if (length(has_na) > 0) {
-            cat("  -", col, "= NA (TRULY MISSING) for:", paste(has_na, collapse = ", "), "\n")
-          }
-        }
-      }
-      
-      # Determine cause of NaN
-      cat("\nCAUSE OF NaN:\n")
-      for (country in raw_diag$Region) {
-        country_data_slice <- raw_diag %>% filter(Region == country)
-        numeric_values <- country_data_slice %>% select(-Region) %>% select(where(is.numeric))
-        
-        if (all(numeric_values == 0, na.rm = TRUE)) {
-          cat("  -", country, ": Division by zero (0/0) - STRUCTURAL ZERO\n")
-        } else if (any(is.na(numeric_values))) {
-          cat("  -", country, ": Contains TRUE missing data (NA in raw input)\n")
-        } else {
-          cat("  -", country, ": Check formula logic\n")
-        }
-      }
-    }
-  } else {
-    cat("(Could not trace back to raw data - check variable mapping)\n")
-  }
-}
-
-# For each country, categorize their missing values
-for (country in countries_with_missing) {
-  cat("\nCountry:", country, "\n")
-  cat("-" %>% rep(40) %>% paste(collapse = ""), "\n")
-  
-  # Get raw data for this country
-  raw_country <- country_data %>%
-    filter(Region == country) %>%
-    select(
-      `Catholics in thousands`,
-      `Inhabitants in thousands`,
-      `Parishes with diocesan pastor`,
-      `Parishes with religious pastor`,
-      `Parishes without pastor administered by another priest`,
-      `Parishes entirely vacant`,
-      `Candidates for diocesan clergy in theology centres`,
-      `Candidates for religious clergy in theology centres`,
-      `Infant baptisms (people up to 7 years old)`,
-      `Adult baptisms (people over 7 years old)`,
-      `Baptisms`,
-      `Marriages between Catholics`,
-      `Mixed marriages`
-    )
-  
-  # Key indicators
-  catholics <- raw_country$`Catholics in thousands`[1]
-  total_parishes <- sum(
-    raw_country$`Parishes with diocesan pastor`[1],
-    raw_country$`Parishes with religious pastor`[1],
-    raw_country$`Parishes without pastor administered by another priest`[1],
-    raw_country$`Parishes entirely vacant`[1],
-    na.rm = TRUE
-  )
-  
-  cat("Catholics (thousands):", catholics, "\n")
-  cat("Total parishes:", total_parishes, "\n")
-  cat("Baptisms:", raw_country$Baptisms[1], "\n")
-  cat("Marriages (Catholic):", raw_country$`Marriages between Catholics`[1], "\n")
-  cat("Mixed marriages:", raw_country$`Mixed marriages`[1], "\n\n")
-  
-  # Get missing variables for this country
-  missing_vars <- analysis_data %>%
-    filter(Region == country) %>%
-    select(-Region) %>%
-    select(where(~is.na(.))) %>%
-    names()
-  
-  cat("Missing variables (", length(missing_vars), "):\n", sep = "")
-  
-  # Categorize each
-  for (var in missing_vars) {
-    if (catholics == 0 && grepl("per Catholic", var)) {
-      cat("  - ", var, " → STRUCTURAL ZERO (0 Catholics)\n", sep = "")
-    } else if (total_parishes == 0 && grepl("parish|pastor", var, ignore.case = TRUE)) {
-      cat("  - ", var, " → STRUCTURAL ZERO (0 parishes)\n", sep = "")
-    } else if (raw_country$`Marriages between Catholics`[1] == 0 && 
-               raw_country$`Mixed marriages`[1] == 0 && 
-               grepl("marriage", var, ignore.case = TRUE)) {
-      cat("  - ", var, " → STRUCTURAL ZERO (0 marriages)\n", sep = "")
-    } else {
-      cat("  - ", var, " → CHECK: May be TRUE missing or other cause\n", sep = "")
-    }
-  }
-}
+# # Get all countries with any missing values
+# countries_with_missing <- missingness_per_country %>%
+#   filter(n_missing > 0) %>%
+#   pull(Region)
+# 
+# diagnose_variable <- function(var_name, data_full) {
+#   
+#   # Get countries where this variable is NA
+#   na_countries <- data_full %>%
+#     filter(is.na(.data[[var_name]])) %>%
+#     pull(Region)
+#   
+#   if (length(na_countries) == 0) {
+#     return(NULL)
+#   }
+#   
+#   # Define which raw columns to check based on variable name
+#   # This maps derived variables back to their input columns
+#   
+#   raw_cols <- list()
+#   
+#   if (var_name == "Share of diocesan pastors") {
+#     raw_cols <- c("Parishes with diocesan pastor", "Parishes with religious pastor")
+#   } else if (var_name == "Share of non-vacant parishes entrusted to religious women or laypeople") {
+#     raw_cols <- c("Parishes with diocesan pastor", "Parishes with religious pastor",
+#                   "Parishes without pastor administered by another priest",
+#                   "Parishes without pastor entrusted to permanent deacons",
+#                   "Parishes without pastor entrusted to non-priest religious men",
+#                   "Parishes without pastor entrusted to religious women",
+#                   "Parishes without pastor entrusted to laypeople")
+#   } else if (grepl("per Catholic", var_name)) {
+#     raw_cols <- c("Catholics in thousands")
+#     # Add numerator based on variable name
+#     if (grepl("Infant baptisms", var_name)) {
+#       raw_cols <- c(raw_cols, "Infant baptisms (people up to 7 years old)")
+#     } else if (grepl("Adult baptisms", var_name)) {
+#       raw_cols <- c(raw_cols, "Adult baptisms (people over 7 years old)")
+#     } else if (grepl("Marriages between Catholics", var_name)) {
+#       raw_cols <- c(raw_cols, "Marriages between Catholics")
+#     } else if (grepl("Candidates for diocesan clergy in theology", var_name)) {
+#       raw_cols <- c(raw_cols, "Candidates for diocesan clergy in theology centres")
+#     } else if (grepl("Candidates for religious clergy in theology", var_name)) {
+#       raw_cols <- c(raw_cols, "Candidates for religious clergy in theology centres")
+#     } else if (grepl("Non-vacant parishes administered by non-pastor", var_name)) {
+#       raw_cols <- c(raw_cols, "Parishes without pastor administered by another priest")
+#     } else if (grepl("Parishes entirely vacant", var_name)) {
+#       raw_cols <- c(raw_cols, "Parishes entirely vacant")
+#     }
+#   } else if (grepl("per inhabitant", var_name)) {
+#     raw_cols <- c("Inhabitants in thousands")
+#     if (grepl("Baptisms per inhabitant", var_name)) {
+#       raw_cols <- c(raw_cols, "Baptisms")
+#     } else if (grepl("Mixed marriages", var_name)) {
+#       raw_cols <- c(raw_cols, "Mixed marriages")
+#     }
+#   } else if (var_name == "Share of mixed marriages") {
+#     raw_cols <- c("Marriages between Catholics", "Mixed marriages", 
+#                   "Catholics in thousands", "Inhabitants in thousands")
+#   }
+#   
+#   # Get raw data for these countries
+#   raw_data <- country_data %>%
+#     filter(Region %in% na_countries) %>%
+#     select(Region, any_of(raw_cols))
+#   
+#   return(raw_data)
+# }
+# 
+# 
+# vars_with_missing <- analysis_data %>%
+#   select(-Region) %>%
+#   summarise(across(everything(), ~sum(is.na(.)))) %>%
+#   pivot_longer(everything(), names_to = "variable", values_to = "n_missing") %>%
+#   filter(n_missing > 0) %>%
+#   arrange(desc(n_missing))
+# 
+# cat("Variables with missing values:\n")
+# print(vars_with_missing)
+# 
+# for (i in 1:nrow(vars_with_missing)) {
+#   var <- vars_with_missing$variable[i]
+#   n_miss <- vars_with_missing$n_missing[i]
+#   
+#   cat("\n")
+#   cat("=" %>% rep(80) %>% paste(collapse = ""), "\n")
+#   cat("VARIABLE:", var, "\n")
+#   cat("Number of countries with NA:", n_miss, "\n")
+#   cat("=" %>% rep(80) %>% paste(collapse = ""), "\n\n")
+#   
+#   # Get the raw data that drives this variable
+#   raw_diag <- diagnose_variable(var, analysis_data)
+#   
+#   if (!is.null(raw_diag)) {
+#     print(raw_diag)
+#     
+#     # Analyze the pattern
+#     cat("\nPATTERN ANALYSIS:\n")
+#     
+#     # Check if all values are 0
+#     numeric_cols <- raw_diag %>% select(-Region) %>% select(where(is.numeric))
+#     
+#     if (ncol(numeric_cols) > 0) {
+#       all_zeros <- raw_diag %>%
+#         select(-Region) %>%
+#         select(where(is.numeric)) %>%
+#         summarise(across(everything(), ~all(. == 0, na.rm = TRUE)))
+#       
+#       for (col in names(all_zeros)) {
+#         if (all_zeros[[col]]) {
+#           cat("  - ALL countries have", col, "= 0 (STRUCTURAL ZERO)\n")
+#         } else {
+#           # Check individual values
+#           has_zero <- raw_diag %>% filter(.data[[col]] == 0) %>% pull(Region)
+#           has_nonzero <- raw_diag %>% filter(.data[[col]] > 0) %>% pull(Region)
+#           has_na <- raw_diag %>% filter(is.na(.data[[col]])) %>% pull(Region)
+#           
+#           if (length(has_zero) > 0) {
+#             cat("  -", col, "= 0 for:", paste(has_zero, collapse = ", "), "\n")
+#           }
+#           if (length(has_nonzero) > 0) {
+#             cat("  -", col, "> 0 for:", paste(has_nonzero, collapse = ", "), "\n")
+#           }
+#           if (length(has_na) > 0) {
+#             cat("  -", col, "= NA (TRULY MISSING) for:", paste(has_na, collapse = ", "), "\n")
+#           }
+#         }
+#       }
+#       
+#       # Determine cause of NaN
+#       cat("\nCAUSE OF NaN:\n")
+#       for (country in raw_diag$Region) {
+#         country_data_slice <- raw_diag %>% filter(Region == country)
+#         numeric_values <- country_data_slice %>% select(-Region) %>% select(where(is.numeric))
+#         
+#         if (all(numeric_values == 0, na.rm = TRUE)) {
+#           cat("  -", country, ": Division by zero (0/0) - STRUCTURAL ZERO\n")
+#         } else if (any(is.na(numeric_values))) {
+#           cat("  -", country, ": Contains TRUE missing data (NA in raw input)\n")
+#         } else {
+#           cat("  -", country, ": Check formula logic\n")
+#         }
+#       }
+#     }
+#   } else {
+#     cat("(Could not trace back to raw data - check variable mapping)\n")
+#   }
+# }
+# 
+# # For each country, categorize their missing values
+# for (country in countries_with_missing) {
+#   cat("\nCountry:", country, "\n")
+#   cat("-" %>% rep(40) %>% paste(collapse = ""), "\n")
+#   
+#   # Get raw data for this country
+#   raw_country <- country_data %>%
+#     filter(Region == country) %>%
+#     select(
+#       `Catholics in thousands`,
+#       `Inhabitants in thousands`,
+#       `Parishes with diocesan pastor`,
+#       `Parishes with religious pastor`,
+#       `Parishes without pastor administered by another priest`,
+#       `Parishes entirely vacant`,
+#       `Candidates for diocesan clergy in theology centres`,
+#       `Candidates for religious clergy in theology centres`,
+#       `Infant baptisms (people up to 7 years old)`,
+#       `Adult baptisms (people over 7 years old)`,
+#       `Baptisms`,
+#       `Marriages between Catholics`,
+#       `Mixed marriages`
+#     )
+#   
+#   # Key indicators
+#   catholics <- raw_country$`Catholics in thousands`[1]
+#   total_parishes <- sum(
+#     raw_country$`Parishes with diocesan pastor`[1],
+#     raw_country$`Parishes with religious pastor`[1],
+#     raw_country$`Parishes without pastor administered by another priest`[1],
+#     raw_country$`Parishes entirely vacant`[1],
+#     na.rm = TRUE
+#   )
+#   
+#   cat("Catholics (thousands):", catholics, "\n")
+#   cat("Total parishes:", total_parishes, "\n")
+#   cat("Baptisms:", raw_country$Baptisms[1], "\n")
+#   cat("Marriages (Catholic):", raw_country$`Marriages between Catholics`[1], "\n")
+#   cat("Mixed marriages:", raw_country$`Mixed marriages`[1], "\n\n")
+#   
+#   # Get missing variables for this country
+#   missing_vars <- analysis_data %>%
+#     filter(Region == country) %>%
+#     select(-Region) %>%
+#     select(where(~is.na(.))) %>%
+#     names()
+#   
+#   cat("Missing variables (", length(missing_vars), "):\n", sep = "")
+#   
+#   # Categorize each
+#   for (var in missing_vars) {
+#     if (catholics == 0 && grepl("per Catholic", var)) {
+#       cat("  - ", var, " → STRUCTURAL ZERO (0 Catholics)\n", sep = "")
+#     } else if (total_parishes == 0 && grepl("parish|pastor", var, ignore.case = TRUE)) {
+#       cat("  - ", var, " → STRUCTURAL ZERO (0 parishes)\n", sep = "")
+#     } else if (raw_country$`Marriages between Catholics`[1] == 0 && 
+#                raw_country$`Mixed marriages`[1] == 0 && 
+#                grepl("marriage", var, ignore.case = TRUE)) {
+#       cat("  - ", var, " → STRUCTURAL ZERO (0 marriages)\n", sep = "")
+#     } else {
+#       cat("  - ", var, " → CHECK: May be TRUE missing or other cause\n", sep = "")
+#     }
+#   }
+# }
 
 # ---- Transformation Functions ----
 
@@ -773,11 +773,67 @@ standardize_data <- function(data) {
   return(data_std)
 }
 
+# Design 1 variables (transformed names after standardize_data)
+population_territory_transformed <- c(
+  "Share of Catholics",
+  "Catholics per km^2",
+  "Catholics per pastoral centre",
+  "Share of diocesan pastors",
+  "Non-vacant parishes administered by non-pastor priests per Catholic",
+  "Share of non-vacant parishes entrusted to religious women or laypeople",
+  "Parishes entirely vacant per Catholic",
+  "Catholics per priest"
+)
+
+# Design 2 variables (transformed names after standardize_data)
+clergy_sacraments_transformed <- c(
+  "Yearly ordinations of diocesan priests as share of those incardinated on January 1",
+  "Yearly deaths of diocesan priests as share of those incardinated on January 1",
+  "Yearly defections of diocesan priests as share of those incardinated at January 1",
+  "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per inhabitant",
+  "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per Catholic",
+  "Philosophy+theology candidates for diocesan and religious clergy per priest",
+  "Candidates for diocesan clergy in theology centres per Catholic",
+  "Candidates for religious clergy in theology centres per Catholic",
+  "Infant baptisms (people up to 7 years old) per Catholic",
+  "Adult baptisms (people over 7 years old) per Catholic",
+  "Baptisms per inhabitant",
+  "Marriages between Catholics per Catholic",
+  "Mixed marriages per inhabitant",
+  "Share of mixed marriages",
+  "Confirmations per Catholic",
+  "First Communions per Catholic"
+)
+
 # Apply standardization
 cluster_data_2022_std <- standardize_data(analysis_data)
 
 # Verify transformations with summary (numeric columns only)
 summary(cluster_data_2022_std %>% select(-Region))
+
+# Use all countries for Design 1 
+design1_data <- cluster_data_2022_std %>%
+  select(Region, all_of(population_territory_transformed))
+
+# Apply z-score standardization
+design1_final <- design1_data %>%
+  mutate(across(-Region, ~ scale(.)[,1]))
+
+#For Design 2 
+# Step 1: Filter analysis_data to exclude 0-Catholic countries BEFORE transformation
+design2_raw <- analysis_data %>%
+  filter(`Catholics per 100 inhabitants` > 0)
+
+# Step 2: Transform the filtered data
+design2_transformed <- standardize_data(design2_raw)
+
+# Step 3: Select Design 2 variables
+design2_data <- design2_transformed %>%
+  select(Region, all_of(clergy_sacraments_transformed))
+
+# Step 4: Apply z-score standardization
+design2_final <- design2_data %>%
+  mutate(across(-Region, ~ scale(.)[,1]))
 
 
 # ---- Transformation diagnostics ----
@@ -996,18 +1052,16 @@ create_comparison_plot <- function(data_before, data_after, col_index, var_name,
 
 # ---- Cluster analysis: population and territory  ----
 
-# Define list of variables
-population_territory <- c("Share of Catholics",
-                          "Catholics per km^2",
-                          "Catholics per pastoral centre",
-                          "Share of diocesan pastors",
-                          "Non-vacant parishes administered by non-pastor priests per Catholic",
-                          "Share of non-vacant parishes entrusted to religious women or laypeople",
-                          "Parishes entirely vacant per Catholic",
-                          "Catholics per priest")
+# Design 1 ready for clustering
+popu_terr_final <- design1_final
+rownames(popu_terr_final) <- popu_terr_final$Region
 
-# Extract numeric variables
-popu_terr <- imputed_z %>% select(all_of(population_territory))
+# Design 2 ready for clustering  
+clergy_sac_final <- design2_final
+rownames(clergy_sac_final) <- clergy_sac_final$Region
+
+# Extract numeric variables (exclude Region column)
+popu_terr <- popu_terr_final %>% select(-Region)
 
 # Convert to matrix for easier computation
 pt_data_matrix <- as.matrix(popu_terr)
@@ -1043,7 +1097,7 @@ pt_hc <- hclust(pt_huber_dist, method = "ward.D2")
 
 # Plot the dendrogram
 plot(pt_hc, 
-     labels = imputed_z$Region, 
+     labels =  popu_terr_final$Region, 
      main = "Clustering according to population and territory",
      xlab = "Countries", 
      sub = NULL, 
@@ -1064,7 +1118,7 @@ pt_nb_res <- NbClust(pt_data_matrix, diss = pt_huber_dist,
 pt_nb_res$Best.nc  # Optimal k by CH
 
 # Silhouette method for k choice
-fviz_nbclust(imputed_z[, population_territory],
+fviz_nbclust(popu_terr,
              FUNcluster = function(x, k) list(cluster = cutree(pt_hc, k = k)),  # Wrap in list(cluster = ...)
              method = "silhouette", k.max = 15,
              diss = pt_huber_dist) + 
@@ -1079,30 +1133,14 @@ print(paste("Cophenetic Correlation:", round(pt_coph_cor, 2)))  # Closer to 1 is
 
 # ---- Cluster analysis: clergy and sacraments  ----
 
-# Define list of variables
-clergy_sacraments <- c("Yearly ordinations of diocesan priests as share of those incardinated on January 1",
-                       "Yearly deaths of diocesan priests as share of those incardinated on January 1",
-                       "Yearly defections of diocesan priests as share of those incardinated at January 1",
-                       "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per inhabitant",
-                       "Vocation rate - philosophy+theology candidates for diocesan and religious clergy per Catholic",
-                       "Philosophy+theology candidates for diocesan and religious clergy per priest",
-                       "Candidates for diocesan clergy in theology centres per Catholic",
-                       "Candidates for religious clergy in theology centres per Catholic",
-                       "Infant baptisms (people up to 7 years old) per Catholic",
-                       "Adult baptisms (people over 7 years old) per Catholic",
-                       "Baptisms per inhabitant",
-                       "Marriages between Catholics per Catholic",
-                       "Mixed marriages per inhabitant",
-                       "Share of mixed marriages",
-                       "Confirmations per Catholic",
-                       "First Communions per Catholic")
-
-# Extract numeric variables
-numeric_imp <- imputed_z %>% select(all_of(clergy_sacraments))
-colnames(numeric_imp) <- clergy_sacraments  # exclude "Region"
+# Extract numeric variables (exclude Region column)
+clergy_sac <- clergy_sac_final %>% select(-Region)
 
 # Convert to matrix for easier computation
-cs_data_matrix <- as.matrix(numeric_imp)
+cs_data_matrix <- as.matrix(clergy_sac)
+
+# Add row names
+rownames(cs_data_matrix) <- clergy_sac_final$Region
 
 # Define the Huber loss function
 huber_loss <- function(e, delta = 1.345) {  # delta=1.345 is a common choice for 95% efficiency
@@ -1135,7 +1173,7 @@ cs_hc <- hclust(cs_huber_dist, method = "ward.D2")
 
 # Plot the dendrogram
 plot(cs_hc, 
-     labels = imputed_z$Region,
+     labels = clergy_sac_final$Region,
      main = "Clustering according to clergy and sacraments",
      xlab = "Regions", 
      sub = NULL, 
@@ -1156,7 +1194,7 @@ cs_nb_res <- NbClust(cs_data_matrix, diss = cs_huber_dist,
 cs_nb_res$Best.nc  # Optimal k by CH
 
 # Silhouette method for k choice
-fviz_nbclust(imputed_z[, clergy_sacraments],
+fviz_nbclust(clergy_sac,
              FUNcluster = function(x, k) list(cluster = cutree(cs_hc, k = k)),  # Wrap in list(cluster = ...)
              method = "silhouette", k.max = 15,
              diss = cs_huber_dist) + 
