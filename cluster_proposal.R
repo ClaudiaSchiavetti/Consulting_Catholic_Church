@@ -14,6 +14,7 @@ library(tidyr)
 library(dplyr)
 library(stringr)
 library(VIM)
+library(mclust)
 library(ggdendro)
 library(plotly)
 library(NbClust)
@@ -21,8 +22,8 @@ library(cluster)
 library(factoextra)
 
 # Set working directory
-path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+#path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_data)
 
 
@@ -115,13 +116,6 @@ missing_info_tidy <- country_data%>%
   arrange(Region, Variable)
 
 print(missing_info_tidy)
-
-# Summary with tidyverse
-missing_summary_tidy <- missing_info_tidy %>%
-  count(Region, Variable, name = "Missing_Count")
-
-print(missing_summary_tidy, n = nrow(missing_summary_tidy))
-
 
 # Check of the missing values per variable and per country + graphs
 
@@ -1253,86 +1247,6 @@ grid.arrange(grobs = design2_density_plots[1:4], ncol = 2,
 # colnames(imputed_z) <- colnames(zscores)
 # head(imputed_z)
 
-# ---- Cluster analysis: population and territory  ----
-
-# Design 1 ready for clustering
-popu_terr_final <- design1_final
-rownames(popu_terr_final) <- popu_terr_final$Region
-
-# Design 2 ready for clustering  
-clergy_sac_final <- design2_final
-rownames(clergy_sac_final) <- clergy_sac_final$Region
-
-# Extract numeric variables (exclude Region column)
-popu_terr <- popu_terr_final %>% select(-Region)
-
-# Convert to matrix for easier computation
-pt_data_matrix <- as.matrix(popu_terr)
-
-# Define the Huber loss function
-huber_loss <- function(e, delta = 1.345) {  # delta=1.345 is a common choice for 95% efficiency
-  ifelse(abs(e) <= delta, 0.5 * e^2, delta * abs(e) - 0.5 * delta^2)
-}
-
-# Define the Huber distance function between two vectors
-huber_distance <- function(x, y, delta = 1.345) {
-  diffs <- x - y
-  sqrt(sum(huber_loss(diffs, delta)))
-}
-
-# Compute the pairwise Huber distance matrix
-# Note: This uses a loop for simplicity; for large n (>1000 rows), consider parallelization or optimization
-n <- nrow(pt_data_matrix)
-pt_dist_matrix <- matrix(0, n, n)
-for (i in 1:(n-1)) {
-  for (j in (i+1):n) {
-    pt_dist_matrix[i, j] <- huber_distance(pt_data_matrix[i, ], pt_data_matrix[j, ])
-    pt_dist_matrix[j, i] <- pt_dist_matrix[i, j]  # Symmetric
-  }
-}
-
-# Convert to dist object
-pt_huber_dist <- as.dist(pt_dist_matrix)
-
-# Perform hierarchical clustering with Ward's method
-# Use "ward.D2" for the unsquared version (recommended for distance matrices)
-pt_hc <- hclust(pt_huber_dist, method = "ward.D2")
-
-# Plot the dendrogram
-plot(pt_hc, 
-     labels =  popu_terr_final$Region, 
-     main = "Clustering according to population and territory",
-     xlab = "Countries", 
-     sub = NULL, 
-     horiz = TRUE, 
-     cex = 0.4)  # Smaller label size; try 0.3-0.6 based on your display
-
-# Interactive dendrogram
-pt_ggdend <- ggdendrogram(pt_hc, rotate = TRUE, size = 2) + 
-  theme(axis.text.x = element_text(size = 6, angle = 90))  # Rotate and small text
-
-pt_interactive_dend <- ggplotly(pt_ggdend)
-pt_interactive_dend
-
-# CH index (variance ratio criterion) for k choice
-pt_nb_res <- NbClust(pt_data_matrix, diss = pt_huber_dist, 
-                     distance = NULL, min.nc = 2, max.nc = 15, 
-                     method = "ward.D2", index = "ch")  # Or "all" for 30 indices
-pt_nb_res$Best.nc  # Optimal k by CH
-
-# Silhouette method for k choice
-fviz_nbclust(popu_terr,
-             FUNcluster = function(x, k) list(cluster = cutree(pt_hc, k = k)),  # Wrap in list(cluster = ...)
-             method = "silhouette", k.max = 15,
-             diss = pt_huber_dist) + 
-  labs(title = "Silhouette Method for Optimal k")
-
-# k=2 is optimal for both methods
-
-# For validation, compute cophenetic correlation to check how well the dendrogram preserves distances
-pt_coph_cor <- cor(pt_huber_dist, cophenetic(pt_hc))
-print(paste("Cophenetic Correlation:", round(pt_coph_cor, 2)))  # Closer to 1 is better
-
 
 ### Second try 
 
@@ -1469,9 +1383,6 @@ prof3 <- cbind(Region = popu_terr_final$Region,
   summarise(across(where(is.numeric), median, na.rm = TRUE))
 prof3
 
-
-# install.packages("mclust")
-library(mclust)
 mclust::adjustedRandIndex(popu_terr_final$Cluster_HuberPAM,
                           popu_terr_final$Cluster_KmeansEu)
 
