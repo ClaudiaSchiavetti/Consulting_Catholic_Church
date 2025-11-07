@@ -1248,8 +1248,6 @@ grid.arrange(grobs = design2_density_plots[1:4], ncol = 2,
 # head(imputed_z)
 
 
-### Second try 
-
 # ---- Cluster analysis: population and territory ----
 
 # Design 1 ready for clustering
@@ -1397,85 +1395,6 @@ print(paste("Cophenetic Correlation (Huber HC):", round(pt_coph_cor, 2)))
 print(table(popu_terr_final$Cluster_HuberPAM, popu_terr_final$Cluster_KmeansEu))
 
 
-
-# ---- Cluster analysis: clergy and sacraments  ----
-
-# Extract numeric variables (exclude Region column)
-clergy_sac <- clergy_sac_final %>% select(-Region)
-
-# Convert to matrix for easier computation
-cs_data_matrix <- as.matrix(clergy_sac)
-
-# Add row names
-rownames(cs_data_matrix) <- clergy_sac_final$Region
-
-# Define the Huber loss function
-huber_loss <- function(e, delta = 1.345) {  # delta=1.345 is a common choice for 95% efficiency
-  ifelse(abs(e) <= delta, 0.5 * e^2, delta * abs(e) - 0.5 * delta^2)
-}
-
-# Define the Huber distance function between two vectors
-huber_distance <- function(x, y, delta = 1.345) {
-  diffs <- x - y
-  sqrt(sum(huber_loss(diffs, delta)))
-}
-
-# Compute the pairwise Huber distance matrix
-# Note: This uses a loop for simplicity; for large n (>1000 rows), consider parallelization or optimization
-n <- nrow(cs_data_matrix)
-cs_dist_matrix <- matrix(0, n, n)
-for (i in 1:(n-1)) {
-  for (j in (i+1):n) {
-    cs_dist_matrix[i, j] <- huber_distance(cs_data_matrix[i, ], cs_data_matrix[j, ])
-    cs_dist_matrix[j, i] <- cs_dist_matrix[i, j]  # Symmetric
-  }
-}
-
-# Convert to dist object
-cs_huber_dist <- as.dist(cs_dist_matrix)
-
-# Perform hierarchical clustering with Ward's method
-# Use "ward.D2" for the unsquared version (recommended for distance matrices)
-cs_hc <- hclust(cs_huber_dist, method = "ward.D2")
-
-# Plot the dendrogram
-plot(cs_hc, 
-     labels = clergy_sac_final$Region,
-     main = "Clustering according to clergy and sacraments",
-     xlab = "Regions", 
-     sub = NULL, 
-     hang = -1, 
-     cex = 0.4)  # Smaller label size; try 0.3-0.6 based on your display
-
-# Interactive dendrogram
-cs_ggdend <- ggdendrogram(cs_hc, rotate = TRUE, size = 2) + 
-  theme(axis.text.x = element_text(size = 6, angle = 90))  # Rotate and small text
-
-cs_interactive_dend <- ggplotly(cs_ggdend)
-cs_interactive_dend
-
-# CH index (variance ratio criterion) for k choice
-cs_nb_res <- NbClust(cs_data_matrix, diss = cs_huber_dist, 
-                     distance = NULL, min.nc = 2, max.nc = 15, 
-                     method = "ward.D2", index = "ch")  # Or "all" for 30 indices
-cs_nb_res$Best.nc  # Optimal k by CH
-
-# Silhouette method for k choice
-fviz_nbclust(clergy_sac,
-             FUNcluster = function(x, k) list(cluster = cutree(cs_hc, k = k)),  # Wrap in list(cluster = ...)
-             method = "silhouette", k.max = 15,
-             diss = cs_huber_dist) + 
-  labs(title = "Silhouette Method for Optimal k")
-
-# k=2 is optimal for both methods
-
-# For validation, compute cophenetic correlation to check how well the dendrogram preserves distances
-cs_coph_cor <- cor(cs_huber_dist, cophenetic(cs_hc))
-print(paste("Cophenetic Correlation:", round(cs_coph_cor, 2)))  # Closer to 1 is better
-
-
-### Second try 
-
 # ---- Cluster analysis: clergy and sacraments ----
 
 # Extract numeric variables (exclude Region column)
@@ -1606,7 +1525,6 @@ prof3_cs
 # VALIDATION
 
 # Adjusted Rand Index between PAM(Huber) and k-means(Euclidean)
-library(mclust)
 mclust::adjustedRandIndex(clergy_sac_final$Cluster_HuberPAM,
                           clergy_sac_final$Cluster_KmeansEu)
 
