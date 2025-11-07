@@ -1254,12 +1254,29 @@ grid.arrange(grobs = design2_density_plots[1:4], ncol = 2,
 popu_terr_final <- design1_final
 rownames(popu_terr_final) <- popu_terr_final$Region
 
-# Design 2 ready for clustering  
+# Design 2 ready for clustering
 clergy_sac_final <- design2_final
 rownames(clergy_sac_final) <- clergy_sac_final$Region
 
 # Extract numeric variables (exclude Region column)
 popu_terr <- popu_terr_final %>% select(-Region)
+
+# Compute PCA on the four highly correlated variables
+correlated_vars <- c("Share of Catholics", "Catholics per km^2", "Catholics per pastoral centre", "Catholics per priest")
+four_vars <- popu_terr[, correlated_vars]
+pca <- prcomp(four_vars, center = FALSE, scale = FALSE)
+summary(pca)
+pc1 <- pca$x[,1]
+
+# Standardize PC1 to sd=1 (like other variables)
+pc1_std <- pc1 / sd(pc1)
+
+# Create new data: remove the four correlated vars, add the standardized PC1 duplicated four times
+other_vars <- setdiff(names(popu_terr), correlated_vars)
+popu_terr <- cbind(popu_terr[, other_vars], PC1_1 = pc1_std, PC1_2 = pc1_std, PC1_3 = pc1_std, PC1_4 = pc1_std)
+
+# Quick check: sds should be 1 for all columns now
+print(apply(popu_terr, 2, sd))
 
 # Convert to matrix for easier computation
 pt_data_matrix <- as.matrix(popu_terr)
@@ -1288,11 +1305,10 @@ for (i in 1:(n-1)) {
 # Convert to dist object
 pt_huber_dist <- as.dist(pt_dist_matrix)
 
-
 # MAIN ANALYSIS: Hierarchical (average/complete) + PAM (Huber)
 
 # --- 1) Hierarchical clustering for exploration (Huber distance) ---
-pt_hc <- hclust(pt_huber_dist, method = "average")  # or "complete"
+pt_hc <- hclust(pt_huber_dist, method = "average") # or "complete"
 
 # Dendrogram
 plot(pt_hc,
@@ -1313,7 +1329,6 @@ fviz_nbclust(popu_terr,
   labs(title = "Silhouette Method (Huber distance)")
 
 # --- 3) PAM clustering (Huber distance) with silhouette-based k ---
-library(cluster)
 ks <- 2:15
 sil <- sapply(ks, function(k) {
   pam_fit <- pam(pt_huber_dist, k = k, diss = TRUE)
@@ -1321,21 +1336,17 @@ sil <- sapply(ks, function(k) {
 })
 k_opt <- ks[which.max(sil)]
 message(sprintf("Optimal k (Huber + PAM) = %d", k_opt))
-
 pam_fit <- pam(pt_huber_dist, k = k_opt, diss = TRUE)
 
 # Add cluster labels to data
 popu_terr_final$Cluster_HuberPAM <- pam_fit$clustering
-
 medoid_ids <- pam_fit$id.med
 medoid_regions <- rownames(popu_terr_final)[medoid_ids]
 medoid_regions
-
 fviz_silhouette(silhouette(pam_fit), label = FALSE) +
   labs(title = sprintf("Silhouette (PAM + Huber), k = %d", k_opt))
 
-
-#  ROBUSTNESS CHECK: Euclidean distance + Ward / k-means
+# ROBUSTNESS CHECK: Euclidean distance + Ward / k-means
 
 # --- 4) Euclidean distance (for CH / Ward / k-means comparison) ---
 eu_dist <- dist(pt_data_matrix, method = "euclidean")
@@ -1348,7 +1359,6 @@ plot(pt_hc_eu,
      xlab = "Countries", sub = NULL, horiz = TRUE, cex = 0.4)
 
 # CH index for optimal k (Euclidean only)
-library(NbClust)
 pt_nb_res <- NbClust(pt_data_matrix, distance = "euclidean",
                      min.nc = 2, max.nc = 15,
                      method = "ward.D2", index = "ch")
@@ -1358,17 +1368,15 @@ pt_nb_res$Best.nc
 set.seed(123)
 kmeans_fit <- kmeans(pt_data_matrix, centers = pt_nb_res$Best.nc[1], nstart = 50)
 popu_terr_final$Cluster_KmeansEu <- kmeans_fit$cluster
-
 eu_dist <- dist(pt_data_matrix, "euclidean")
-
 sil_km3 <- silhouette(kmeans_fit$cluster, eu_dist)
 mean_sil_km3 <- summary(sil_km3)$avg.width
 mean_sil_km3
 
 #Interpretation:
 prof2 <- cbind(Region = popu_terr_final$Region,
-cl2 = popu_terr_final$Cluster_HuberPAM) %>%
-  as_tibble() %>%  # make sure it’s a tibble
+               cl2 = popu_terr_final$Cluster_HuberPAM) %>%
+  as_tibble() %>% # make sure it’s a tibble
   left_join(as.data.frame(design1_final), by = "Region") %>%
   group_by(cl2) %>%
   summarise(across(where(is.numeric), median, na.rm = TRUE))
@@ -1380,17 +1388,14 @@ prof3 <- cbind(Region = popu_terr_final$Region,
   group_by(cl3) %>%
   summarise(across(where(is.numeric), median, na.rm = TRUE))
 prof3
-
 mclust::adjustedRandIndex(popu_terr_final$Cluster_HuberPAM,
                           popu_terr_final$Cluster_KmeansEu)
-
 
 # VALIDATION
 
 # --- Cophenetic correlation (Huber tree fit) ---
 pt_coph_cor <- cor(as.numeric(pt_huber_dist), as.numeric(cophenetic(pt_hc)))
 print(paste("Cophenetic Correlation (Huber HC):", round(pt_coph_cor, 2)))
-
 # --- Compare clusters (Huber PAM vs Euclidean k-means) ---
 print(table(popu_terr_final$Cluster_HuberPAM, popu_terr_final$Cluster_KmeansEu))
 
