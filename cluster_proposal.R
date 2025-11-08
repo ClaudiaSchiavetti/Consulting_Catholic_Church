@@ -1358,19 +1358,31 @@ plot(pt_hc_eu,
      main = "Robustness check: HC (Euclidean, Ward.D2)",
      xlab = "Countries", sub = NULL, horiz = TRUE, cex = 0.4)
 
-# CH index for optimal k (Euclidean only)
+#CH index for optimal k (Euclidean only)
 pt_nb_res <- NbClust(pt_data_matrix, distance = "euclidean",
                      min.nc = 2, max.nc = 15,
                      method = "ward.D2", index = "ch")
+
+#Show all CH values for k=2 to 15
+ch_values <- pt_nb_res$All.index
+print("CH indices for k=2 to 15:")
+print(ch_values)
+
+#Plot CH indices
+plot(2:15, ch_values, type = "b", pch = 19, col = "blue",
+     main = "Calinski-Harabasz (CH) Index vs Number of Clusters",
+     xlab = "Number of Clusters (k)", ylab = "CH Index")
 k_opt_ward <- pt_nb_res$Best.nc[1]
 message(sprintf("Optimal k (HC Ward Euclidean + CH index) = %d", k_opt_ward))
 
-# Cut tree at optimal k and assign clusters for completeness
-popu_terr_final$Cluster_WardEu <- cutree(pt_hc_eu, k = k_opt_ward)
+#User-defined k (k <- k_opt_ward for optimal)
+chosen_k_pt <- 3
 
-## k = k_opt_ward to have 6 clusters (optimal by CH index)
+#Cut tree at chosen k and assign clusters for completeness
+popu_terr_final$Cluster_WardEu <- cutree(pt_hc_eu, k = chosen_k_pt)
 
-# Interpretation (optional but useful: median profiles)
+#k = chosen_k_pt to have clusters (optimal by CH index or user-defined, e.g., 3)
+#Interpretation (optional but useful: median profiles)
 prof_huberpam <- cbind(Region = popu_terr_final$Region,
                        cl = popu_terr_final$Cluster_HuberPAM) %>%
   as_tibble() %>%
@@ -1379,81 +1391,86 @@ prof_huberpam <- cbind(Region = popu_terr_final$Region,
   summarise(across(where(is.numeric), median, na.rm = TRUE))
 prof_huberpam
 
+##  VISUALIZATIONS & DIAGNOSTICS (Ward clusters only)
 
-# ==============================================================
-# VISUALIZATIONS & DIAGNOSTICS (Ward clusters only)
-# ==============================================================
-
-# 1. Median profiles (raw values)
+# Median profiles (raw values)
 prof_ward <- popu_terr_final %>%
   select(Region, Cluster_WardEu) %>%
   left_join(design1_final, by = "Region") %>%
   group_by(Cluster_WardEu) %>%
   summarise(across(where(is.numeric), median, na.rm = TRUE)) %>%
   rename(Cluster = Cluster_WardEu)
-
 prof_ward
 
-# 2. Radar / spider chart (base R - works everywhere)
-library(fmsb)
-
+# Radar / spider chart (base R - works everywhere)
 radar_data <- prof_ward %>%
-  select(-Cluster) %>%
-  t() %>%
-  as.data.frame()
+  select(-Cluster)
 
-colnames(radar_data) <- paste("C", prof_ward$Cluster, sep = "")
+# Assume original variable names are kept as colnames(radar_data)
 
-# Add max/min rows for scaling
-max_row <- apply(radar_data, 1, max) * 1.1
-min_row <- apply(radar_data, 1, min) * 0.9
-radar_data <- rbind(max_row, min_row, radar_data)
+# Compute global max/min per variable (for consistent scaling)
+max_row <- apply(radar_data, 2, max) * 1.1
+min_row <- apply(radar_data, 2, min) * 0.9
 
-radarchart(radar_data,
-           axistype = 1,
-           pcol = viridis::viridis(ncol(radar_data) - 2),
-           pfcol = scales::alpha(viridis::viridis(ncol(radar_data) - 2), 0.3),
-           plwd = 3,
-           cglcol = "grey70",
-           title = "Median Profiles by Ward Cluster (Radar Chart)")
+# Check if number of variables >= 3
+num_vars <- ncol(radar_data)
+if (num_vars < 3) {
+  message("Skipping radar charts: At least 3 variables required.")
+} else {
+  # Set up side-by-side layout
+  num_clusters <- nrow(radar_data)
+  par(mfrow = c(1, num_clusters), mar = c(2, 2, 3, 2))
+  
+  cluster_colors <- viridis::viridis(num_clusters)
+  cluster_labels <- paste("C", prof_ward$Cluster, sep = "")
+  
+  for (i in 1:num_clusters) {
+    # Single cluster row
+    cluster_row <- radar_data[i, , drop = FALSE]
+    
+    # Bind with global max/min
+    single_data <- rbind(max_row, min_row, cluster_row)
+    
+    radarchart(single_data,
+               axistype = 1,
+               pcol = cluster_colors[i],
+               pfcol = scales::alpha(cluster_colors[i], 0.3),
+               plwd = 3,
+               cglcol = "grey70",
+               title = cluster_labels[i])
+  }
+  par(mfrow = c(1, 1))  # Reset layout
+}
 
-# 3. Cluster scatter in first two PCs of the full data
+# Cluster scatter in first two PCs of the full data
 fviz_cluster(list(data = pt_data_matrix, cluster = popu_terr_final$Cluster_WardEu),
              geom = "point", ellipse.type = "convex", show.clust.cent = TRUE) +
   labs(title = "Ward Clusters in Reduced Space (PC1-PC2)")
 
-# 4. Silhouette plot
+# Silhouette plot
 sil_ward <- silhouette(popu_terr_final$Cluster_WardEu, eu_dist)
 fviz_silhouette(sil_ward) +
   labs(title = "Silhouette Plot - Ward Clusters") +
   theme_minimal()
-
 message(sprintf("Average silhouette width: %.3f", mean(sil_ward[, 3])))
 
-# 5. Cophenetic correlation
+# Cophenetic correlation
 coph_cor <- cor(cophenetic(pt_hc_eu), eu_dist)
 message(sprintf("Cophenetic correlation (Ward tree): %.3f", coph_cor))
 
-# 6. Dunn index (compactness & separation)
-library(clValid)
+# Dunn index (compactness & separation)
 dunn_idx <- dunn(distance = eu_dist, clusters = popu_terr_final$Cluster_WardEu)
 message(sprintf("Dunn index: %.4f", dunn_idx))
 
-# 7. Bootstrap stability (Jaccard indices)
-library(fpc)
+# Bootstrap stability (Jaccard indices)
 set.seed(123)
 boot_ward <- clusterboot(pt_data_matrix,
                          B = 100,
                          clustermethod = hclustCBI,
                          method = "ward.D2",
-                         k = k_opt_ward)
-
+                         k = chosen_k_pt)
 boot_ward$bootmean   # mean Jaccard per cluster
 boot_ward$bootbrd    # number of times each cluster dissolved
-
-# 8. Final cluster sizes
-table(popu_terr_final$Cluster_WardEu)
-
 
 # Optional: k-means for same k (Euclidean baseline)
 set.seed(123)
@@ -1472,24 +1489,6 @@ prof2 <- cbind(Region = popu_terr_final$Region,
   group_by(cl2) %>%
   summarise(across(where(is.numeric), median, na.rm = TRUE))
 prof2
-prof3 <- cbind(Region = popu_terr_final$Region,
-               cl3 = popu_terr_final$Cluster_KmeansEu) %>%
-  as_tibble() %>%
-  left_join(as.data.frame(design1_final), by = "Region") %>%
-  group_by(cl3) %>%
-  summarise(across(where(is.numeric), median, na.rm = TRUE))
-prof3
-mclust::adjustedRandIndex(popu_terr_final$Cluster_HuberPAM,
-                          popu_terr_final$Cluster_KmeansEu)
-
-# VALIDATION
-
-# --- Cophenetic correlation (Huber tree fit) ---
-pt_coph_cor <- cor(as.numeric(pt_huber_dist), as.numeric(cophenetic(pt_hc)))
-print(paste("Cophenetic Correlation (Huber HC):", round(pt_coph_cor, 2)))
-
-# --- Compare clusters (Huber PAM vs Euclidean k-means) ---
-print(table(popu_terr_final$Cluster_HuberPAM, popu_terr_final$Cluster_KmeansEu))
 
 
 # ---- Cluster analysis: clergy and sacraments ----
