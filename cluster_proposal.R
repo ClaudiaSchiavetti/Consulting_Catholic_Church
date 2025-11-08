@@ -14,7 +14,10 @@ library(tidyr)
 library(dplyr)
 library(stringr)
 library(VIM)
+library(fpc)
+library(fmsb)
 library(mclust)
+library(clValid)
 library(ggdendro)
 library(plotly)
 library(NbClust)
@@ -22,8 +25,8 @@ library(cluster)
 library(factoextra)
 
 # Set working directory
-path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-#path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+#path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_data)
 
 
@@ -1254,10 +1257,6 @@ grid.arrange(grobs = design2_density_plots[1:4], ncol = 2,
 popu_terr_final <- design1_final
 rownames(popu_terr_final) <- popu_terr_final$Region
 
-# Design 2 ready for clustering
-clergy_sac_final <- design2_final
-rownames(clergy_sac_final) <- clergy_sac_final$Region
-
 # Extract numeric variables (exclude Region column)
 popu_terr <- popu_terr_final %>% select(-Region)
 
@@ -1266,18 +1265,11 @@ correlated_vars <- c("Share of Catholics", "Catholics per km^2", "Catholics per 
 four_vars <- popu_terr[, correlated_vars]
 pca <- prcomp(four_vars, center = FALSE, scale = FALSE)
 summary(pca)
-# pc1 <- pca$x[,1]
-# 
-# # Standardize PC1 to sd=1 (like other variables)
-# pc1_std <- pc1 / sd(pc1)
+pc_scores <- pca$x[, 1:2] # PC1 and PC2
+pc_scores_std <- scale(pc_scores)
 
-pc_scores <- pca$x[, 1:2]     # PC1 and PC2
-pc_scores_std <- scale(pc_scores) 
-
-
-# Create new data: remove the four correlated vars, add the standardized PC1 duplicated four times
+# Create new data: remove the four correlated vars, add the standardized weighted PCs
 other_vars <- setdiff(names(popu_terr), correlated_vars)
-#popu_terr <- cbind(popu_terr[, other_vars], PC1_1 = pc1_std, PC1_2 = pc1_std, PC1_3 = pc1_std, PC1_4 = pc1_std)
 popu_terr <- cbind(
   popu_terr[, other_vars],
   PC1 = pc_scores_std[,1],
@@ -1314,10 +1306,8 @@ for (i in 1:(n-1)) {
 # Convert to dist object
 pt_huber_dist <- as.dist(pt_dist_matrix)
 
-# MAIN ANALYSIS: Hierarchical (average/complete) + PAM (Huber)
-
-# --- 1) Hierarchical clustering for exploration (Huber distance) ---
-pt_hc <- hclust(pt_huber_dist, method = "average") # or "complete"
+# --- 1) Hierarchical clustering (avg linkage, Huber distance) ---
+pt_hc <- hclust(pt_huber_dist, method = "average")
 
 # Dendrogram
 plot(pt_hc,
@@ -1331,21 +1321,24 @@ pt_ggdend <- ggdendrogram(pt_hc, rotate = TRUE, size = 2) +
 pt_interactive_dend <- ggplotly(pt_ggdend)
 pt_interactive_dend
 
-# --- 2) Silhouette method (Huber distance) to choose k ---
+# Silhouette method (on HC cutree, Huber distance) to choose k
 fviz_nbclust(popu_terr,
              FUNcluster = function(x, k) list(cluster = cutree(pt_hc, k = k)),
              method = "silhouette", k.max = 15, diss = pt_huber_dist) +
   labs(title = "Silhouette Method (Huber distance)")
 
-# --- 3) PAM clustering (Huber distance) with silhouette-based k ---
+# Compute silhouette widths explicitly to extract optimal k
+library(cluster)
 ks <- 2:15
-sil <- sapply(ks, function(k) {
-  pam_fit <- pam(pt_huber_dist, k = k, diss = TRUE)
-  summary(silhouette(pam_fit$clustering, pt_huber_dist))$avg.width
+sil_hc <- sapply(ks, function(k) {
+  cl <- cutree(pt_hc, k = k)
+  summary(silhouette(cl, pt_huber_dist))$avg.width
 })
-k_opt <- ks[which.max(sil)]
-message(sprintf("Optimal k (Huber + PAM) = %d", k_opt))
-pam_fit <- pam(pt_huber_dist, k = k_opt, diss = TRUE)
+k_opt_hc <- ks[which.max(sil_hc)]
+message(sprintf("Optimal k (HC avg Huber + silhouette) = %d", k_opt_hc))
+
+# --- 2) PAM clustering (Huber distance) with k from HC silhouette ---
+pam_fit <- pam(pt_huber_dist, k = k_opt_hc, diss = TRUE)
 
 # Add cluster labels to data
 popu_terr_final$Cluster_HuberPAM <- pam_fit$clustering
@@ -1353,11 +1346,9 @@ medoid_ids <- pam_fit$id.med
 medoid_regions <- rownames(popu_terr_final)[medoid_ids]
 medoid_regions
 fviz_silhouette(silhouette(pam_fit), label = FALSE) +
-  labs(title = sprintf("Silhouette (PAM + Huber), k = %d", k_opt))
+  labs(title = sprintf("Silhouette (PAM + Huber), k = %d", k_opt_hc))
 
-# ROBUSTNESS CHECK: Euclidean distance + Ward / k-means
-
-# --- 4) Euclidean distance (for CH / Ward / k-means comparison) ---
+# --- 3) Euclidean distance (Ward's method) ---
 eu_dist <- dist(pt_data_matrix, method = "euclidean")
 
 # Hierarchical clustering with Ward.D2 (Euclidean only)
@@ -1371,7 +1362,98 @@ plot(pt_hc_eu,
 pt_nb_res <- NbClust(pt_data_matrix, distance = "euclidean",
                      min.nc = 2, max.nc = 15,
                      method = "ward.D2", index = "ch")
-pt_nb_res$Best.nc
+k_opt_ward <- pt_nb_res$Best.nc[1]
+message(sprintf("Optimal k (HC Ward Euclidean + CH index) = %d", k_opt_ward))
+
+# Cut tree at optimal k and assign clusters for completeness
+popu_terr_final$Cluster_WardEu <- cutree(pt_hc_eu, k = k_opt_ward)
+
+## k = k_opt_ward to have 6 clusters (optimal by CH index)
+
+# Interpretation (optional but useful: median profiles)
+prof_huberpam <- cbind(Region = popu_terr_final$Region,
+                       cl = popu_terr_final$Cluster_HuberPAM) %>%
+  as_tibble() %>%
+  left_join(as.data.frame(design1_final), by = "Region") %>%
+  group_by(cl) %>%
+  summarise(across(where(is.numeric), median, na.rm = TRUE))
+prof_huberpam
+
+
+# ==============================================================
+# VISUALIZATIONS & DIAGNOSTICS (Ward clusters only)
+# ==============================================================
+
+# 1. Median profiles (raw values)
+prof_ward <- popu_terr_final %>%
+  select(Region, Cluster_WardEu) %>%
+  left_join(design1_final, by = "Region") %>%
+  group_by(Cluster_WardEu) %>%
+  summarise(across(where(is.numeric), median, na.rm = TRUE)) %>%
+  rename(Cluster = Cluster_WardEu)
+
+prof_ward
+
+# 2. Radar / spider chart (base R - works everywhere)
+library(fmsb)
+
+radar_data <- prof_ward %>%
+  select(-Cluster) %>%
+  t() %>%
+  as.data.frame()
+
+colnames(radar_data) <- paste("C", prof_ward$Cluster, sep = "")
+
+# Add max/min rows for scaling
+max_row <- apply(radar_data, 1, max) * 1.1
+min_row <- apply(radar_data, 1, min) * 0.9
+radar_data <- rbind(max_row, min_row, radar_data)
+
+radarchart(radar_data,
+           axistype = 1,
+           pcol = viridis::viridis(ncol(radar_data) - 2),
+           pfcol = scales::alpha(viridis::viridis(ncol(radar_data) - 2), 0.3),
+           plwd = 3,
+           cglcol = "grey70",
+           title = "Median Profiles by Ward Cluster (Radar Chart)")
+
+# 3. Cluster scatter in first two PCs of the full data
+fviz_cluster(list(data = pt_data_matrix, cluster = popu_terr_final$Cluster_WardEu),
+             geom = "point", ellipse.type = "convex", show.clust.cent = TRUE) +
+  labs(title = "Ward Clusters in Reduced Space (PC1-PC2)")
+
+# 4. Silhouette plot
+sil_ward <- silhouette(popu_terr_final$Cluster_WardEu, eu_dist)
+fviz_silhouette(sil_ward) +
+  labs(title = "Silhouette Plot - Ward Clusters") +
+  theme_minimal()
+
+message(sprintf("Average silhouette width: %.3f", mean(sil_ward[, 3])))
+
+# 5. Cophenetic correlation
+coph_cor <- cor(cophenetic(pt_hc_eu), eu_dist)
+message(sprintf("Cophenetic correlation (Ward tree): %.3f", coph_cor))
+
+# 6. Dunn index (compactness & separation)
+library(clValid)
+dunn_idx <- dunn(distance = eu_dist, clusters = popu_terr_final$Cluster_WardEu)
+message(sprintf("Dunn index: %.4f", dunn_idx))
+
+# 7. Bootstrap stability (Jaccard indices)
+library(fpc)
+set.seed(123)
+boot_ward <- clusterboot(pt_data_matrix,
+                         B = 100,
+                         clustermethod = hclustCBI,
+                         method = "ward.D2",
+                         k = k_opt_ward)
+
+boot_ward$bootmean   # mean Jaccard per cluster
+boot_ward$bootbrd    # number of times each cluster dissolved
+
+# 8. Final cluster sizes
+table(popu_terr_final$Cluster_WardEu)
+
 
 # Optional: k-means for same k (Euclidean baseline)
 set.seed(123)
@@ -1411,6 +1493,10 @@ print(table(popu_terr_final$Cluster_HuberPAM, popu_terr_final$Cluster_KmeansEu))
 
 
 # ---- Cluster analysis: clergy and sacraments ----
+
+# Design 2 ready for clustering
+clergy_sac_final <- design2_final
+rownames(clergy_sac_final) <- clergy_sac_final$Region
 
 # Extract numeric variables (exclude Region column)
 clergy_sac <- clergy_sac_final %>% select(-Region)
@@ -1489,9 +1575,7 @@ for (i in 1:(n-1)) {
 }
 cs_huber_dist <- as.dist(cs_dist_matrix)
 
-# MAIN ANALYSIS: Hierarchical (average/complete) + PAM (Huber)
-
-# --- 1) Hierarchical clustering for exploration (Huber distance) ---
+# --- 1) Hierarchical clustering (avg linkage, Huber distance) ---
 cs_hc <- hclust(cs_huber_dist, method = "average") # or "complete"
 
 # Dendrogram (use as.dendrogram() if you want horizontal layout)
@@ -1505,13 +1589,13 @@ cs_ggdend <- ggdendrogram(cs_hc, rotate = TRUE, size = 2) +
 cs_interactive_dend <- ggplotly(cs_ggdend)
 cs_interactive_dend
 
-# --- 2) Silhouette method (Huber distance) to choose k ---
+# Silhouette method (Huber distance) to choose k
 fviz_nbclust(clergy_sac,
              FUNcluster = function(x, k) list(cluster = cutree(cs_hc, k = k)),
              method = "silhouette", k.max = 15, diss = cs_huber_dist) +
   labs(title = "Silhouette Method (Huber distance)")
 
-# --- 3) PAM clustering (Huber distance) with silhouette-based k ---
+# --- 2) PAM clustering (Huber distance) with silhouette-based k ---
 ks <- 2:15
 sil_cs <- sapply(ks, function(k) {
   pam_fit_cs <- pam(cs_huber_dist, k = k, diss = TRUE)
@@ -1533,9 +1617,7 @@ medoid_regions_cs
 fviz_silhouette(silhouette(pam_fit_cs), label = FALSE) +
   labs(title = sprintf("Silhouette (PAM + Huber), k = %d", k_opt_cs))
 
-# ROBUSTNESS CHECK: Euclidean distance + Ward / k-means
-
-# --- 4) Euclidean distance (for CH / Ward / k-means comparison) ---
+# --- 3) Euclidean distance (Ward's method) ---
 eu_dist_cs <- dist(cs_data_matrix, method = "euclidean")
 
 # Hierarchical clustering with Ward.D2 (Euclidean only)
