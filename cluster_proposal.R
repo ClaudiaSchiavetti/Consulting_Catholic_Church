@@ -22,8 +22,8 @@ library(cluster)
 library(factoextra)
 
 # Set working directory
-#path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+path_data <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+#path_data <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
 setwd(path_data)
 
 
@@ -1266,14 +1266,23 @@ correlated_vars <- c("Share of Catholics", "Catholics per km^2", "Catholics per 
 four_vars <- popu_terr[, correlated_vars]
 pca <- prcomp(four_vars, center = FALSE, scale = FALSE)
 summary(pca)
-pc1 <- pca$x[,1]
+# pc1 <- pca$x[,1]
+# 
+# # Standardize PC1 to sd=1 (like other variables)
+# pc1_std <- pc1 / sd(pc1)
 
-# Standardize PC1 to sd=1 (like other variables)
-pc1_std <- pc1 / sd(pc1)
+pc_scores <- pca$x[, 1:2]     # PC1 and PC2
+pc_scores_std <- scale(pc_scores) 
+
 
 # Create new data: remove the four correlated vars, add the standardized PC1 duplicated four times
 other_vars <- setdiff(names(popu_terr), correlated_vars)
-popu_terr <- cbind(popu_terr[, other_vars], PC1_1 = pc1_std, PC1_2 = pc1_std, PC1_3 = pc1_std, PC1_4 = pc1_std)
+#popu_terr <- cbind(popu_terr[, other_vars], PC1_1 = pc1_std, PC1_2 = pc1_std, PC1_3 = pc1_std, PC1_4 = pc1_std)
+popu_terr <- cbind(
+  popu_terr[, other_vars],
+  PC1 = pc_scores_std[,1],
+  PC2 = pc_scores_std[,2]
+)
 
 # Quick check: sds should be 1 for all columns now
 print(apply(popu_terr, 2, sd))
@@ -1426,19 +1435,28 @@ correlated_vars2 <- c(
 four_vars <- clergy_sac[, correlated_vars2]
 pca2 <- prcomp(four_vars, center = FALSE, scale = FALSE)
 summary(pca2)
-pc1_group2 <- pca2$x[,1]
+# pc1_group2 <- pca2$x[,1]
+# 
+# # Standardize PC1 to sd=1 (like other variables)
+# pc1_group2_std <- pc1_group2 / sd(pc1_group2)
 
-# Standardize PC1 to sd=1 (like other variables)
-pc1_group2_std <- pc1_group2 / sd(pc1_group2)
+pc_scores_2 <- pca2$x[, 1:2]     # PC1 and PC2
+pc_scores_std_2 <- scale(pc_scores_2) 
 
 # Create new data: remove the correlated vars from both groups, add the standardized PC1s duplicated according to weights
 all_correlated <- c(correlated_vars1, correlated_vars2)
 other_vars <- setdiff(names(clergy_sac), all_correlated)
+# clergy_sac <- cbind(
+#   clergy_sac[, other_vars],
+#   PC1_group1_1 = pc1_group1_std, PC1_group1_2 = pc1_group1_std,
+#   PC1_group2_1 = pc1_group2_std, PC1_group2_2 = pc1_group2_std,
+#   PC1_group2_3 = pc1_group2_std, PC1_group2_4 = pc1_group2_std
+# )
 clergy_sac <- cbind(
   clergy_sac[, other_vars],
-  PC1_group1_1 = pc1_group1_std, PC1_group1_2 = pc1_group1_std,
-  PC1_group2_1 = pc1_group2_std, PC1_group2_2 = pc1_group2_std,
-  PC1_group2_3 = pc1_group2_std, PC1_group2_4 = pc1_group2_std
+  PC1_group1_1 = pc1_group1_std,
+  PC2_1 = pc_scores_std_2[,1],
+  PC2_2 = pc_scores_std_2[,2]
 )
 
 # Quick check: sds should be 1 for all columns now
@@ -1569,3 +1587,558 @@ cs_coph_cor <- cor(as.numeric(cs_huber_dist), as.numeric(cophenetic(cs_hc)))
 print(paste("Cophenetic Correlation (Huber HC):", round(cs_coph_cor, 2)))
 # Cross-tab of cluster labels
 print(table(clergy_sac_final$Cluster_HuberPAM, clergy_sac_final$Cluster_KmeansEu))
+
+
+# ROBUSTNESS CHECKS
+# δ-sensitivity for Huber distance
+
+# Define δ values to test
+delta_values <- c(1.0, 1.345, 2.0)
+
+# Storage for results
+delta_results <- list()
+
+for (delta_val in delta_values) {
+  
+  message(sprintf("\n========== Testing δ = %.3f ==========", delta_val))
+  
+  # --- Population & Territory Analysis ---
+  
+  # Recompute Huber distance with current δ
+  pt_dist_matrix_delta <- matrix(0, n, n)
+  for (i in 1:(n-1)) {
+    for (j in (i+1):n) {
+      pt_dist_matrix_delta[i, j] <- huber_distance(pt_data_matrix[i, ], 
+                                                   pt_data_matrix[j, ], 
+                                                   delta = delta_val)
+      pt_dist_matrix_delta[j, i] <- pt_dist_matrix_delta[i, j]
+    }
+  }
+  pt_huber_dist_delta <- as.dist(pt_dist_matrix_delta)
+  
+  # Hierarchical clustering
+  pt_hc_delta <- hclust(pt_huber_dist_delta, method = "average")
+  
+  # Find optimal k via silhouette
+  ks <- 2:15
+  sil_pt_delta <- sapply(ks, function(k) {
+    pam_fit <- pam(pt_huber_dist_delta, k = k, diss = TRUE)
+    summary(silhouette(pam_fit$clustering, pt_huber_dist_delta))$avg.width
+  })
+  k_opt_pt_delta <- ks[which.max(sil_pt_delta)]
+  
+  # PAM clustering
+  pam_fit_pt_delta <- pam(pt_huber_dist_delta, k = k_opt_pt_delta, diss = TRUE)
+  
+  # Medoids
+  medoid_ids_pt_delta <- pam_fit_pt_delta$id.med
+  medoid_regions_pt_delta <- rownames(popu_terr_final)[medoid_ids_pt_delta]
+  
+  # Within-cluster dispersion
+  cluster_dispersion_pt <- sapply(1:k_opt_pt_delta, function(cl) {
+    idx <- which(pam_fit_pt_delta$clustering == cl)
+    medoid_idx <- medoid_ids_pt_delta[cl]
+    sum(sapply(idx, function(i) {
+      sum(huber_loss(pt_data_matrix[i, ] - pt_data_matrix[medoid_idx, ], delta = delta_val))
+    }))
+  })
+  
+  # Cophenetic correlation
+  pt_coph_cor_delta <- cor(as.numeric(pt_huber_dist_delta), 
+                           as.numeric(cophenetic(pt_hc_delta)))
+  
+  # Store results
+  delta_results[[paste0("pt_delta_", delta_val)]] <- list(
+    delta = delta_val,
+    k = k_opt_pt_delta,
+    avg_silhouette = max(sil_pt_delta),
+    cluster_sizes = table(pam_fit_pt_delta$clustering),
+    medoids = medoid_regions_pt_delta,
+    dispersion = cluster_dispersion_pt,
+    cophenetic_cor = pt_coph_cor_delta,
+    clustering = pam_fit_pt_delta$clustering
+  )
+  
+  
+  # --- Clergy & Sacraments Analysis ---
+  
+  # Recompute Huber distance with current δ
+  cs_dist_matrix_delta <- matrix(0, n, n)
+  for (i in 1:(n-1)) {
+    for (j in (i+1):n) {
+      cs_dist_matrix_delta[i, j] <- huber_distance(cs_data_matrix[i, ], 
+                                                   cs_data_matrix[j, ], 
+                                                   delta = delta_val)
+      cs_dist_matrix_delta[j, i] <- cs_dist_matrix_delta[i, j]
+    }
+  }
+  cs_huber_dist_delta <- as.dist(cs_dist_matrix_delta)
+  
+  # Hierarchical clustering
+  cs_hc_delta <- hclust(cs_huber_dist_delta, method = "average")
+  
+  # Find optimal k via silhouette
+  sil_cs_delta <- sapply(ks, function(k) {
+    pam_fit <- pam(cs_huber_dist_delta, k = k, diss = TRUE)
+    summary(silhouette(pam_fit$clustering, cs_huber_dist_delta))$avg.width
+  })
+  k_opt_cs_delta <- ks[which.max(sil_cs_delta)]
+  
+  # PAM clustering
+  pam_fit_cs_delta <- pam(cs_huber_dist_delta, k = k_opt_cs_delta, diss = TRUE)
+  
+  # Medoids
+  medoid_ids_cs_delta <- pam_fit_cs_delta$id.med
+  medoid_regions_cs_delta <- rownames(clergy_sac_final)[medoid_ids_cs_delta]
+  
+  # Within-cluster dispersion
+  cluster_dispersion_cs <- sapply(1:k_opt_cs_delta, function(cl) {
+    idx <- which(pam_fit_cs_delta$clustering == cl)
+    medoid_idx <- medoid_ids_cs_delta[cl]
+    sum(sapply(idx, function(i) {
+      sum(huber_loss(cs_data_matrix[i, ] - cs_data_matrix[medoid_idx, ], delta = delta_val))
+    }))
+  })
+  
+  # Cophenetic correlation
+  cs_coph_cor_delta <- cor(as.numeric(cs_huber_dist_delta), 
+                           as.numeric(cophenetic(cs_hc_delta)))
+  
+  # Store results
+  delta_results[[paste0("cs_delta_", delta_val)]] <- list(
+    delta = delta_val,
+    k = k_opt_cs_delta,
+    avg_silhouette = max(sil_cs_delta),
+    cluster_sizes = table(pam_fit_cs_delta$clustering),
+    medoids = medoid_regions_cs_delta,
+    dispersion = cluster_dispersion_cs,
+    cophenetic_cor = cs_coph_cor_delta,
+    clustering = pam_fit_cs_delta$clustering
+  )
+}
+
+# --- Compare across δ values ---
+
+# Population & Territory comparison
+pt_delta_comparison <- data.frame(
+  delta = delta_values,
+  k = sapply(delta_values, function(d) delta_results[[paste0("pt_delta_", d)]]$k),
+  avg_silhouette = sapply(delta_values, function(d) delta_results[[paste0("pt_delta_", d)]]$avg_silhouette),
+  cophenetic_cor = sapply(delta_values, function(d) delta_results[[paste0("pt_delta_", d)]]$cophenetic_cor)
+)
+
+# ARI between different δ solutions (Population & Territory)
+pt_ari_matrix <- matrix(NA, length(delta_values), length(delta_values))
+rownames(pt_ari_matrix) <- colnames(pt_ari_matrix) <- paste0("δ=", delta_values)
+for (i in 1:length(delta_values)) {
+  for (j in 1:length(delta_values)) {
+    cl_i <- delta_results[[paste0("pt_delta_", delta_values[i])]]$clustering
+    cl_j <- delta_results[[paste0("pt_delta_", delta_values[j])]]$clustering
+    pt_ari_matrix[i, j] <- mclust::adjustedRandIndex(cl_i, cl_j)
+  }
+}
+
+# Clergy & Sacraments comparison
+cs_delta_comparison <- data.frame(
+  delta = delta_values,
+  k = sapply(delta_values, function(d) delta_results[[paste0("cs_delta_", d)]]$k),
+  avg_silhouette = sapply(delta_values, function(d) delta_results[[paste0("cs_delta_", d)]]$avg_silhouette),
+  cophenetic_cor = sapply(delta_values, function(d) delta_results[[paste0("cs_delta_", d)]]$cophenetic_cor)
+)
+
+# ARI between different δ solutions (Clergy & Sacraments)
+cs_ari_matrix <- matrix(NA, length(delta_values), length(delta_values))
+rownames(cs_ari_matrix) <- colnames(cs_ari_matrix) <- paste0("δ=", delta_values)
+for (i in 1:length(delta_values)) {
+  for (j in 1:length(delta_values)) {
+    cl_i <- delta_results[[paste0("cs_delta_", delta_values[i])]]$clustering
+    cl_j <- delta_results[[paste0("cs_delta_", delta_values[j])]]$clustering
+    cs_ari_matrix[i, j] <- mclust::adjustedRandIndex(cl_i, cl_j)
+  }
+}
+
+# Print results
+cat("\n========== Population & Territory: δ-sensitivity summary ==========\n")
+print(pt_delta_comparison)
+cat("\nARI matrix (Population & Territory):\n")
+print(round(pt_ari_matrix, 3))
+
+cat("\n========== Clergy & Sacraments: δ-sensitivity summary ==========\n")
+print(cs_delta_comparison)
+cat("\nARI matrix (Clergy & Sacraments):\n")
+print(round(cs_ari_matrix, 3))
+
+# Medoid persistence
+cat("\n--- Medoid Persistence (Population & Territory) ---\n")
+for (d in delta_values) {
+  cat(sprintf("δ=%.3f: %s\n", d, 
+              paste(delta_results[[paste0("pt_delta_", d)]]$medoids, collapse=", ")))
+}
+
+cat("\n--- Medoid Persistence (Clergy & Sacraments) ---\n")
+for (d in delta_values) {
+  cat(sprintf("δ=%.3f: %s\n", d, 
+              paste(delta_results[[paste0("cs_delta_", d)]]$medoids, collapse=", ")))
+}
+
+# Identify regions that change clusters
+cat("\n--- Membership Flips (Population & Territory) ---\n")
+pt_cl_1.0 <- delta_results[["pt_delta_1"]]$clustering
+pt_cl_2.0 <- delta_results[["pt_delta_2"]]$clustering
+pt_flips <- which(pt_cl_1.0 != pt_cl_2.0)
+if (length(pt_flips) > 0) {
+  cat("Regions changing clusters between δ=1.0 and δ=2.0:\n")
+  for (idx in pt_flips) {
+    cat(sprintf("  %s: cluster %d (δ=1.0) → cluster %d (δ=2.0)\n",
+                rownames(pt_data_matrix)[idx], pt_cl_1.0[idx], pt_cl_2.0[idx]))
+  }
+} else {
+  cat("No membership changes between δ=1.0 and δ=2.0\n")
+}
+
+cat("\n--- Membership Flips (Clergy & Sacraments) ---\n")
+cs_cl_1.0 <- delta_results[["cs_delta_1"]]$clustering
+cs_cl_2.0 <- delta_results[["cs_delta_2"]]$clustering
+cs_flips <- which(cs_cl_1.0 != cs_cl_2.0)
+if (length(cs_flips) > 0) {
+  cat("Regions changing clusters between δ=1.0 and δ=2.0:\n")
+  for (idx in cs_flips) {
+    cat(sprintf("  %s: cluster %d (δ=1.0) → cluster %d (δ=2.0)\n",
+                rownames(cs_data_matrix)[idx], cs_cl_1.0[idx], cs_cl_2.0[idx]))
+  }
+} else {
+  cat("No membership changes between δ=1.0 and δ=2.0\n")
+}
+
+
+# ------------------------------------------------------------------------------
+# (f) Stability via Bootstrap (Jaccard indices)
+# ------------------------------------------------------------------------------
+
+library(clue)  # for solve_LSAP (Hungarian matching)
+
+# Bootstrap parameters
+B <- 500  # number of bootstrap replicates
+set.seed(42)
+delta_bootstrap <- 1.345  # Use your preferred δ for bootstrap
+
+# Helper function: Hungarian matching of clusters
+match_clusters <- function(ref_cl, boot_cl) {
+  k_ref <- max(ref_cl)
+  k_boot <- max(boot_cl)
+  
+  # Contingency table
+  cont_table <- table(ref_cl, boot_cl)
+  
+  # Pad if needed
+  if (k_ref > k_boot) {
+    cont_table <- cbind(cont_table, matrix(0, k_ref, k_ref - k_boot))
+  } else if (k_boot > k_ref) {
+    cont_table <- rbind(cont_table, matrix(0, k_boot - k_ref, k_boot))
+  }
+  
+  # Hungarian algorithm (maximize overlap)
+  assignment <- solve_LSAP(cont_table, maximum = TRUE)
+  
+  # Relabel boot_cl
+  boot_cl_matched <- boot_cl
+  for (i in 1:length(assignment)) {
+    boot_cl_matched[boot_cl == i] <- assignment[i]
+  }
+  
+  return(boot_cl_matched)
+}
+
+# Helper function: Compute Jaccard per cluster
+jaccard_per_cluster <- function(ref_cl, boot_cl, boot_idx) {
+  k <- max(ref_cl)
+  jaccard_vals <- numeric(k)
+  
+  for (cl in 1:k) {
+    ref_members <- which(ref_cl == cl)
+    boot_members_full <- which(boot_cl == cl)
+    
+    # Restrict to bootstrap sample
+    boot_members <- intersect(boot_members_full, boot_idx)
+    ref_members_in_boot <- intersect(ref_members, boot_idx)
+    
+    intersection <- length(intersect(ref_members_in_boot, boot_members))
+    union <- length(union(ref_members_in_boot, boot_members))
+    
+    jaccard_vals[cl] <- if (union > 0) intersection / union else NA
+  }
+  
+  return(jaccard_vals)
+}
+
+
+# --- Population & Territory Bootstrap ---
+
+cat("\n========== Bootstrap Stability: Population & Territory ==========\n")
+
+# Reference solution (using δ=1.345)
+ref_cl_pt <- delta_results[["pt_delta_1.345"]]$clustering
+k_ref_pt <- max(ref_cl_pt)
+
+# Storage
+jaccard_pt <- matrix(NA, B, k_ref_pt)
+medoid_freq_pt <- matrix(0, nrow(pt_data_matrix), k_ref_pt)
+rownames(medoid_freq_pt) <- rownames(pt_data_matrix)
+co_assoc_pt <- matrix(0, nrow(pt_data_matrix), nrow(pt_data_matrix))
+
+for (b in 1:B) {
+  if (b %% 100 == 0) cat(sprintf("  Bootstrap replicate %d/%d\n", b, B))
+  
+  # Bootstrap sample
+  boot_idx <- sample(1:nrow(pt_data_matrix), replace = TRUE)
+  boot_data <- pt_data_matrix[boot_idx, ]
+  
+  # Compute Huber distance on bootstrap sample
+  n_boot <- nrow(boot_data)
+  boot_dist_matrix <- matrix(0, n_boot, n_boot)
+  for (i in 1:(n_boot-1)) {
+    for (j in (i+1):n_boot) {
+      d <- huber_distance(boot_data[i, ], boot_data[j, ], delta = delta_bootstrap)
+      boot_dist_matrix[i, j] <- d
+      boot_dist_matrix[j, i] <- d
+    }
+  }
+  boot_dist <- as.dist(boot_dist_matrix)
+  
+  # PAM with fixed k
+  pam_boot <- pam(boot_dist, k = k_ref_pt, diss = TRUE)
+  boot_cl <- pam_boot$clustering
+  
+  # Map back to original indices
+  boot_cl_full <- rep(NA, nrow(pt_data_matrix))
+  boot_cl_full[boot_idx] <- boot_cl
+  
+  # Match clusters
+  boot_cl_matched <- match_clusters(ref_cl_pt, boot_cl_full)
+  
+  # Jaccard
+  jaccard_pt[b, ] <- jaccard_per_cluster(ref_cl_pt, boot_cl_matched, boot_idx)
+  
+  # Medoid frequency
+  boot_medoids <- boot_idx[pam_boot$id.med]
+  for (i in 1:k_ref_pt) {
+    medoid_freq_pt[boot_medoids[i], i] <- medoid_freq_pt[boot_medoids[i], i] + 1
+  }
+  
+  # Co-association matrix
+  for (i in 1:(nrow(pt_data_matrix)-1)) {
+    for (j in (i+1):nrow(pt_data_matrix)) {
+      if (!is.na(boot_cl_matched[i]) && !is.na(boot_cl_matched[j])) {
+        if (boot_cl_matched[i] == boot_cl_matched[j]) {
+          co_assoc_pt[i, j] <- co_assoc_pt[i, j] + 1
+          co_assoc_pt[j, i] <- co_assoc_pt[j, i] + 1
+        }
+      }
+    }
+  }
+}
+
+# Normalize co-association
+co_assoc_pt <- co_assoc_pt / B
+
+# Summary statistics
+jaccard_summary_pt <- data.frame(
+  Cluster = 1:k_ref_pt,
+  Median = apply(jaccard_pt, 2, median, na.rm = TRUE),
+  Q25 = apply(jaccard_pt, 2, quantile, probs = 0.25, na.rm = TRUE),
+  Q75 = apply(jaccard_pt, 2, quantile, probs = 0.75, na.rm = TRUE),
+  Mean = apply(jaccard_pt, 2, mean, na.rm = TRUE)
+)
+
+cat("\nJaccard Index Summary (Population & Territory):\n")
+print(round(jaccard_summary_pt, 3))
+
+# Medoid selection frequency
+cat("\nTop medoid candidates per cluster (Population & Territory):\n")
+for (cl in 1:k_ref_pt) {
+  top_medoids <- order(medoid_freq_pt[, cl], decreasing = TRUE)[1:3]
+  cat(sprintf("Cluster %d: %s (%.1f%%), %s (%.1f%%), %s (%.1f%%)\n",
+              cl,
+              rownames(pt_data_matrix)[top_medoids[1]], 
+              100 * medoid_freq_pt[top_medoids[1], cl] / B,
+              rownames(pt_data_matrix)[top_medoids[2]], 
+              100 * medoid_freq_pt[top_medoids[2], cl] / B,
+              rownames(pt_data_matrix)[top_medoids[3]], 
+              100 * medoid_freq_pt[top_medoids[3], cl] / B))
+}
+
+
+# --- Clergy & Sacraments Bootstrap ---
+
+cat("\n========== Bootstrap Stability: Clergy & Sacraments ==========\n")
+
+# Reference solution (using δ=1.345)
+ref_cl_cs <- delta_results[["cs_delta_1.345"]]$clustering
+k_ref_cs <- max(ref_cl_cs)
+
+# Storage
+jaccard_cs <- matrix(NA, B, k_ref_cs)
+medoid_freq_cs <- matrix(0, nrow(cs_data_matrix), k_ref_cs)
+rownames(medoid_freq_cs) <- rownames(cs_data_matrix)
+co_assoc_cs <- matrix(0, nrow(cs_data_matrix), nrow(cs_data_matrix))
+
+for (b in 1:B) {
+  if (b %% 100 == 0) cat(sprintf("  Bootstrap replicate %d/%d\n", b, B))
+  
+  # Bootstrap sample
+  boot_idx <- sample(1:nrow(cs_data_matrix), replace = TRUE)
+  boot_data <- cs_data_matrix[boot_idx, ]
+  
+  # Compute Huber distance on bootstrap sample
+  n_boot <- nrow(boot_data)
+  boot_dist_matrix <- matrix(0, n_boot, n_boot)
+  for (i in 1:(n_boot-1)) {
+    for (j in (i+1):n_boot) {
+      d <- huber_distance(boot_data[i, ], boot_data[j, ], delta = delta_bootstrap)
+      boot_dist_matrix[i, j] <- d
+      boot_dist_matrix[j, i] <- d
+    }
+  }
+  boot_dist <- as.dist(boot_dist_matrix)
+  
+  # PAM with fixed k
+  pam_boot <- pam(boot_dist, k = k_ref_cs, diss = TRUE)
+  boot_cl <- pam_boot$clustering
+  
+  # Map back to original indices
+  boot_cl_full <- rep(NA, nrow(cs_data_matrix))
+  boot_cl_full[boot_idx] <- boot_cl
+  
+  # Match clusters
+  boot_cl_matched <- match_clusters(ref_cl_cs, boot_cl_full)
+  
+  # Jaccard
+  jaccard_cs[b, ] <- jaccard_per_cluster(ref_cl_cs, boot_cl_matched, boot_idx)
+  
+  # Medoid frequency
+  boot_medoids <- boot_idx[pam_boot$id.med]
+  for (i in 1:k_ref_cs) {
+    medoid_freq_cs[boot_medoids[i], i] <- medoid_freq_cs[boot_medoids[i], i] + 1
+  }
+  
+  # Co-association matrix
+  for (i in 1:(nrow(cs_data_matrix)-1)) {
+    for (j in (i+1):nrow(cs_data_matrix)) {
+      if (!is.na(boot_cl_matched[i]) && !is.na(boot_cl_matched[j])) {
+        if (boot_cl_matched[i] == boot_cl_matched[j]) {
+          co_assoc_cs[i, j] <- co_assoc_cs[i, j] + 1
+          co_assoc_cs[j, i] <- co_assoc_cs[j, i] + 1
+        }
+      }
+    }
+  }
+}
+
+# Normalize co-association
+co_assoc_cs <- co_assoc_cs / B
+
+# Summary statistics
+jaccard_summary_cs <- data.frame(
+  Cluster = 1:k_ref_cs,
+  Median = apply(jaccard_cs, 2, median, na.rm = TRUE),
+  Q25 = apply(jaccard_cs, 2, quantile, probs = 0.25, na.rm = TRUE),
+  Q75 = apply(jaccard_cs, 2, quantile, probs = 0.75, na.rm = TRUE),
+  Mean = apply(jaccard_cs, 2, mean, na.rm = TRUE)
+)
+
+cat("\nJaccard Index Summary (Clergy & Sacraments):\n")
+print(round(jaccard_summary_cs, 3))
+
+# Medoid selection frequency
+cat("\nTop medoid candidates per cluster (Clergy & Sacraments):\n")
+for (cl in 1:k_ref_cs) {
+  top_medoids <- order(medoid_freq_cs[, cl], decreasing = TRUE)[1:3]
+  cat(sprintf("Cluster %d: %s (%.1f%%), %s (%.1f%%), %s (%.1f%%)\n",
+              cl,
+              rownames(cs_data_matrix)[top_medoids[1]], 
+              100 * medoid_freq_cs[top_medoids[1], cl] / B,
+              rownames(cs_data_matrix)[top_medoids[2]], 
+              100 * medoid_freq_cs[top_medoids[2], cl] / B,
+              rownames(cs_data_matrix)[top_medoids[3]], 
+              100 * medoid_freq_cs[top_medoids[3], cl] / B))
+}
+
+
+# --- Visualization: Jaccard boxplots ---
+
+library(ggplot2)
+library(reshape2)
+
+# Population & Territory
+jaccard_pt_long <- melt(jaccard_pt)
+colnames(jaccard_pt_long) <- c("Replicate", "Cluster", "Jaccard")
+jaccard_pt_long$Cluster <- factor(jaccard_pt_long$Cluster)
+
+p_pt_jaccard <- ggplot(jaccard_pt_long, aes(x = Cluster, y = Jaccard)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.7) +
+  geom_hline(yintercept = c(0.6, 0.75), linetype = "dashed", color = "red") +
+  labs(title = "Bootstrap Jaccard Stability (Population & Territory)",
+       subtitle = sprintf("B=%d replicates, δ=%.3f", B, delta_bootstrap),
+       x = "Cluster", y = "Jaccard Index") +
+  theme_minimal()
+print(p_pt_jaccard)
+
+# Clergy & Sacraments
+jaccard_cs_long <- melt(jaccard_cs)
+colnames(jaccard_cs_long) <- c("Replicate", "Cluster", "Jaccard")
+jaccard_cs_long$Cluster <- factor(jaccard_cs_long$Cluster)
+
+p_cs_jaccard <- ggplot(jaccard_cs_long, aes(x = Cluster, y = Jaccard)) +
+  geom_boxplot(fill = "darkorange", alpha = 0.7) +
+  geom_hline(yintercept = c(0.6, 0.75), linetype = "dashed", color = "red") +
+  labs(title = "Bootstrap Jaccard Stability (Clergy & Sacraments)",
+       subtitle = sprintf("B=%d replicates, δ=%.3f", B, delta_bootstrap),
+       x = "Cluster", y = "Jaccard Index") +
+  theme_minimal()
+print(p_cs_jaccard)
+
+
+# --- Visualization: Co-association heatmaps ---
+
+library(pheatmap)
+
+# Population & Territory
+rownames(co_assoc_pt) <- colnames(co_assoc_pt) <- rownames(pt_data_matrix)
+pheatmap(co_assoc_pt,
+         cluster_rows = TRUE, cluster_cols = TRUE,
+         color = colorRampPalette(c("white", "steelblue", "darkblue"))(100),
+         main = "Co-association Matrix (Population & Territory)",
+         fontsize_row = 6, fontsize_col = 6)
+
+# Clergy & Sacraments
+rownames(co_assoc_cs) <- colnames(co_assoc_cs) <- rownames(cs_data_matrix)
+pheatmap(co_assoc_cs,
+         cluster_rows = TRUE, cluster_cols = TRUE,
+         color = colorRampPalette(c("white", "orange", "darkorange"))(100),
+         main = "Co-association Matrix (Clergy & Sacraments)",
+         fontsize_row = 6, fontsize_col = 6)
+
+
+# ==============================================================================
+# SUMMARY TABLES FOR REPORTING
+# ==============================================================================
+
+cat("\n========== SUMMARY: δ-sensitivity ==========\n")
+cat("\nPopulation & Territory:\n")
+print(pt_delta_comparison)
+cat("\nClergy & Sacraments:\n")
+print(cs_delta_comparison)
+
+cat("\n========== SUMMARY: Bootstrap Stability ==========\n")
+cat("\nPopulation & Territory:\n")
+print(jaccard_summary_pt)
+cat("\nClergy & Sacraments:\n")
+print(jaccard_summary_cs)
+
+# Export for paper/slides
+write.csv(pt_delta_comparison, "delta_sensitivity_pt.csv", row.names = FALSE)
+write.csv(cs_delta_comparison, "delta_sensitivity_cs.csv", row.names = FALSE)
+write.csv(jaccard_summary_pt, "jaccard_stability_pt.csv", row.names = FALSE)
+write.csv(jaccard_summary_cs, "jaccard_stability_cs.csv", row.names = FALSE)
+
+cat("\n========== Robustness checks complete! ==========\n")
