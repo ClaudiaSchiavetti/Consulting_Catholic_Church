@@ -23,8 +23,8 @@ if (file.exists("/srv/shiny-server/final_ispr_women_table.csv")) {
   abbreviations_file <- "variable_abbreviations.csv"
 } else {
   # Local development environment
-  #path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-  path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+  path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+  #path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
   setwd(path_outputs)
   data <- read.csv("final_ispr_women_table.csv", check.names = FALSE)
   abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
@@ -164,7 +164,22 @@ ui <- tagList(
                      target = "_blank",
                      "Creative Commons Attribution-NonCommercial (CC BY-NC) License."
                    ),
-                 )
+                   "."
+                 ),
+                 tags$hr(),
+                 tags$h4("How to cite this app"),
+                 tags$p(
+                   "Schiavetti, Claudia*, Soffici, Manuel*, Haensch, Anna-Carolina, Wollbold, Andreas, Ongono, Jean-Olivier, & Hörl, Felicitas (2024). ",
+                   tags$i("Annuarium Statisticum Ecclesiae - ISPR Women Statistics"), 
+                   " [Web application]. Available at: ",
+                   tags$a(
+                     href = "https://tinyurl.com/CatholicAnnuarium",
+                     target = "_blank",
+                     "https://tinyurl.com/CatholicAnnuarium"
+                   ),
+                   "."
+                 ),
+                 tags$p("* Equal contribution.")
                )
              )
   )

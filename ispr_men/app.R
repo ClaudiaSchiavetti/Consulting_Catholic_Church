@@ -31,8 +31,8 @@ if (file.exists("/srv/shiny-server/final_ispr_men_table.csv")) {
   abbreviations_file <- "variable_abbreviations.csv"
 } else {
   # Local development environment
-  #path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
-  path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
+  path_outputs <- "C:/Users/schia/Documents/GitHub/Consulting_Catholic_Church"
+  #path_outputs <- "C:/Users/soffi/Documents/Consulting_Catholic_Church"
   setwd(path_outputs)
   data <- read.csv("final_ispr_men_table.csv", check.names = FALSE)
   abbreviations_file <- file.path(path_outputs, "variable_abbreviations.csv")
@@ -302,43 +302,56 @@ ui <- tagList(
                               plotlyOutput("ys_plot", height = "100%")
                           )
                         )
-                        
                       )
              ),
              
-             tabPanel(
-               "Credits",
-               tags$div(
-                 style = "padding: 20px; max-width: 800px; margin: 0 auto; font-size: 16px; line-height: 1.6;",
-                 tags$h3("Credits"),
-                 tags$p(
-                   "The data presented in this web application was extracted using Optical Character Recognition (OCR) by the University Library at the University of Mannheim from the 2022 edition of the ",
-                   tags$i("Annuarium Statisticum Ecclesiae."),
-                   "The ",
-                   tags$i("Annuarium Statisticum Ecclesiae"),
-                   " is compiled annually by the Central Office of Church Statistics of the Holy See's Secretariat of State and published by the Vatican Publishing House."
-                 ),
-                 tags$p(
-                   "The data was then transformed and edited by Felicitas Hörl, student assistant for Prof. Dr. Andreas Wollbold. Additional preprocessing steps and development of the web apps were carried out by Claudia Schiavetti and Manuel Soffici. Claudia Schiavetti and Manuel Soffici worked on the project as Master students in Statistics and Data Science at LMU Munich as part of the Consulting Project module."
-                 ),
-                 tags$p(
-                   "The initial idea for the project was developed and supervised by Dr. Anna-Carolina Haensch (Institute of Statistics) and supported by Prof. Dr. Andreas Wollbold and Prof. Dr. Jean-Olivier Nke Ongono (Faculty of Catholic Theology)."
-                 ),
-                 tags$p(
-                   "For further information or inquiries, please contact Dr. Haensch at C.Haensch[at]lmu.de."
-                 ),
-                 tags$p(
-                   "This work is licensed under a ",
-                   tags$a(
-                     href = "https://creativecommons.org/licenses/by-nc/4.0/",
-                     target = "_blank",
-                     "Creative Commons Attribution-NonCommercial (CC BY-NC) License."
-                   ), 
-                 )
-               )
+             tabPanel("Credits",
+                      tags$div(
+                        style = "padding: 20px; max-width: 800px; margin: 0 auto; font-size: 16px; line-height: 1.6;",
+                        tags$h3("Credits"),
+                        tags$p(
+                          "The data presented in this web application was extracted using Optical Character Recognition (OCR) by the University Library at the University of Mannheim from the 2022 edition of the ",
+                          tags$i("Annuarium Statisticum Ecclesiae."),
+                          "The ",
+                          tags$i("Annuarium Statisticum Ecclesiae"),
+                          " is compiled annually by the Central Office of Church Statistics of the Holy See's Secretariat of State and published by the Vatican Publishing House."
+                        ),
+                        tags$p(
+                          "The data was then transformed and edited by Felicitas Hörl, student assistant for Prof. Dr. Andreas Wollbold. Additional preprocessing steps and development of the web apps were carried out by Claudia Schiavetti and Manuel Soffici. Claudia Schiavetti and Manuel Soffici worked on the project as Master students in Statistics and Data Science at LMU Munich as part of the Consulting Project module."
+                        ),
+                        tags$p(
+                          "The initial idea for the project was developed and supervised by Dr. Anna-Carolina Haensch (Institute of Statistics) and supported by Prof. Dr. Andreas Wollbold and Prof. Dr. Jean-Olivier Nke Ongono (Faculty of Catholic Theology)."
+                        ),
+                        tags$p(
+                          "For further information or inquiries, please contact Dr. Haensch at C.Haensch[at]lmu.de."
+                        ),
+                        tags$p(
+                          "This work is licensed under a ",
+                          tags$a(
+                            href = "https://creativecommons.org/licenses/by-nc/4.0/",
+                            target = "_blank",
+                            "Creative Commons Attribution-NonCommercial (CC BY-NC) License."
+                          ), 
+                          "."
+                        ),
+                        tags$hr(),
+                        tags$h4("How to cite this app"),
+                        tags$p(
+                          "Schiavetti, Claudia*, Soffici, Manuel*, Haensch, Anna-Carolina, Wollbold, Andreas, Ongono, Jean-Olivier, & Hörl, Felicitas (2024). ",
+                          tags$i("Annuarium Statisticum Ecclesiae - ISPR Men Statistics"), 
+                          " [Web application]. Available at: ",
+                          tags$a(
+                            href = "https://tinyurl.com/CatholicAnnuarium",
+                            target = "_blank",
+                            "https://tinyurl.com/CatholicAnnuarium"
+                          ),
+                          "."
+                        ),
+                        tags$p("* Equal contribution.")
+                      )
              )
-  )
-)
+  ) # closing navbarPage
+) # closing tagList
 
 # ---- Server Logic ----
 # ---- DRILLDOWN HIERARCHY ----

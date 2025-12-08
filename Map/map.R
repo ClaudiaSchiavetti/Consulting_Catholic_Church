@@ -1119,9 +1119,25 @@ ui <- tagList(
                      target = "_blank",
                      "Creative Commons Attribution-NonCommercial (CC BY-NC) License."
                    ), 
-                 )
+                   "."
+                 ),
+                 tags$hr(),
+                 tags$h4("How to cite this app"),
+                 tags$p(
+                   "Schiavetti, Claudia*, Soffici, Manuel*, Haensch, Anna-Carolina, Wollbold, Andreas, Ongono, Jean-Olivier, & Hörl, Felicitas (2024). ",
+                   tags$i("Annuarium Statisticum Ecclesiae World Map"), 
+                   " [Web application]. Available at: ",
+                   tags$a(
+                     href = "https://tinyurl.com/CatholicAnnuarium",
+                     target = "_blank",
+                     "https://tinyurl.com/CatholicAnnuarium"
+                   ),
+                   "."
+                 ),
+                 tags$p("* Equal contribution.")
                )
              )
+             
              
   )
 )
