@@ -1,8 +1,0 @@
-# Shiny App
-
-This folder contains the R source files for a single **Shiny application**.  
-The app is split into multiple scripts for clarity:
-
-- **`ui.R`** – defines the **user interface** (layout, tabs, panels, and inputs).  
-- **`server.R`** – contains the **server logic** (reactive expressions, observers, and outputs).  
-- **`map.R`** – handles **data adaptations** and launches the Shiny app (`shinyApp(ui, server)`).
